@@ -77,6 +77,25 @@
 | 배포 포맷 | PyTorch `.pt`(서빙) / ONNX(Unity·C# 등 비파이썬 런타임) |
 | 설정 | `config.py` 단일 소스(경로·임계값·하이퍼파라미터) |
 
+**폴더 구조**
+
+```
+xr_autolearning/
+├─ config.py                  # 경로·클래스·임계값·하이퍼파라미터 공통 설정
+├─ 0_coco_to_yolo.py          # Roboflow COCO → YOLO 포맷 변환 (샘플 데이터용)
+├─ 0_import_render.py         # 3D 렌더 데이터 반입 (클래스 등록·라벨 검증·배치)
+├─ 0_import_roboflow.py       # Roboflow YOLOv8 export 정리
+├─ 1_auto_labeling.py         # 자동 라벨링 (conf 필터, --tta, --conf-per-class)
+├─ 2_train_pipeline.py        # train/val 분할 → 학습 → ONNX export
+├─ 3_api_server.py            # FastAPI 추론 서버
+├─ 4_experiment_autolearn.py  # 오토러닝 효과 실증 (정답 숨기고 자동 채점)
+├─ data.yaml                  # 클래스 정의(names)·데이터 경로
+├─ requirements.txt
+├─ models/                    # base_model.pt(초기 생성기) / new_model.pt·onnx(학습 산출)
+├─ datasets/                  # images/ labels/ unlabeled_images/
+└─ exp_results/               # 실험 리포트 (report_*.json)
+```
+
 <br>
 
 ## 3. 기술 스택
@@ -404,20 +423,3 @@ API 응답 예시:
 | 해상도/수량 | 단변 640px 이상. 부품(클래스)당 다양 조건 조합으로 수백 장 이상 | YOLOv8 입력 규격(640) 및 클래스 균형 확보 |
 
 - 핵심 원칙: **사실적으로 예쁘게(PBR 고품질)보다, 다양하고 지저분하게.** 모델이 배경·조명·표면 상태가 아니라 부품의 기하학적 형태로 인식하도록 강제하는 것이 목적.
-
-<br>
-
----
-
-**부록: 스크립트 구성**
-
-| 파일 | 역할 |
-|------|------|
-| `config.py` | 경로·클래스·임계값·하이퍼파라미터 공통 설정 |
-| `0_coco_to_yolo.py` | Roboflow COCO → YOLO 포맷 변환 |
-| `0_import_render.py` | 3D 렌더 데이터 반입 (클래스 등록·라벨 검증·분포 확인·배치) |
-| `0_import_roboflow.py` | Roboflow YOLOv8 export → 파이프라인 구조 정리 |
-| `1_auto_labeling.py` | base_model로 자동 라벨링 (conf 필터, `--tta`, `--conf-per-class`) |
-| `2_train_pipeline.py` | train/val 분할 → 학습 → ONNX export |
-| `3_api_server.py` | FastAPI 추론 서버 |
-| `4_experiment_autolearn.py` | 자동화 효과 실증 (정답 숨기고 자동 채점, 가드레일·분포통계 포함) |
