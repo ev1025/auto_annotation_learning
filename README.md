@@ -46,25 +46,19 @@
 
 **MLOps 자동화 루프** (zero-manual, 첫 데이터 확보 이후 전 과정 무인)
 
-```
-범례   입력 = 외부 데이터 투입   자동 = 스크립트   [폴더] 데이터   <모델> 가중치
+| 단계 | 주체 | 작업 (스크립트) | 입력 → 출력 |
+|------|------|-----------------|-------------|
+| ⓪ 부트스트랩 (1회) | 외부 | 3D 렌더 합성 데이터 투입 | 이미지+어노테이션 → `datasets/images`·`labels` |
+| | 자동 | 첫 모델 학습 (`2_train_pipeline.py`) | 라벨셋 → `new_model.pt` |
+| | 자동 | 첫 라벨 생성기로 승격 | `new_model.pt` → `base_model.pt` |
+| ① 라벨 생성 | 외부 | 새 미라벨 이미지 투입 | 현장 이미지 → `datasets/unlabeled_images` |
+| | 자동 | 자동 라벨링 (`1_auto_labeling.py`, conf≥0.6) | 미라벨 이미지 → `datasets/labels` 자동 라벨 |
+| ② 재학습 | 자동 | 누적 데이터 재학습 (`2_train_pipeline.py`) | 기존+자동 라벨 → `new_model.pt` 갱신 |
+| ③ 루프 | 자동 | 갱신된 모델을 ①의 생성기로 재투입 | 라운드마다 데이터↑ → 성능↑ |
+| ④ 배포 | 자동 | 추론 서빙 (`3_api_server.py`) | `new_model.pt`/`.onnx` → REST API (`/predict`) |
 
-0단계 부트스트랩(1회)
-  입력) 3D 렌더 합성 데이터(이미지+어노테이션) 확보 → [datasets/images]+[datasets/labels]
-  자동) 2_train_pipeline.py → <new_model.pt>
-  자동) new_model.pt 를 <base_model.pt>(첫 생성기)로 승격
-
-반복 루프(전자동)
-  입력) 새 미라벨 이미지 추가 → [datasets/unlabeled_images]
-  자동) 1_auto_labeling.py --weights <최신모델>  (conf≥0.6 필터)
-        → [datasets/labels] (자동 라벨)
-  자동) 2_train_pipeline.py  (누적 데이터 재학습)
-        → <new_model.pt> 갱신
-  └─► 최신 모델을 다음 라운드 생성기로 재투입 (데이터↑ → 성능↑)
-
-배포
-  자동) 3_api_server.py  → <new_model.pt / .onnx> 서빙
-```
+- 사람 개입 = ⓪·①의 "데이터 투입"뿐. 라벨링·학습·배포는 전부 스크립트가 수행
+- ①~③이 반복 루프: 돌수록 라벨 데이터가 누적되고 모델이 강해짐 (효과 실측은 5.3)
 
 > 아키텍처 다이어그램 자리: 위 ASCII 흐름을 정식 다이어그램(draw.io/Excalidraw)으로 대체 예정.
 
