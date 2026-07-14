@@ -1,0 +1,34 @@
+# ===== 데이터셋 (용량 큼, git 부적합) =====
+mechanical-parts-coco/
+mechanical-parts-yolo/
+datasets/
+data.generated.yaml
+
+# ===== 학습/실험 산출물 =====
+exp_autolearn/
+exp_autolearn_*/
+runs/
+*.log
+*.marker
+
+# ===== 모델 가중치 =====
+models/*.pt
+models/*.onnx
+*.pt
+*.onnx
+# 실증 결과 리포트(json)는 추적, 모델 파일만 제외
+exp_results/*.pt
+exp_results/*.onnx
+
+# ===== 파이썬 =====
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# ===== OS/에디터 =====
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

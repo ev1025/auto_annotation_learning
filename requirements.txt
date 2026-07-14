@@ -1,0 +1,16 @@
+# 핵심 의존성
+ultralytics>=8.3.0        # YOLO 학습/추론/ONNX export
+fastapi>=0.110            # 추론 API 웹 프레임워크
+uvicorn[standard]>=0.29   # ASGI 서버
+python-multipart>=0.0.9   # FastAPI 파일 업로드(multipart/form-data) 처리
+pillow>=10.0              # 이미지 디코딩
+numpy>=1.26
+
+# ONNX 변환 및 ONNX 서빙용
+onnx>=1.16
+onnxruntime>=1.17         # GPU 서빙은 onnxruntime-gpu 로 교체
+onnxslim>=0.1.34          # export(simplify=True) 시 그래프 단순화
+
+# 참고: torch 는 ultralytics 가 끌어오지만, GPU(CUDA) 사용 시에는
+#       https://pytorch.org 안내대로 CUDA 버전에 맞는 torch 를 먼저 설치하세요.
+#       예) pip install torch --index-url https://download.pytorch.org/whl/cu124

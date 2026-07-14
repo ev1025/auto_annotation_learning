@@ -1,0 +1,41 @@
+{
+  "classes": [
+    "bolt",
+    "nut"
+  ],
+  "split": {
+    "seed": 149,
+    "pool": 647,
+    "test": 199
+  },
+  "pseudo": {
+    "labeled_images": 622,
+    "boxes": 3339,
+    "conf": 0.6,
+    "tp": 3012,
+    "fp": 327,
+    "fn": 731,
+    "precision": 0.9021,
+    "recall": 0.8047
+  },
+  "round0": {
+    "best": "/home/jinwoolee/xr_autolearning/exp_autolearn/runs/round0/weights/best.pt",
+    "map50": 0.8354,
+    "map50_95": 0.6447,
+    "per_class_map50_95": {
+      "bolt": 0.6198,
+      "nut": 0.6695
+    }
+  },
+  "round1": {
+    "best": "/home/jinwoolee/xr_autolearning/exp_autolearn/runs/round1/weights/best.pt",
+    "map50": 0.8586,
+    "map50_95": 0.674,
+    "per_class_map50_95": {
+      "bolt": 0.6425,
+      "nut": 0.7056
+    }
+  },
+  "delta_map50": 0.0232,
+  "delta_map50_95": 0.0293
+}
