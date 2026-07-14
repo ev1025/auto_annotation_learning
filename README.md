@@ -117,8 +117,9 @@
 |------|------|
 | 데이터셋 | 헬기 정비 부품 3D 렌더 합성 데이터 (외부 공급) |
 | 라벨 생성 | 렌더 시점에 3D 좌표를 이미지 평면에 투영 → 정답 bbox 자동 산출 (수작업 0) |
-| 포맷 | YOLO txt(정규화 cxcywh) 또는 COCO JSON (부록 2 요구사항 참고) |
-| 상태 | 미확보. 확보 시 `data.yaml` 클래스 교체만으로 동일 파이프라인 적용 |
+| 포맷 | YOLO txt(정규화 cxcywh) 또는 COCO JSON + 클래스 정의 파일 (부록 2 요구사항 참고) |
+| 반입 절차 | `0_import_render.py`로 클래스(번호↔부품명) 등록 → 라벨 검증 → 데이터셋 배치. 공급 라벨의 번호는 약속일 뿐이라 반입 시 분포 검증으로 번호 어긋남을 조기 발견 |
+| 상태 | 미확보. 확보 시 위 반입 절차만 거치면 동일 파이프라인 적용 |
 
 입력이 샘플이든 실제 렌더든 이후 파이프라인은 동일. 검증 대상은 "라벨셋 → 학습 → 자동라벨 확장 → 성능 향상" 루프 
 
@@ -276,6 +277,10 @@ pip install -r requirements.txt
 ```bash
 # (검증용) Roboflow COCO 데이터를 YOLO 구조로 변환
 python 0_coco_to_yolo.py --src ./mechanical-parts-coco --dst ./mechanical-parts-yolo
+
+# (운영용) 3D 렌더 데이터 반입: 클래스 등록(나열 순서=번호) + 라벨 검증 + 배치
+python 0_import_render.py --src ./render_delivery --classes bolt nut gear --dry-run  # 검증만
+python 0_import_render.py --src ./render_delivery --classes bolt nut gear           # 실제 반입
 ```
 
 ### 6.3 실행 순서 (자동화 루프)
@@ -349,6 +354,7 @@ API 응답 예시:
 |------|------|
 | `config.py` | 경로·클래스·임계값·하이퍼파라미터 공통 설정 |
 | `0_coco_to_yolo.py` | Roboflow COCO → YOLO 포맷 변환 |
+| `0_import_render.py` | 3D 렌더 데이터 반입 (클래스 등록·라벨 검증·분포 확인·배치) |
 | `0_import_roboflow.py` | Roboflow YOLOv8 export → 파이프라인 구조 정리 |
 | `1_auto_labeling.py` | base_model로 자동 라벨링 (conf 필터, `--tta`, `--conf-per-class`) |
 | `2_train_pipeline.py` | train/val 분할 → 학습 → ONNX export |
@@ -367,6 +373,7 @@ API 응답 예시:
 | 카메라 변주 | 거리·각도·높이를 전방위로 랜덤화 (정면 위주 금지). 근접/원거리 극단 포함 | 정비사 시점(HMD)은 각도가 불규칙함 |
 | 재질/오염 변주 | 기름때·긁힘·부식·도색 차이 등 표면 상태 변주 | 렌더의 깨끗한 재질만 학습하면 실부품의 오염 상태에서 미탐 |
 | 라벨 규격 | 각 렌더 이미지에 대해 3D 좌표 투영 기반 2D bbox를 YOLO txt(정규화 cxcywh) 또는 COCO JSON으로 제공 | 본 파이프라인이 즉시 소비 가능한 포맷 |
+| **클래스 정의 파일(필수)** | 라벨의 클래스 번호↔부품명 매핑을 `classes.txt`(한 줄 = 한 부품명, 줄 순서 = 번호)로 동봉 | 라벨엔 번호만 있어 이 약속 없이는 부품 식별 불가. 반입 시 `0_import_render.py`가 이 파일로 등록·검증 |
 | 해상도/수량 | 단변 640px 이상. 부품(클래스)당 다양 조건 조합으로 수백 장 이상 | YOLOv8 입력 규격(640) 및 클래스 균형 확보 |
 
 핵심 원칙: **사실적으로 예쁘게(PBR 고품질)보다, 다양하고 지저분하게.** 모델이 배경·조명·표면 상태가 아니라 부품의 기하학적 형태로 인식하도록 강제하는 것이 목적이다.
