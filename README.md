@@ -178,17 +178,25 @@ train/labels/239_jpg.rf.9urQ....txt   ← 같은 이름의 .jpg 와 짝
 | 콜드 리스타트 | 매 라운드 `yolov8n.pt`에서 새로 학습 | 오라벨이 가중치에 고착(confirmation bias)되는 것 방지 |
 | 가드레일 | 라운드1 mAP < 라운드0이면 폐기 권고 기록 | 오류 증폭 자동 감지·롤백 |
 
-자동 라벨 산출물 예시 (report.json 일부, 분포 모니터링 지표 포함):
+자동 라벨링이 끝나면 결과 리포트(report.json)가 함께 생성된다. 라벨을 눈으로 전수 검사하는 대신 이 수치로 "이번 자동 라벨을 믿고 학습해도 되는지"를 판단한다:
 
 ```json
 "pseudo": {
-  "labeled_images": 578, "boxes": 2955,
-  "precision": 0.9381, "recall": 0.7406,
-  "per_class_boxes": {"nut": 1667, "bolt": 1288},
-  "mean_conf": 0.9218, "tta_dropped_boxes": 352
+  "labeled_images": 578,        // 라벨이 1개 이상 생성된 이미지 수 (입력 647장 중)
+  "boxes": 2955,                // 생성된 박스(라벨) 총 개수
+  "precision": 0.9381,          // 자동 라벨 중 정답과 일치한 비율 → 높을수록 오라벨 적음
+  "recall": 0.7406,             // 실제 객체 중 자동 라벨이 잡아낸 비율 → 낮으면 놓친 객체 많음
+  "per_class_boxes": {          // 클래스별 박스 분포
+    "nut": 1667, "bolt": 1288   //   한 클래스만 0에 가깝게 쏠리면 이상 신호(클래스 소외)
+  },
+  "mean_conf": 0.9218,          // 채택된 라벨의 평균 신뢰도 → 라운드마다 계속 떨어지면 중단 신호
+  "tta_dropped_boxes": 352      // TTA 필터가 "3뷰 재현 실패"로 걸러낸 박스 수
 },
-"guardrail": {"accepted": true}
+"guardrail": {"accepted": true} // 라운드1 mAP ≥ 라운드0 → 이번 자동 라벨 채택 OK
+                                // false 면 이번 라운드 라벨을 버리고 원인 확인
 ```
+
+읽는 법 요약: **precision·guardrail 로 채택 여부를 정하고, per_class_boxes·mean_conf 로 이상 징후(쏠림·불확실성 증가)를 감시**한다. precision/recall 은 실험 환경에서 숨겨둔 정답과 대조해 산출한 값이며, 정답이 없는 실운영에서는 guardrail(mAP 변화)과 분포 지표가 판단 기준이 된다.
 
 ### 4.4 하이퍼파라미터 및 검증 전략
 
