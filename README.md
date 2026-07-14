@@ -1,263 +1,207 @@
 # XR 오토러닝 (XR Auto-Learning) - 수리온 부품 비마커 인식 파이프라인
 
-수리온 헬기 정비 부품을 마커 없이(Markerless) 인식하기 위한 YOLO(Ultralytics) 기반 XR 오토러닝 end-to-end 파이프라인.
-자동 라벨링 → 학습/ONNX 변환 → REST 추론 서버까지 3단계로 구성했고, 타 부서(XR/프론트엔드)에는 마지막 REST API 형태로 제공한다.
+## 1. 프로젝트 개요
 
-## 1. 오토러닝이 무엇이고 왜 필요한가
+수리온 헬기 정비 부품을 마커(QR/바코드) 없이 인식하기 위한 YOLO 기반 객체탐지 파이프라인. 소량 손라벨로 만든 초기 모델이 나머지 데이터를 스스로 라벨링(self-training)하여 라벨링 비용을 최소화하고, 라운드를 반복하며 성능을 끌어올린다. 결과물은 REST API 및 ONNX로 XR/프론트엔드 팀에 제공한다.
 
-오토러닝(self-training)은 다음 루프를 반복하는 방식이다.
+핵심 기능:
 
-- 소량의 손라벨 데이터로 첫 모델을 만든다
-- 그 모델이 라벨 없는 새 이미지에 스스로 라벨(바운딩 박스)을 친다
-- 신뢰도(confidence) 기준을 넘는 자동 라벨만 골라 손라벨과 합쳐 모델을 재학습한다
-- 다음 라운드부터는 더 강해진 모델이 더 많은 이미지를 라벨링 → 학습 데이터가 누적되며 모델이 점점 강해진다
+- **자동 라벨링(pseudo-labeling)**: 학습된 모델이 미라벨 이미지에 신뢰도(conf) 기준 이상의 바운딩 박스를 자동 생성
+- **오토러닝 루프**: 자동 라벨 → 재학습을 반복해 데이터·성능을 누적 (효과를 mAP로 정량 검증)
+- **학습·변환 자동화**: train/val 분할 → YOLOv8 학습 → ONNX export(Unity/C# 런타임용)까지 단일 스크립트
+- **추론 서빙**: FastAPI `/predict`로 이미지 입력 → 박스/클래스/신뢰도 JSON 반환
 
-필요한 이유는 다음 세 가지다.
+## 2. 시스템 아키텍처 및 파이프라인
 
-- **라벨링 물량 문제**: 비마커 인식은 마커 인식과 달리 부품의 형태·각도·조명 변화를 전부 학습해야 해서 필요한 라벨 수가 많다. 전량 손라벨은 시간·인건비가 감당되지 않는다.
-- **자동 라벨의 신뢰도**: 신뢰도(conf) 임계값으로 걸러진 자동 라벨은 실측 정밀도 0.87~0.90 수준으로, 사람이 손대지 않아도 학습에 쓸 만한 품질이 나온다. 라벨링 노동을 모델이 대신하는 것이 핵심이다.
-- **실측으로 증명해야 한다**: "될 것 같다"가 아니라 mAP 수치로 오토러닝이 실제로 성능을 올리는지 확인이 필요했다. 그 결과는 [6. 실험 과정](#6-실험-과정)에 정리했다.
+본 프로젝트는 RAG/Vector DB가 아닌 **객체탐지 파이프라인**이다. LLM·Vector DB 대신 YOLO 탐지 모델 + FastAPI 백엔드 + ONNX 런타임 연동으로 구성한다.
 
-## 2. 어떤 데이터가 필요하고, 어떤 데이터를 썼는가
+데이터 흐름:
 
-### 실전 파이프라인이 필요로 하는 데이터
+```
+[원천 이미지(미라벨)]
+   │  (수집)
+   ▼
+[전처리]  COCO→YOLO 변환 / 정규화 / train·val 분할
+   │
+   ▼
+[모델 입력]  YOLOv8n (imgsz 640)
+   │
+   ├─(추론)→ 자동 라벨(.txt, conf≥0.6) ──┐
+   │                                     │ 누적
+   ▼                                     ▼
+[학습]  수기 + 자동 라벨로 재학습 → best.pt → ONNX
+   │
+   ▼
+[서빙]  FastAPI /predict → JSON(bbox x,y,w,h / class / conf) → XR·프론트
+```
 
-| 데이터 | 역할 | 준비 방법 |
-|--------|------|-----------|
-| `models/base_model.pt` | 오토러닝의 시작점(첫 라벨 생성기) | 소량(수십~백여 장)의 수리온 부품을 손라벨해 학습 |
-| `datasets/unlabeled_images/` | 자동 라벨링 대상 | 라벨 없는 대량의 부품 이미지(다양한 각도·조명) |
+self-training 루프 (첫 라운드만 사람이 손라벨, 이후 전자동):
 
-### 지금 이 리포에서 쓴 데이터 (실증 실험용)
+```
+범례   사람 = 사람 직접   자동 = 스크립트   [폴더] 데이터   <모델> 가중치
 
-현재 실제 수리온 부품 데이터가 없어, **오토러닝 방식 자체가 유효한지**를 먼저 공개 데이터로 검증했다.
+0단계 부트스트랩(1회)
+  사람) 미라벨 소량 손라벨 → [datasets/images]+[datasets/labels]
+  자동) 2_train_pipeline.py → <new_model.pt>
+  사람) new_model.pt 를 <base_model.pt>(첫 생성기)로 승격
 
-- 데이터셋: [Mechanical Parts Dataset 2022](https://universe.roboflow.com/mazhar-cakir/mechanical-parts) (Roboflow, 원본 Zenodo)
-- 규모: 총 2,250장, 4클래스(bearing / bolt / gear / nut), 어노테이션 10,599건
+반복 루프(전자동)
+  사람) 새 미라벨 이미지 추가 → [datasets/unlabeled_images]
+  자동) 1_auto_labeling.py --weights <최신모델>  (conf≥0.6 필터)
+        → [datasets/labels] (자동 라벨)
+  자동) 2_train_pipeline.py  (수기+자동 누적 재학습)
+        → <new_model.pt> 갱신
+  └─► 최신 모델을 다음 라운드 생성기로 재투입 (데이터↑ → 성능↑)
+
+배포
+  자동) 3_api_server.py  → <new_model.pt / .onnx> 서빙
+```
+
+> 아키텍처 다이어그램 자리: 위 ASCII 흐름을 정식 다이어그램(draw.io/Excalidraw)으로 대체 예정.
+
+컴포넌트 연동:
+
+| 계층 | 구성 |
+|------|------|
+| 모델 | YOLOv8n (Ultralytics), 단일 스테이지 탐지기 |
+| 백엔드 | FastAPI + Uvicorn (`/predict`, `/health`) |
+| 배포 포맷 | PyTorch `.pt`(서빙) / ONNX(Unity·C# 등 비파이썬 런타임) |
+| 설정 | `config.py` 단일 소스(경로·임계값·하이퍼파라미터) |
+
+## 3. 기술 스택
+
+**Data & AI**
+
+- 언어: Python 3.10+
+- 탐지 프레임워크: Ultralytics YOLOv8 (8.4.93), 모델 YOLOv8n
+- 딥러닝: PyTorch 2.x (RTX 5090은 CUDA 12.8 빌드, 그 외 GPU는 CUDA 버전에 맞춰 설치)
+- 변환·서빙 런타임: ONNX, onnxruntime, onnxslim
+- 데이터 처리: NumPy, Pillow, PyYAML
+
+**Infra & Backend**
+
+- API: FastAPI, Uvicorn, python-multipart
+- 실행 환경: 단일 GPU(CUDA). 실험 환경 = NVIDIA RTX 5090 1장
+- 형상 관리: Git (GitHub: `ev1025/auto_annotation_learning`)
+- 데이터셋/모델 가중치는 `.gitignore`로 제외(용량·재생성 가능), 소스·결과 리포트(json)만 추적
+
+## 4. 데이터 전처리 및 모델링
+
+### 4.1 데이터셋
+
+실제 수리온 부품 데이터 확보 전, 오토러닝 방식의 유효성을 공개 데이터로 검증했다.
+
+- 데이터셋: Mechanical Parts Dataset 2022 (Roboflow, 원본 Zenodo)
+- 규모: 2,250장, 4클래스(bearing/bolt/gear/nut), 어노테이션 10,599건 (train 1,800 / valid 225 / test 225)
 - 원본 포맷: Roboflow COCO export (`_annotations.coco.json` + 이미지)
-- 변환: `0_coco_to_yolo.py` 로 YOLO txt 포맷(중심좌표+크기, 0~1 정규화)으로 변환. Roboflow가 자동 삽입하는 더미 상위 카테고리는 제거
-- 위치: `mechanical-parts-coco/`(원본), `mechanical-parts-yolo/`(변환본)
 
-실제 수리온 부품 데이터가 확보되면 **클래스명(`data.yaml`)과 이미지만 교체**하면 동일 파이프라인·스크립트를 그대로 쓸 수 있다.
+### 4.2 전처리 전략
 
-## 3. 폴더 구조
+- **COCO→YOLO 변환** (`0_coco_to_yolo.py`): COCO bbox `[x_min, y_min, w, h]`(픽셀) → YOLO `[x_center, y_center, w, h]`(이미지 크기로 0~1 정규화). 경계 밖 좌표는 `[0,1]`로 클램프.
+- **더미 클래스 제거**: Roboflow COCO는 상위 supercategory(id 0)를 더미로 삽입한다. 어노테이션이 실제로 달린 카테고리만 채택해 `0..k-1`로 재매핑.
+- **이상 라벨 방어**: 5개 필드 미만 라벨 라인은 스킵. 이미지-라벨 파일명 stem 1:1 매칭 검증.
+- **train/val 분할** (`2_train_pipeline.py`): 라벨(.txt)이 실존하는 이미지만 대상. 고정 seed 셔플로 재현 가능, val 비율 기본 0.2, 최소 1장 val 보장. 원본 보존(copy), 재실행 멱등.
+- **경로 함정 회피**: ultralytics는 `data.yaml`의 상대 `path`를 전역 `datasets_dir` 기준으로 해석해 "Dataset not found"를 유발한다. 학습 시 절대경로를 박은 `data.generated.yaml`을 생성해 사용(사람이 편집하는 `data.yaml`은 클래스명 정의용으로 보존).
 
-```
-xr_autolearning/
-├─ config.py                    # 경로/클래스/임계값 공통 설정
-├─ 0_import_roboflow.py         # Roboflow YOLOv8 export → 파이프라인 구조 변환
-├─ 0_coco_to_yolo.py            # Roboflow COCO export → YOLO 포맷 변환
-├─ 1_auto_labeling.py           # base_model 로 자동 라벨링
-├─ 2_train_pipeline.py          # 학습 + ONNX 변환
-├─ 3_api_server.py              # FastAPI 추론 서버
-├─ 4_experiment_autolearn.py    # 오토러닝 효과 실증 실험(정답 숨기고 자동 채점)
-├─ data.yaml                    # 학습 데이터 정의(train/val 경로, 클래스명)
-├─ requirements.txt
-├─ models/
-│   ├─ base_model.pt            # (사용자 준비) 소량 데이터 초기 가중치
-│   ├─ new_model.pt             # 2단계 산출
-│   └─ new_model.onnx           # 2단계 산출
-├─ datasets/
-│   ├─ unlabeled_images/        # 1단계 입력
-│   ├─ images/                  # 라벨링된 이미지(train/val 분할)
-│   └─ labels/                  # YOLO .txt(train/val 분할)
-└─ exp_results/                 # 실증 실험 결과(report_*.json, round1_best.pt)
-```
+### 4.3 자동 라벨링 로직 (모델 작동 근거)
 
-## 4. 워크플로우가 어떻게 되는가
+- **신뢰도 임계값 0.6**: 자동 라벨은 conf ≥ 0.6만 채택. 재현율보다 **정밀도 우선**으로, 오라벨이 학습에 유입되는 것을 억제. 놓친 객체는 다음 라운드의 강해진 모델이 회수.
+- **좌표 변환 무손실**: `boxes.xywhn`(정규화 중심좌표)을 그대로 YOLO 라벨로 기록.
+- **재학습 전략(콜드 리스타트)**: self-training 비교 실험에서는 매 라운드 동일 사전학습 가중치(`yolov8n.pt`)에서 새로 학습. warm start는 자동 라벨 오류를 가중치에 고착(confirmation bias)시킬 수 있어 배제. 성능 향상의 동력을 "가중치 이어받기"가 아닌 "누적된 데이터"로 격리해 해석.
 
-첫 모델만 사람이 손라벨로 만들고, 그 뒤로는 "모델이 자동 라벨 → 그 라벨로 재학습"을 반복하며 같은 모델 자리(`new_model`)를 점점 더 센 것으로 갈아끼운다. 손라벨은 첫 라운드 한 번뿐이고, 이후 라벨링은 모델이 대신한다.
+### 4.4 하이퍼파라미터 및 검증 전략
 
-```
-범례   사람 = 사람이 직접   자동 = 스크립트가 자동   [폴더] 데이터   <모델> 가중치(.pt)
+| 항목 | 값 |
+|------|-----|
+| 모델 | YOLOv8n (사전학습 `yolov8n.pt`에서 전이학습) |
+| 입력 크기 | 640 |
+| epochs | 60 (실험), 기본 100 (운영 스크립트) |
+| batch | 32 (단일 GPU), 대용량 조건은 24 |
+| optimizer | auto (Ultralytics 자동 선택) |
+| best 선택 | `model.trainer.best` (val 기준 best.pt) |
 
-──────────────────────────────────────────────────────────────
- 0단계  부트스트랩 (딱 한 번. 사람 손이 들어가는 유일한 구간)
-──────────────────────────────────────────────────────────────
-   사람) 미라벨 이미지 소량(예: 100장)을 0부터 손라벨
-        │
-        ▼
-   [datasets/images] + [datasets/labels]   (순수 수기 정답)
-        │
-        ▼  자동) python 2_train_pipeline.py
-   <models/new_model.pt> 생성 (첫 모델)
-        │
-        ▼  사람) 이 모델을 "첫 라벨 생성기"로 승격 (파일 복사)
-   <models/base_model.pt>
+- **검증 분할**: 현재는 고정 seed 단일 홀드아웃(시드/풀/테스트). k-fold 교차검증은 미적용(한계점 및 향후 과제 참고).
+- **실험용 분할**(`4_experiment_autolearn.py`): 전체 라벨 데이터를 시드(손라벨 역할)/풀(라벨 숨김)/테스트(측정 전용)로 3분할. 테스트셋은 어떤 라운드 학습에도 미사용.
 
-──────────────────────────────────────────────────────────────
- 반복 루프  (오토러닝: 라운드마다 데이터↑, 모델 갱신 / 전 과정 자동)
-──────────────────────────────────────────────────────────────
-   사람) 새 미라벨 이미지 추가  (매 라운드 '다른' 사진들)
-        │
-        ▼
-   [datasets/unlabeled_images/]
-        │
-        ▼  자동) python 1_auto_labeling.py --weights <최신 모델>
-        │        conf >= 0.6 넘는 것만 자동으로 박스(신뢰도 필터)
-        ▼
-   [datasets/labels/]  (자동 라벨 .txt)
-        │
-        ▼  자동) python 2_train_pipeline.py
-        │        수기 + 자동 라벨 = '누적' 데이터로 재학습
-        ▼
-   <models/new_model.pt> (갱신, 더 강함) + <models/new_model.onnx>
-        │
-        └──► 이 최신 모델을 다음 라운드 --weights 로 투입 ──┐
-        ▲                                                    │
-        └────────────────────────────────────────────────────┘
-            라운드 반복 → 데이터 누적 → 모델 성능 상승
+## 5. 성능 평가 지표
 
-──────────────────────────────────────────────────────────────
- 배포  (모델이 충분히 좋아지면)
-──────────────────────────────────────────────────────────────
-   <models/new_model.pt (또는 .onnx)>
-        │
-        ▼  자동) python 3_api_server.py
-   POST /predict ──JSON(bbox x,y,w,h / class / conf)──► XR·프론트 팀
-```
+### 5.1 평가 방법
 
-| 구간 | 사람이 하는 일 | 자동(스크립트/모델) |
-|------|----------------|---------------------|
-| 0단계 | 소량 손라벨 1번 | `2_train_pipeline.py` 첫 모델 학습 |
-| 라벨 생성 | (안 함) | `1_auto_labeling.py` 로 최신 모델이 자동 박스(conf 필터) |
-| 재학습 | (안 함) | `2_train_pipeline.py` 로 누적 데이터 재학습 |
-| 다음 라운드 | 새 이미지 넣기 | 최신 모델을 생성기로 재사용 |
-| 배포 | API 호출만 | `3_api_server.py` 가 추론 서빙 |
+- **탐지 성능**: mAP50, mAP50-95 (Ultralytics `val`, 테스트셋 기준)
+- **오토러닝 효과**: 라운드0(초기 손라벨만) 대비 라운드1(+자동라벨) mAP 변화량(Δ)
+- **자동 라벨 품질**: 생성된 pseudo 라벨을 숨겨둔 정답과 클래스 일치 + IoU ≥ 0.5 그리디 매칭해 정밀도/재현율 산출 (사람 개입 0)
+- **재현성**: 데이터 분할·셔플에 고정 seed 사용
 
-주의: 쌓이는 것은 '서로 다른 새 이미지'다(데이터 폭을 넓히는 것). 같은 이미지를 박스만 바꿔 반복 축적하는 게 아니며, 이미지 1장당 최종 정답 라벨은 1개다.
+### 5.2 오토러닝 효과 (4개 조건)
 
-## 5. 산출물 구성
+| 실험 | 시드(손라벨) / 풀 / 테스트 | mAP50 (R0→R1) | ΔmAP50 | mAP50-95 (R0→R1) | 자동라벨 P/R |
+|------|---------------------------|----------------|--------|-------------------|--------------|
+| 2클래스, 시드15% | 149 / 647 / 199 | 0.835 → 0.859 | **+2.3%p** | 0.645 → 0.674 | 0.902 / 0.805 |
+| 2클래스, 시드10% | 99 / 697 / 199 | 0.819 → 0.839 | **+2.0%p** | 0.623 → 0.663 | 0.885 / 0.765 |
+| 3클래스 | 236 / 1,025 / 315 | 0.825 → 0.835 | **+1.0%p** | 0.649 → 0.677 | 0.901 / 0.715 |
+| 4클래스 전체 | 337 / 1,463 / 450 | 0.827 → 0.863 | **+3.6%p** | 0.649 → 0.680 | 0.871 / 0.726 |
 
-| 파일 | 역할 | 핵심 산출물 |
-|------|------|-------------|
-| `config.py` | 경로/클래스/임계값 공통 설정 | 전 스크립트 공유 상수 |
-| `1_auto_labeling.py` | base_model 로 자동 라벨링 | `datasets/labels/*.txt` (YOLO 포맷) |
-| `2_train_pipeline.py` | 학습 + ONNX 변환 | `models/new_model.pt`, `models/new_model.onnx` |
-| `3_api_server.py` | FastAPI 추론 서버 | `POST /predict` JSON 응답 |
-| `4_experiment_autolearn.py` | 오토러닝 효과 실증 | `exp_autolearn/report.json` (mAP 비교) |
+- 4개 조건 전부 라운드1 > 라운드0 → 오토러닝 효과가 클래스 수·시드 비율에 걸쳐 일관 재현
+- 시드 15%→10%(149→99장)로 줄여도 개선폭 유지 → 초기 손라벨 부담 절감 가능
+- 자동 라벨 정밀도 0.87~0.90 유지 → 사람 개입 없이도 학습에 쓸 만한 품질
 
-## 6. 실험 과정
+### 5.3 클래스별 mAP50-95 (4클래스, 라운드1)
 
-### 실험 설계 (정답 숨기고 자동 채점)
+| bolt | nut | gear | bearing |
+|------|-----|------|---------|
+| 0.710 | 0.751 | 0.570 | 0.690 |
 
-**정답 라벨을 알고 있는 공개 데이터에서 일부 라벨을 가려 "미라벨인 척"** 만들면, 자동 라벨링 정확도와 재학습 효과를 사람 개입 없이 채점할 수 있다. `4_experiment_autolearn.py` 가 이 실험을 자동화한다.
+- gear가 상대적으로 낮음(형태 다양성·유사 클래스 혼동). 클래스별 데이터 보강 대상.
 
-1. 전체 라벨 데이터를 무작위로 3분할한다: **시드**(손라벨 흉내, 학습에 라벨 사용) / **풀**(라벨 숨김, 이미지만 미라벨 취급) / **테스트**(측정 전용, 어떤 학습에도 안 씀)
-2. **라운드0**: 시드만으로 YOLOv8n을 학습 → 테스트 mAP 측정(오토러닝 하기 전 베이스라인)
-3. 라운드0 모델로 풀 이미지에 자동 라벨(pseudo label, conf≥0.6) 생성
-4. 생성된 자동 라벨을 **숨겨둔 정답과 IoU 매칭**해서 정밀도/재현율 채점
-5. **라운드1**: 시드 + 자동 라벨을 합쳐 재학습 → 테스트 mAP 측정(오토러닝 후)
-6. 라운드0 대비 라운드1의 mAP 변화가 오토러닝의 실제 효과다
+### 5.4 반증(라벨 품질의 중요성)
 
-공통 조건: YOLOv8n, imgsz 640, epochs 60, RTX 5090.
+- 자동 라벨과 이미지 파일명 매칭이 깨진 채 학습된 경우 mAP50 **−19.7%p** 폭락(전 객체를 배경으로 오학습). 라벨-이미지 정합성이 오토러닝 성패의 핵심 변수임을 동일 조건에서 확인.
+- Confusion Matrix, PR curve 등 상세 플롯은 학습 시 `runs/<name>/`에 자동 생성.
 
-이 실험은 conf≥0.6으로 걸러진 자동 라벨을 그대로 재학습에 넣는 전자동 조건이다. 정밀도/재현율은 생성된 자동 라벨을 숨겨둔 정답과 자동 대조해 계산한 값으로, 자동 라벨 자체의 신뢰도를 나타낸다.
+## 6. 설치 및 실행 방법
 
-### 실험 1. 2클래스(bolt·nut), 시드 15%
-
-- 클래스: bolt, nut
-- 분할: 시드 149장 / 풀 647장 / 테스트 199장
-- 결과: mAP50 **0.835 → 0.859 (+2.3%p)**, mAP50-95 0.645 → 0.674 (+2.9%p)
-- 자동 라벨 품질: 622장에 3,339개 박스 생성, 정밀도 0.902 / 재현율 0.805
-
-### 실험 2. 2클래스(bolt·nut), 시드 10%
-
-- 목적: 초기 손라벨을 더 줄여도(149장→99장) 효과가 유지되는지 확인
-- 분할: 시드 99장 / 풀 697장 / 테스트 199장
-- 결과: mAP50 **0.819 → 0.839 (+2.0%p)**, mAP50-95 0.623 → 0.663 (+4.0%p)
-- 자동 라벨 품질: 651장에 3,448개 박스 생성, 정밀도 0.885 / 재현율 0.765
-- 확인된 것: 시드를 34% 줄여도 개선폭이 거의 유지됨 → 초기 손라벨 부담을 낮춰도 방식이 유효
-
-### 실험 3. 3클래스(bolt·nut·gear)
-
-- 목적: 클래스 수를 늘려도(부품 종류 확장) 효과가 재현되는지 확인
-- 분할: 시드 236장 / 풀 1,025장 / 테스트 315장
-- 결과: mAP50 **0.825 → 0.835 (+1.0%p)**, mAP50-95 0.649 → 0.677 (+2.8%p)
-- 자동 라벨 품질: 962장에 4,401개 박스 생성, 정밀도 0.901 / 재현율 0.715
-
-### 실험 4. 4클래스 전체(bolt·nut·gear·bearing)
-
-- 목적: 데이터셋 전체 규모에서도 효과가 나는지 확인
-- 분할: 시드 337장 / 풀 1,463장 / 테스트 450장
-- 결과: mAP50 **0.827 → 0.863 (+3.6%p, 4개 실험 중 최대 개선)**, mAP50-95 0.649 → 0.680 (+3.1%p)
-- 자동 라벨 품질: 1,361장에 5,515개 박스 생성, 정밀도 0.871 / 재현율 0.726
-- 진행 중 겪은 문제: 데이터가 가장 큰 조건이라 멀티GPU(DDP) 학습 직후 GPU 메모리가 회수되지 않아 자동 라벨링 단계에서 OOM이 반복 발생. 배치 축소는 효과가 없었고, **단일 GPU 학습으로 전환**해 해결(YOLOv8n은 5090 한 장으로 충분).
-
-### 종합 결과
-
-| 실험 | 시드(손라벨 역할) | mAP50 (라운드0→1) | 변화 | pseudo 정밀도/재현율 |
-|------|-------------------|---------------------|------|----------------------|
-| 2클래스, 시드 15% | 149장 | 0.835 → 0.859 | **+2.3%p** | 0.902 / 0.805 |
-| 2클래스, 시드 10% | 99장 | 0.819 → 0.839 | **+2.0%p** | 0.885 / 0.765 |
-| 3클래스 | 236장 | 0.825 → 0.835 | **+1.0%p** | 0.901 / 0.715 |
-| 4클래스 전체 | 337장 | 0.827 → 0.863 | **+3.6%p** | 0.871 / 0.726 |
-
-- 4개 실험 전부 라운드1(오토러닝 후)이 라운드0(초기 손라벨만)보다 높음 → 오토러닝 효과가 클래스 수·시드 비율에 걸쳐 일관되게 재현됨
-- 자동 라벨 정밀도는 4개 실험 모두 0.87~0.90 수준 유지(사람 개입 0으로도 신뢰 가능한 수준)
-- 원본 리포트: `exp_results/report_*.json`, 4클래스 최종 모델: `exp_results/round1_best.pt`
-
-### 반증 실험 (라벨 품질이 왜 중요한지)
-
-실험 중 스크립트 버그로 자동 라벨과 이미지의 짝이 깨진 채 학습된 사례가 있었다. 이때는 mAP50이 **−19.7%p** 폭락했다(부품을 전부 "배경"으로 잘못 학습). 자동 라벨이 이미지와 정확히 매칭되는지(라벨 품질)가 오토러닝 성패를 가르는 핵심임을 같은 조건에서 보여주는 반증 데이터로 남긴다.
-
-### 실험 중 발견한 실무 이슈
-
-- **ultralytics 8.4 함정**: `predict(source=리스트)` 결과의 `r.path` 가 원본 파일명 대신 `image0` 같은 가짜 이름을 반환한다. pseudo 라벨 파일명이 이미지와 안 맞게 되어 위 반증 실험의 원인이 됐다. 입력 리스트와 `zip` 으로 순서 매핑해 해결(`1_auto_labeling.py`, `4_experiment_autolearn.py` 반영).
-- **DDP(멀티GPU) 학습 후 메모리 미회수**: 클래스가 많아 데이터가 큰 조건(4클래스)에서 `device=0,1` DDP 학습 후 GPU 메모리가 프로세스에 남아 다음 단계(자동 라벨링)에서 OOM 발생. 배치를 줄이는 미봉책은 재발했고, YOLOv8n은 GPU 한 장으로 충분해 단일 GPU 학습으로 전환해 근본 해결.
-
-## 7. 사전 준비
+### 6.1 환경 설정
 
 ```bash
 pip install -r requirements.txt
-# GPU 사용 시 torch 는 CUDA 버전 맞춰 별도 설치 권장
+# GPU 사용 시 torch 는 CUDA 버전에 맞춰 별도 설치
+#   RTX 5090(Blackwell): pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+#   그 외:               pip install torch --index-url https://download.pytorch.org/whl/cu124
 ```
 
-- `models/base_model.pt` 를 직접 넣는다.
-- `datasets/unlabeled_images/` 에 미라벨 이미지를 넣는다.
-- `data.yaml` 의 `names` 를 base_model 클래스와 동일하게 맞춘다.
-  - 확인: `python -c "from ultralytics import YOLO; print(YOLO('models/base_model.pt').names)"`
+경로·임계값·하이퍼파라미터는 별도 `.env` 없이 `config.py` 한 곳에서 관리(`BASE_MODEL`, `AUTO_LABEL_CONF`, `IMG_SIZE`, `SERVE_MODEL` 등).
 
-## 8. 실행 순서 (입력 → 출력)
+### 6.2 데이터 준비
 
-### 1단계. 자동 라벨링
 ```bash
-python 1_auto_labeling.py
+# Roboflow에서 COCO 포맷 다운로드 후 압축 해제 → COCO를 YOLO 구조로 변환
+python 0_coco_to_yolo.py --src ./mechanical-parts-coco --dst ./mechanical-parts-yolo
 ```
-- 입력: `datasets/unlabeled_images/` + `models/base_model.pt`
-- 처리: 추론 후 confidence ≥ 0.6 만 채택
-- 출력: `datasets/labels/*.txt` (YOLO 정규화 좌표), `datasets/images/*` 복사
-- 옵션: `--conf 0.7`, `--no-copy-images`, `--keep-empty`
 
-### 2단계. 학습 + ONNX 변환
+### 6.3 실행 순서
+
 ```bash
-python 2_train_pipeline.py
-```
-- 입력: `datasets/images` + `datasets/labels`, `data.yaml`
-- 처리: train/val 자동 분할 → 학습 → best.pt 추출 → ONNX export
-- 출력: `models/new_model.pt`, `models/new_model.onnx`, `data.generated.yaml`(자동 생성)
-- 옵션: `--epochs 50 --batch 8 --device 0`
-- 참고: 학습 시 `data.yaml` 의 `path` 를 절대경로로 고정한 `data.generated.yaml` 을 자동 생성해 사용한다. ultralytics 가 상대 `path` 를 전역 datasets_dir 기준으로 해석해 "Dataset not found" 가 나는 문제를 막는다. 사람이 편집하는 `data.yaml`(클래스명)은 그대로 둔다.
+# 1) 자동 라벨링: 미라벨 이미지 → conf≥0.6 YOLO 라벨
+python 1_auto_labeling.py --weights models/base_model.pt
 
-### 3단계. 추론 API 서버
+# 2) 학습 + ONNX 변환: train/val 분할 → 학습 → best.pt/onnx
+python 2_train_pipeline.py --epochs 100 --device 0
+
+# 3) 추론 API 서버
+python 3_api_server.py       # http://0.0.0.0:8000
+curl -X POST -F "file=@sample.jpg" "http://localhost:8000/predict?conf=0.3"
+```
+
+### 6.4 오토러닝 효과 재현 실험
+
 ```bash
-python 3_api_server.py
+# 정답을 숨기고 자동 채점: 라운드0 vs 라운드1 mAP + 자동라벨 P/R
+python 4_experiment_autolearn.py --src ./mechanical-parts-yolo --classes bolt nut --epochs 60
+# 결과: exp_autolearn/report.json (exp_results/ 에 조건별 리포트 보관)
 ```
-- 서버: `http://0.0.0.0:8000`
-- 테스트:
-  ```bash
-  curl -X POST -F "file=@sample.jpg" "http://localhost:8000/predict?conf=0.3"
-  ```
 
-## 9. API 명세
+API 응답 예시:
 
-| 항목 | 내용 |
-|------|------|
-| 엔드포인트 | `POST /predict` |
-| 요청 | multipart/form-data, 필드명 `file` |
-| 쿼리(옵션) | `conf`(기본 0.25), `iou`(기본 0.45) |
-| 상태확인 | `GET /health` |
-
-응답 예시:
 ```json
 {
   "filename": "part.jpg",
@@ -270,11 +214,38 @@ python 3_api_server.py
 }
 ```
 
-- `bbox` 좌표 약속: `x,y` = 박스 좌상단 픽셀, `w,h` = 너비/높이 픽셀. XR/프론트엔드가 그대로 사각형을 그릴 수 있는 형태.
+- `bbox` = 좌상단 `x,y` + `w,h`(픽셀). XR/프론트가 그대로 렌더 가능.
 
-## 10. 설계 메모
+## 7. 한계점 및 추후 개선 과제
 
-- 3개 스크립트가 `config.py` 한 곳의 경로/임계값을 공유한다. 경로 변경은 config 한 곳만 수정.
-- 서빙 모델은 `config.SERVE_MODEL` 로 `.pt`/`.onnx` 전환 가능. ONNX 서빙은 `onnxruntime` 필요.
-- ONNX export 는 `opset=12`, `dynamic=False`, `simplify=True` 로 비파이썬(Unity/C#) 호환성을 우선했다.
-- 학습 시 train/val 을 실제로 분할해 동일 데이터 평가(과적합 착시)를 방지한다.
+**한계점**
+
+- **도메인 갭**: 실제 수리온 부품 데이터 부재로 공개 기계부품 데이터로 대체 검증. 실제 부품·조명·배경에서의 성능은 미검증.
+- **검증 방식**: 고정 seed 단일 홀드아웃 분할. k-fold 교차검증 미적용으로 지표의 신뢰구간(분산) 미산출.
+- **라운드 깊이**: 라운드1까지만 측정. 다회 라운드 누적 시 수렴·포화 지점 미검증.
+- **자동 라벨 재현율**: 0.71~0.81 수준으로 conf 0.6에서 놓치는 객체 존재. 현재 파이프라인은 자동 라벨을 무검수로 학습에 투입.
+- **데이터 규모**: 수백~천 장대. 실제 운영 규모(수만 장) 및 클래스 불균형(gear 저조) 미검증.
+- **리소스 병목**: 멀티GPU(DDP) 학습 후 메모리 미회수로 대용량 조건 OOM 발생 → 단일 GPU로 우회(다중 GPU 스케일아웃 미확보).
+
+**추후 개선 과제(Next steps)**
+
+- 실제 수리온 부품 데이터 확보 후 `data.yaml` 클래스 교체 및 재검증
+- k-fold 교차검증 도입, 다회 라운드 누적 실험으로 수렴 곡선 확보
+- conf 임계값·시드 비율 스윕으로 정밀도-재현율 트레이드오프 최적화
+- 저성능 클래스(gear) 표적 데이터 증강 및 클래스 불균형 보정
+- 합성 데이터(CAD→다각도 렌더링) 자동 어노테이션으로 도메인 부트스트랩
+- ONNX 서빙의 Unity/HMD 실기기 연동 및 지연·정확도 검증
+
+---
+
+**부록: 스크립트 구성**
+
+| 파일 | 역할 |
+|------|------|
+| `config.py` | 경로·클래스·임계값·하이퍼파라미터 공통 설정 |
+| `0_coco_to_yolo.py` | Roboflow COCO → YOLO 포맷 변환 |
+| `0_import_roboflow.py` | Roboflow YOLOv8 export → 파이프라인 구조 정리 |
+| `1_auto_labeling.py` | base_model로 자동 라벨링(conf 필터) |
+| `2_train_pipeline.py` | train/val 분할 → 학습 → ONNX export |
+| `3_api_server.py` | FastAPI 추론 서버 |
+| `4_experiment_autolearn.py` | 오토러닝 효과 실증(정답 숨기고 자동 채점) |
