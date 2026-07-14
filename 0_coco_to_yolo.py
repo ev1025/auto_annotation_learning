@@ -76,6 +76,10 @@ def main():
     src, dst = Path(args.src).resolve(), Path(args.dst).resolve()
 
     # 카테고리 결정: train JSON 기준, '어노테이션이 실제로 달린' 카테고리만 채택.
+    # Roboflow COCO 는 id 0 에 박스가 하나도 없는 더미 카테고리(supercategory 자리)를
+    # 자동으로 끼워 넣는다. YOLO 는 클래스 번호가 0부터 빈틈없이 이어져야 하므로,
+    # 더미를 버리고 나머지를 0..k-1 로 다시 번호 매긴다(번호만 당겨지고 부품은 그대로).
+    # 예) 이 데이터: 0(더미)=삭제, 1 bearing->0, 2 bolt->1, 3 gear->2, 4 nut->3
     train_json = json.loads((src / "train" / "_annotations.coco.json").read_text(encoding="utf-8"))
     used_ids = {a["category_id"] for a in train_json["annotations"]}
     cats = [c for c in train_json["categories"] if c["id"] in used_ids]
