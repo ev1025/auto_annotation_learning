@@ -37,23 +37,7 @@ flowchart TD
     C --> E --> F
 ```
 
-<br>
-
-**MLOps 자동화 루프** (zero-manual, 첫 데이터 확보 이후 전 과정 무인)
-
-| 단계 | 주체 | 작업 (스크립트) | 입력 → 출력 |
-|------|------|-----------------|-------------|
-| ⓪ 부트스트랩 (1회) | 외부 | 3D 렌더 합성 데이터 투입 | 이미지+어노테이션 → `datasets/images`·`labels` |
-| | 자동 | 첫 모델 학습 (`2_train_pipeline.py`) | 라벨셋 → `new_model.pt` |
-| | 자동 | 첫 라벨 생성기로 승격 | `new_model.pt` → `base_model.pt` |
-| ① 라벨 생성 | 외부 | 새 미라벨 이미지 투입 | 현장 이미지 → `datasets/unlabeled_images` |
-| | 자동 | 자동 라벨링 (`1_auto_labeling.py`, conf≥0.6) | 미라벨 이미지 → `datasets/labels` 자동 라벨 |
-| ② 재학습 | 자동 | 누적 데이터 재학습 (`2_train_pipeline.py`) | 기존+자동 라벨 → `new_model.pt` 갱신 |
-| ③ 루프 | 자동 | 갱신된 모델을 ①의 생성기로 재투입 | 라운드마다 데이터↑ → 성능↑ |
-| ④ 배포 | 자동 | 추론 서빙 (`3_api_server.py`) | `new_model.pt`/`.onnx` → REST API (`/predict`) |
-
-- 사람 개입 = ⓪·①의 "데이터 투입"뿐. 라벨링·학습·배포는 전부 스크립트가 수행
-- ①~③이 반복 루프: 돌수록 라벨 데이터가 누적되고 모델이 강해짐 (효과 실측은 5.3)
+- 사람 개입은 데이터 투입뿐, 라벨링·학습·배포는 전부 스크립트가 수행 (단계별 실행 명령은 6장, 루프 효과 실측은 5.3)
 
 **컴포넌트 연동**
 
@@ -326,10 +310,14 @@ python scripts/0_import_render.py --src ./render_delivery --classes bolt nut gea
 ### 6.3 실행 순서 (자동화 루프)
 
 ```bash
-# 1) 자동 라벨링: 미라벨 이미지 → conf≥0.6 YOLO 라벨
+# 0) 부트스트랩(1회): 반입된 라벨셋으로 첫 모델 학습 후 라벨 생성기로 승격
+python scripts/2_train_pipeline.py --epochs 100 --device 0
+cp models/new_model.pt models/base_model.pt
+
+# 1) 자동 라벨링: 미라벨 이미지(datasets/unlabeled_images) → conf≥0.6 YOLO 라벨
 python scripts/1_auto_labeling.py --weights models/base_model.pt
 
-# 2) 학습 + ONNX 변환: train/val 분할 → 학습 → best.pt/onnx
+# 2) 재학습 + ONNX 변환: 누적 라벨로 학습 → best.pt/onnx  (1↔2 반복 = 오토러닝 루프)
 python scripts/2_train_pipeline.py --epochs 100 --device 0
 
 # 3) 추론 API 서버
