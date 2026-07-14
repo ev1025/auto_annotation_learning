@@ -81,19 +81,20 @@
 
 ```
 xr_autolearning/
-├─ config.py                  # 경로·클래스·임계값·하이퍼파라미터 공통 설정
-├─ 0_coco_to_yolo.py          # Roboflow COCO → YOLO 포맷 변환 (샘플 데이터용)
-├─ 0_import_render.py         # 3D 렌더 데이터 반입 (클래스 등록·라벨 검증·배치)
-├─ 0_import_roboflow.py       # Roboflow YOLOv8 export 정리
-├─ 1_auto_labeling.py         # 자동 라벨링 (conf 필터, --tta, --conf-per-class)
-├─ 2_train_pipeline.py        # train/val 분할 → 학습 → ONNX export
-├─ 3_api_server.py            # FastAPI 추론 서버
-├─ 4_experiment_autolearn.py  # 오토러닝 효과 실증 (정답 숨기고 자동 채점)
-├─ data.yaml                  # 클래스 정의(names)·데이터 경로
+├─ data.yaml                     # 클래스 정의(names)·데이터 경로
 ├─ requirements.txt
-├─ models/                    # base_model.pt(초기 생성기) / new_model.pt·onnx(학습 산출)
-├─ datasets/                  # images/ labels/ unlabeled_images/
-└─ exp_results/               # 실험 리포트 (report_*.json)
+├─ scripts/                      # 파이프라인 스크립트 (번호 = 실행 순서)
+│  ├─ config.py                  # 경로·클래스·임계값·하이퍼파라미터 공통 설정
+│  ├─ 0_coco_to_yolo.py          # Roboflow COCO → YOLO 포맷 변환 (샘플 데이터용)
+│  ├─ 0_import_render.py         # 3D 렌더 데이터 반입 (클래스 등록·라벨 검증·배치)
+│  ├─ 0_import_roboflow.py       # Roboflow YOLOv8 export 정리
+│  ├─ 1_auto_labeling.py         # 자동 라벨링 (conf 필터, --tta, --conf-per-class)
+│  ├─ 2_train_pipeline.py        # train/val 분할 → 학습 → ONNX export
+│  ├─ 3_api_server.py            # FastAPI 추론 서버
+│  └─ 4_experiment_autolearn.py  # 오토러닝 효과 실증 (정답 숨기고 자동 채점)
+├─ models/                       # base_model.pt(초기 생성기) / new_model.pt·onnx(학습 산출)
+├─ datasets/                     # images/ labels/ unlabeled_images/
+└─ exp_results/                  # 실험 리포트 (report_*.json)
 ```
 
 <br>
@@ -328,24 +329,24 @@ pip install -r requirements.txt
 
 ```bash
 # (검증용) Roboflow COCO 데이터를 YOLO 구조로 변환
-python 0_coco_to_yolo.py --src ./mechanical-parts-coco --dst ./mechanical-parts-yolo
+python scripts/0_coco_to_yolo.py --src ./mechanical-parts-coco --dst ./mechanical-parts-yolo
 
 # (운영용) 3D 렌더 데이터 반입: 클래스 등록(나열 순서=번호) + 라벨 검증 + 배치
-python 0_import_render.py --src ./render_delivery --classes bolt nut gear --dry-run  # 검증만
-python 0_import_render.py --src ./render_delivery --classes bolt nut gear           # 실제 반입
+python scripts/0_import_render.py --src ./render_delivery --classes bolt nut gear --dry-run  # 검증만
+python scripts/0_import_render.py --src ./render_delivery --classes bolt nut gear           # 실제 반입
 ```
 
 ### 6.3 실행 순서 (자동화 루프)
 
 ```bash
 # 1) 자동 라벨링: 미라벨 이미지 → conf≥0.6 YOLO 라벨
-python 1_auto_labeling.py --weights models/base_model.pt
+python scripts/1_auto_labeling.py --weights models/base_model.pt
 
 # 2) 학습 + ONNX 변환: train/val 분할 → 학습 → best.pt/onnx
-python 2_train_pipeline.py --epochs 100 --device 0
+python scripts/2_train_pipeline.py --epochs 100 --device 0
 
 # 3) 추론 API 서버
-python 3_api_server.py       # http://0.0.0.0:8000
+python scripts/3_api_server.py       # http://0.0.0.0:8000
 curl -X POST -F "file=@sample.jpg" "http://localhost:8000/predict?conf=0.3"
 ```
 
@@ -353,7 +354,7 @@ curl -X POST -F "file=@sample.jpg" "http://localhost:8000/predict?conf=0.3"
 
 ```bash
 # 정답을 숨기고 자동 채점: 라운드0 vs 라운드1 mAP + 자동라벨 P/R
-python 4_experiment_autolearn.py --src ./mechanical-parts-yolo --classes bolt nut --epochs 60
+python scripts/4_experiment_autolearn.py --src ./mechanical-parts-yolo --classes bolt nut --epochs 60
 # 결과: exp_autolearn/report.json (exp_results/ 에 조건별 리포트 보관)
 ```
 

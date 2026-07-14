@@ -8,8 +8,9 @@
 """
 from pathlib import Path
 
-# 이 파일 기준 절대경로. 어느 작업 디렉토리에서 실행해도 경로가 깨지지 않게 한다.
-BASE_DIR = Path(__file__).resolve().parent
+# 프로젝트 루트 절대경로(이 파일은 scripts/ 안에 있으므로 한 단계 위).
+# 어느 작업 디렉토리에서 실행해도 경로가 깨지지 않게 한다.
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 # --- 모델 가중치 ---
 MODELS_DIR = BASE_DIR / "models"
