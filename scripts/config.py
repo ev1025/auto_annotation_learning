@@ -28,6 +28,7 @@ DATA_YAML = BASE_DIR / "data.yaml"
 # --- 임계값 ---
 AUTO_LABEL_CONF = 0.6   # 자동 라벨링: 이 값 이상만 '정답'으로 신뢰
 API_CONF = 0.25         # 추론 API 기본 confidence 임계값
+API_IOU = 0.45          # 추론 API 기본 NMS IoU 임계값
 
 # --- 학습 하이퍼파라미터 기본값 ---
 PRETRAINED = "yolov8n.pt"  # base_model 이 없을 때 전이학습 시작점(자동 다운로드). n=경량, 데모/엣지용

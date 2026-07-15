@@ -24,6 +24,7 @@ from pathlib import Path
 import yaml  # ultralytics 가 끌어오므로 별도 설치 불필요
 
 import config
+from dataset_utils import normalize_names, register_classes
 
 
 def find_split(src, *names):
@@ -36,26 +37,24 @@ def find_split(src, *names):
 
 
 def load_names(src):
-    """Roboflow data.yaml 의 names 를 {id: name} dict 로 정규화해 반환.
-
-    Roboflow 는 names 를 리스트(['a','b'])로 주기도, dict(0: a)로 주기도 한다. 둘 다 처리.
-    """
+    """Roboflow data.yaml 의 names 를 {id: name} dict 로 정규화해 반환."""
     y = src / "data.yaml"
     if not y.exists():
         print(f"[경고] {y} 없음 -> 클래스명 동기화 건너뜀")
         return None
-    data = yaml.safe_load(y.read_text(encoding="utf-8"))
-    names = data.get("names")
-    if isinstance(names, list):
-        return {i: n for i, n in enumerate(names)}
-    if isinstance(names, dict):
-        return {int(k): v for k, v in names.items()}
-    print("[경고] data.yaml 에서 names 를 해석하지 못함")
-    return None
+    names = normalize_names(yaml.safe_load(y.read_text(encoding="utf-8")).get("names"))
+    if not names:
+        print("[경고] data.yaml 에서 names 를 해석하지 못함")
+    return names
 
 
-def copy_pairs(split_dir, images_out, labels_out):
-    """split_dir/images, split_dir/labels 의 파일을 대상 폴더로 복사(짝 유지)."""
+def copy_split(split_dir, images_out, labels_out):
+    """split_dir 의 이미지를 images_out 으로, 짝 라벨을 labels_out 으로 복사. 복사 장수 반환.
+
+    labels_out 을 어디로 주느냐로 용도가 갈린다:
+    - 라벨풀: datasets/labels (학습이 바로 사용)
+    - holdout: datasets/_gt_holdout (이미지는 미라벨 취급, 정답은 채점용으로 숨겨 보관)
+    """
     images_out.mkdir(parents=True, exist_ok=True)
     labels_out.mkdir(parents=True, exist_ok=True)
     n = 0
@@ -68,34 +67,6 @@ def copy_pairs(split_dir, images_out, labels_out):
             shutil.copy2(lbl, labels_out / lbl.name)
         n += 1
     return n
-
-
-def copy_images_only(split_dir, images_out, gt_out):
-    """holdout: 이미지는 unlabeled 로, 라벨은 정답 보관소로 분리 복사(채점용)."""
-    images_out.mkdir(parents=True, exist_ok=True)
-    gt_out.mkdir(parents=True, exist_ok=True)
-    n = 0
-    for img in sorted((split_dir / "images").glob("*")):
-        if img.suffix.lower() not in config.IMG_EXTS:
-            continue
-        shutil.copy2(img, images_out / img.name)  # 라벨은 일부러 안 옮김(= 미라벨 취급)
-        lbl = split_dir / "labels" / f"{img.stem}.txt"
-        if lbl.exists():
-            shutil.copy2(lbl, gt_out / lbl.name)   # 정답은 따로 숨겨 보관
-        n += 1
-    return n
-
-
-def sync_data_yaml_names(names):
-    """우리 data.yaml 의 names 를 Roboflow 클래스명으로 교체(train/val 경로는 유지)."""
-    if not names:
-        return
-    cfg = yaml.safe_load(config.DATA_YAML.read_text(encoding="utf-8"))
-    cfg["names"] = names
-    config.DATA_YAML.write_text(
-        yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False), encoding="utf-8"
-    )
-    print(f"[동기화] data.yaml names <- {names}")
 
 
 def main():
@@ -115,8 +86,10 @@ def main():
     valid = find_split(src, "valid", "val")
     test = find_split(src, "test")
 
-    # 1) 클래스명 동기화
-    sync_data_yaml_names(load_names(src))
+    # 1) 클래스명 등록(기존 data.yaml 과 클래스가 다르면 안전하게 중단)
+    names = load_names(src)
+    if names:
+        register_classes(names)
 
     # 2) holdout(미라벨 대상) 결정
     holdout = test if args.holdout == "test" else valid
@@ -132,13 +105,13 @@ def main():
     for sp in labeled_splits:
         if sp is None:
             continue
-        c = copy_pairs(sp, config.IMAGES_DIR, config.LABELS_DIR)
+        c = copy_split(sp, config.IMAGES_DIR, config.LABELS_DIR)
         total_labeled += c
         print(f"[라벨풀] {sp.name}: {c}장 -> {config.IMAGES_DIR.name}/{config.LABELS_DIR.name}")
 
-    # 4) holdout -> unlabeled + 정답 보관
+    # 4) holdout -> 이미지는 unlabeled 로, 정답 라벨은 채점용 보관소로
     gt_out = config.DATASETS_DIR / "_gt_holdout"
-    c = copy_images_only(holdout, config.UNLABELED_DIR, gt_out)
+    c = copy_split(holdout, config.UNLABELED_DIR, gt_out)
     print(f"[미라벨] {holdout.name}: {c}장 -> {config.UNLABELED_DIR.name} (정답은 {gt_out.name} 에 보관)")
 
     print(f"\n완료: 라벨풀 {total_labeled}장 / 미라벨 {c}장")

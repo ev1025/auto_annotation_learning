@@ -20,6 +20,7 @@ import yaml  # ultralytics 가 의존성으로 끌어오므로 별도 설치 불
 from ultralytics import YOLO
 
 import config
+from pseudo_utils import free_cuda
 
 
 def build_runtime_data_yaml():
@@ -116,6 +117,10 @@ def train(args):
     config.MODELS_DIR.mkdir(parents=True, exist_ok=True)
     shutil.copy2(best, config.NEW_MODEL_PT)
     print(f"[학습] best.pt -> {config.NEW_MODEL_PT}")
+
+    # 학습 직후 GPU 메모리를 회수하고 다음 단계(변환용 모델 로드)로 넘어간다(OOM 방지).
+    del model
+    free_cuda()
 
     # 4) ONNX 변환.
     #    Unity/C# 등 비파이썬 런타임에서 onnxruntime 으로 바로 구동할 수 있게 한다.

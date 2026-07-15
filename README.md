@@ -63,7 +63,8 @@ xr_autolearning/
 │  ├─ 2_train_pipeline.py        # train/val 분할 → 학습 → ONNX export
 │  ├─ 3_api_server.py            # FastAPI 추론 서버
 │  ├─ 4_experiment_autolearn.py  # 오토러닝 효과 실증 (정답 숨기고 자동 채점)
-│  └─ pseudo_utils.py            # 자동 라벨링 공용 유틸 (IoU·박스 변환·TTA 일관성·클래스별 임계값)
+│  ├─ dataset_utils.py           # 데이터셋 등록 공용 (names 정규화·data.yaml 등록 가드)
+│  └─ pseudo_utils.py            # 자동 라벨링 공용 (박스 선택 단일 구현: 추론·TTA·conf 필터)
 ├─ models/                       # base_model.pt(초기 생성기) / new_model.pt·onnx(학습 산출)
 ├─ datasets/                     # images/ labels/ unlabeled_images/
 └─ exp_results/                  # 실험 리포트 (report_*.json)

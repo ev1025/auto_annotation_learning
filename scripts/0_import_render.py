@@ -24,9 +24,8 @@ import shutil
 from collections import Counter
 from pathlib import Path
 
-import yaml
-
 import config
+from dataset_utils import register_classes
 
 
 def load_classes(args):
@@ -45,7 +44,10 @@ def load_classes(args):
 
 
 def find_pairs(src):
-    """(이미지, 라벨) 짝 목록. labels/ 하위 또는 이미지 옆의 같은 stem .txt 를 찾는다."""
+    """(이미지, 라벨) 짝 목록과 라벨 없는 이미지 목록을 반환.
+
+    라벨은 labels/ 하위 또는 이미지 옆의 같은 stem .txt 에서 찾는다.
+    """
     pairs, missing = [], []
     imgs = [p for p in sorted(src.rglob("*"))
             if p.suffix.lower() in config.IMG_EXTS and "labels" not in p.parts]
@@ -53,8 +55,11 @@ def find_pairs(src):
         cands = [img.with_suffix(".txt"),                       # 이미지 옆
                  src / "labels" / f"{img.stem}.txt"]            # labels/ 하위
         lbl = next((c for c in cands if c.exists()), None)
-        (pairs if lbl else missing).append((img, lbl))
-    return pairs, [m[0] for m in missing]
+        if lbl:
+            pairs.append((img, lbl))
+        else:
+            missing.append(img)
+    return pairs, missing
 
 
 def validate_label(lbl_path, n_classes):
@@ -80,28 +85,6 @@ def validate_label(lbl_path, n_classes):
         vals = [min(max(v, 0.0), 1.0) for v in vals]  # 경계 살짝 벗어난 좌표는 클램프
         good.append((cid, vals))
     return good, errors
-
-
-def sync_data_yaml(class_names):
-    """data.yaml 의 names 를 반입 클래스로 등록. 기존과 다르면 멈추고 확인 요구."""
-    cfg = {}
-    if config.DATA_YAML.exists():
-        cfg = yaml.safe_load(config.DATA_YAML.read_text(encoding="utf-8")) or {}
-        old = cfg.get("names")
-        old_names = (list(old.values()) if isinstance(old, dict) else old) if old else None
-        if old_names and [n.lower() for n in old_names] != list(class_names.values()):
-            raise SystemExit(
-                f"[중단] data.yaml 에 이미 다른 클래스가 등록돼 있습니다.\n"
-                f"      기존: {old_names}\n"
-                f"      반입: {list(class_names.values())}\n"
-                f"      기존 데이터셋과 섞이면 라벨 번호가 꼬입니다. data.yaml/datasets 를 정리 후 재실행하세요.")
-    cfg.setdefault("path", "./datasets")
-    cfg.setdefault("train", "images/train")
-    cfg.setdefault("val", "images/val")
-    cfg["names"] = class_names
-    config.DATA_YAML.write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False),
-                                encoding="utf-8")
-    print(f"[등록] data.yaml names <- {class_names}")
 
 
 def main():
@@ -148,7 +131,7 @@ def main():
         return
 
     # data.yaml 등록 + 표준 위치로 복사
-    sync_data_yaml(class_names)
+    register_classes(class_names)
     config.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     config.LABELS_DIR.mkdir(parents=True, exist_ok=True)
     for img, good in validated:

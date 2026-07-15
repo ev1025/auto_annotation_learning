@@ -51,7 +51,9 @@ async def lifespan(app: FastAPI):
         )
     print(f"[서버] 모델 로드: {model_path}")
     STATE["model"] = YOLO(model_path)        # .pt / .onnx 모두 로드 가능
-    STATE["names"] = STATE["model"].names    # {class_id: 'class_name'}
+    # 워밍업 1회: 첫 실제 요청이 CUDA 초기화/그래프 빌드 비용(수 초)을 물지 않게 한다.
+    STATE["model"].predict(source=Image.new("RGB", (config.IMG_SIZE, config.IMG_SIZE)),
+                           verbose=False)
     yield
     STATE.clear()
 
@@ -62,21 +64,25 @@ app = FastAPI(title="XR AutoLearning Parts Detector", version="1.0", lifespan=li
 @app.get("/health")
 def health():
     """서버가 살아 있고 모델이 로드됐는지, 어떤 클래스를 아는지 반환."""
+    model = STATE.get("model")
     return {
         "status": "ok",
         "model": str(config.SERVE_MODEL),
-        "classes": STATE.get("names", {}),
+        "classes": model.names if model else {},
     }
 
 
+# (주의) async def 로 선언하면 동기 함수인 model.predict() 가 이벤트루프를 통째로
+# 막아 동시 요청이 전부 직렬화된다. 일반 def 로 두면 FastAPI 가 스레드풀에서
+# 실행해 추론 중에도 다른 요청(/health 등)을 받을 수 있다.
 @app.post("/predict")
-async def predict(
+def predict(
     file: UploadFile = File(...),
     conf: float = Query(config.API_CONF, ge=0.0, le=1.0, description="confidence 임계값"),
-    iou: float = Query(0.45, ge=0.0, le=1.0, description="NMS IoU 임계값"),
+    iou: float = Query(config.API_IOU, ge=0.0, le=1.0, description="NMS IoU 임계값"),
 ):
     """업로드 이미지를 추론해 탐지 결과를 JSON 으로 반환한다."""
-    raw = await file.read()
+    raw = file.file.read()
     if not raw:
         raise HTTPException(status_code=400, detail="빈 파일입니다.")
 
@@ -89,14 +95,14 @@ async def predict(
         raise HTTPException(status_code=400, detail="이미지를 열 수 없습니다(지원 형식 확인).")
 
     model = STATE["model"]
-    names = STATE["names"]
+    names = model.names
 
     # 단일 이미지 추론. verbose=False 로 콘솔 로그를 끈다.
     results = model.predict(source=image, conf=conf, iou=iou, verbose=False)
     r = results[0]
 
     detections = []
-    if r.boxes is not None and len(r.boxes) > 0:
+    if r.boxes is not None:
         # xyxy(원본 이미지 픽셀 좌표) -> (x, y, w, h) 좌상단+너비/높이 로 변환.
         xyxy = r.boxes.xyxy.cpu().numpy()
         clss = r.boxes.cls.cpu().numpy().astype(int)

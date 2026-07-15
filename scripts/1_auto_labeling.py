@@ -26,11 +26,10 @@ import argparse
 import shutil
 from pathlib import Path
 
-from PIL import Image
 from ultralytics import YOLO
 
 import config
-from pseudo_utils import boxes_of, consistent, parse_conf_per_class
+from pseudo_utils import parse_conf_per_class, predict_boxes
 
 
 def parse_args():
@@ -67,8 +66,6 @@ def autolabel(args):
     # 모델은 1회만 로드하고 모든 이미지에 재사용(반복 로드는 느리다).
     model = YOLO(str(weights))
     conf_per_class = parse_conf_per_class(args.conf_per_class, model.names)
-    # 추론은 가장 낮은 임계값으로 하고, 채택 단계에서 클래스별 임계값을 적용한다.
-    min_conf = min([args.conf, *conf_per_class.values()]) if conf_per_class else args.conf
 
     # 처리 대상 이미지 수집(하위 폴더까지 재귀 탐색).
     imgs = [p for p in sorted(src.rglob("*")) if p.suffix.lower() in config.IMG_EXTS]
@@ -76,38 +73,12 @@ def autolabel(args):
         print(f"[경고] {src} 안에 이미지가 없습니다.")
         return
 
-    def predict_one_image_boxes():
-        """이미지별 (경로, 채택 박스 목록) 제너레이터. TTA 여부에 따라 경로가 갈린다."""
-        if not args.tta:
-            # stream=True: 결과를 제너레이터로 받아 한 장씩 처리 -> 대량 이미지에서도 메모리 누적 없음.
-            # (주의) 리스트 source 에서 r.path 는 'image0' 같은 가짜 이름이 될 수 있다(ultralytics 8.4).
-            # stream 제너레이터는 입력 순서를 보존하므로 입력 리스트와 zip 으로 원본 경로를 짝짓는다.
-            results = model.predict(source=[str(p) for p in imgs], conf=min_conf,
-                                    stream=True, verbose=False)
-            for img_path, r in zip(imgs, results):
-                yield img_path, boxes_of(r)
-        else:
-            # TTA: 이미지당 3뷰(원본/좌우반전/0.8배 축소)를 한 배치로 추론.
-            # 정규화 좌표(xywhn)라 축소 뷰는 좌표 보정이 필요 없고, 반전 뷰만 cx 를 복원한다.
-            for img_path in imgs:
-                im = Image.open(img_path).convert("RGB")
-                variants = [im,
-                            im.transpose(Image.FLIP_LEFT_RIGHT),
-                            im.resize((max(32, int(im.width * 0.8)),
-                                       max(32, int(im.height * 0.8))))]
-                rs = model.predict(source=variants, conf=min_conf, verbose=False)
-                cands = boxes_of(rs[0])
-                others = [boxes_of(rs[1], flip=True), boxes_of(rs[2])]
-                yield img_path, [b for b in cands if consistent(b, others)]
-
     n_img, n_box = 0, 0
-    for img_path, boxes in predict_one_image_boxes():
-        lines = []
-        for c, (cx, cy, w, h), cf in boxes:
-            # 클래스별 임계값(없으면 공통 conf) 적용.
-            if cf < conf_per_class.get(c, args.conf):
-                continue
-            lines.append(f"{c} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
+    # 박스 선택(스트림 추론·TTA·conf 필터)은 pseudo_utils.predict_boxes 단일 구현을 사용.
+    for img_path, boxes, _ in predict_boxes(model, imgs, args.conf,
+                                            conf_per_class=conf_per_class, tta=args.tta):
+        lines = [f"{c} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}"
+                 for c, (cx, cy, w, h), _cf in boxes]
 
         # 검출이 없고 빈 라벨도 원치 않으면 이 이미지는 건너뛴다.
         if not lines and not args.keep_empty:

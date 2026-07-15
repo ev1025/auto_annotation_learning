@@ -18,27 +18,18 @@
   python 4_experiment_autolearn.py --src ./mp.v1 --classes bolt nut gear --epochs 80 --conf 0.6
 """
 import argparse
-import gc
 import json
 import random
 import shutil
 from collections import Counter
 from pathlib import Path
 
-import torch
 import yaml
-from PIL import Image
 from ultralytics import YOLO
 
 import config
-from pseudo_utils import boxes_of, consistent, iou, parse_conf_per_class
-
-
-def _free_cuda():
-    """DDP 학습 직후 GPU 메모리가 곧바로 안 풀리는 경우가 있어, 라운드 사이마다 명시적으로 회수한다."""
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+from dataset_utils import normalize_names
+from pseudo_utils import free_cuda, iou, parse_conf_per_class, predict_boxes
 
 EXP_DIR = config.BASE_DIR / "exp_autolearn"  # 실험 산출물 루트(원본 데이터는 건드리지 않음)
 
@@ -48,10 +39,10 @@ EXP_DIR = config.BASE_DIR / "exp_autolearn"  # 실험 산출물 루트(원본 �
 def load_src_names(src):
     """Roboflow export 의 data.yaml 에서 {id: name} 을 읽는다."""
     data = yaml.safe_load((src / "data.yaml").read_text(encoding="utf-8"))
-    names = data.get("names")
-    if isinstance(names, list):
-        return {i: n for i, n in enumerate(names)}
-    return {int(k): v for k, v in names.items()}
+    names = normalize_names(data.get("names"))
+    if not names:
+        raise SystemExit(f"[오류] {src / 'data.yaml'} 에서 names 를 해석하지 못했습니다.")
+    return names
 
 
 def collect_pairs(src):
@@ -114,15 +105,13 @@ def build_splits(pairs, keep_ids, seed_frac, test_frac, rng_seed=42):
 
     for name, items in splits.items():
         img_d = EXP_DIR / name / "images"
-        lbl_d = EXP_DIR / name / "labels"
+        # pool 의 정답은 'labels_gt' 로 숨겨 보관(학습이 절대 못 보게 폴더명을 다르게).
+        lbl_d = EXP_DIR / name / ("labels_gt" if name == "pool" else "labels")
         img_d.mkdir(parents=True, exist_ok=True)
         lbl_d.mkdir(parents=True, exist_ok=True)
         for img, lines in items:
             shutil.copy2(img, img_d / img.name)
-            # pool 의 정답은 'labels_gt' 로 숨겨 보관(학습이 절대 못 보게 폴더명을 다르게).
             (lbl_d / f"{img.stem}.txt").write_text("\n".join(lines), encoding="utf-8")
-        if name == "pool":
-            (EXP_DIR / "pool" / "labels").rename(EXP_DIR / "pool" / "labels_gt")
 
     return len(splits["seed"]), len(splits["pool"]), len(splits["test"])
 
@@ -166,7 +155,7 @@ def train_and_eval(round_name, data_yaml, args):
     )
     best = Path(model.trainer.best)
     del model
-    _free_cuda()  # DDP 학습(device=args.device) 뒤 GPU 메모리를 다음 단계 전에 확실히 회수
+    free_cuda()  # DDP 학습(device=args.device) 뒤 GPU 메모리를 다음 단계 전에 확실히 회수
 
     m = YOLO(str(best))
     res = m.val(data=str(data_yaml), split="val", verbose=False)  # val = test 이미지
@@ -180,7 +169,7 @@ def train_and_eval(round_name, data_yaml, args):
         if len(res.box.maps) else {},
     }
     del m, res
-    _free_cuda()
+    free_cuda()
     return result
 
 
@@ -196,61 +185,38 @@ def pseudo_label_pool(weights, conf, class_names, tta=False, conf_per_class=None
     out = EXP_DIR / "pool" / "labels_pseudo"
     out.mkdir(parents=True, exist_ok=True)
     model = YOLO(weights)
-    imgs = sorted((EXP_DIR / "pool" / "images").glob("*"))
+    imgs = [p for p in sorted((EXP_DIR / "pool" / "images").glob("*"))
+            if p.suffix.lower() in config.IMG_EXTS]
     conf_per_class = conf_per_class or {}
-    # 추론은 가장 낮은 임계값으로 하고, 채택 단계에서 클래스별 임계값을 적용한다.
-    min_conf = min([conf, *conf_per_class.values()]) if conf_per_class else conf
 
     n_lbl, n_box, tta_drop = 0, 0, 0
-    stats = {"per_class": Counter(), "conf_sum": 0.0, "area_sum": 0.0}
+    per_class, conf_sum, area_sum = Counter(), 0.0, 0.0
 
-    def emit(img_path, boxes):
-        """클래스별 conf 임계값을 통과한 박스를 .txt 로 기록하고 통계 누적."""
-        nonlocal n_lbl, n_box
+    # 박스 선택(스트림 추론·TTA·conf 필터)은 운영 스크립트와 동일한 단일 구현을 사용.
+    # 실험이 검증하는 규칙 = 운영이 쓰는 규칙임을 구조적으로 보장한다.
+    for img_path, boxes, dropped in predict_boxes(model, imgs, conf,
+                                                  conf_per_class=conf_per_class, tta=tta):
+        tta_drop += dropped
+        if not boxes:
+            continue
         lines = []
         for c, (cx, cy, w, h), cf in boxes:
-            if cf < conf_per_class.get(c, conf):
-                continue
             lines.append(f"{c} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
-            stats["per_class"][class_names.get(c, str(c))] += 1
-            stats["conf_sum"] += cf
-            stats["area_sum"] += w * h
-        if lines:
-            (out / f"{img_path.stem}.txt").write_text("\n".join(lines), encoding="utf-8")
-            n_lbl += 1
-            n_box += len(lines)
-
-    if not tta:
-        # (주의) 리스트 source 에서 r.path 는 'image0' 같은 가짜 이름이 될 수 있다(ultralytics 8.4).
-        # stream 제너레이터는 입력 순서를 보존하므로 입력 리스트와 zip 으로 짝지어 원본 파일명을 쓴다.
-        results = model.predict(source=[str(p) for p in imgs], conf=min_conf, stream=True, verbose=False)
-        for img_path, r in zip(imgs, results):
-            emit(img_path, boxes_of(r))
-        del results
-    else:
-        # TTA: 이미지당 3뷰(원본/좌우반전/0.8배 축소)를 한 배치로 추론.
-        # 정규화 좌표(xywhn)라 축소 뷰도 좌표 보정 없이 비교 가능, 반전만 cx 복원.
-        for img_path in imgs:
-            im = Image.open(img_path).convert("RGB")
-            variants = [im,
-                        im.transpose(Image.FLIP_LEFT_RIGHT),
-                        im.resize((max(32, int(im.width * 0.8)), max(32, int(im.height * 0.8))))]
-            rs = model.predict(source=variants, conf=min_conf, verbose=False)
-            cands = [b for b in boxes_of(rs[0]) if b[2] >= conf_per_class.get(b[0], conf)]
-            others = [boxes_of(rs[1], flip=True), boxes_of(rs[2])]
-            kept = [b for b in cands if consistent(b, others)]
-            tta_drop += len(cands) - len(kept)
-            # kept 는 이미 conf 필터를 통과했으므로 emit 의 재필터에 그대로 통과된다.
-            emit(img_path, kept)
+            per_class[class_names.get(c, str(c))] += 1
+            conf_sum += cf
+            area_sum += w * h
+        (out / f"{img_path.stem}.txt").write_text("\n".join(lines), encoding="utf-8")
+        n_lbl += 1
+        n_box += len(lines)
 
     del model
-    _free_cuda()
+    free_cuda()
 
     summary = {
-        "per_class_boxes": dict(stats["per_class"]),
+        "per_class_boxes": dict(per_class),
         "boxes_per_labeled_image": round(n_box / n_lbl, 2) if n_lbl else 0.0,
-        "mean_conf": round(stats["conf_sum"] / n_box, 4) if n_box else 0.0,
-        "mean_bbox_area": round(stats["area_sum"] / n_box, 4) if n_box else 0.0,
+        "mean_conf": round(conf_sum / n_box, 4) if n_box else 0.0,
+        "mean_bbox_area": round(area_sum / n_box, 4) if n_box else 0.0,
         "tta": tta,
         "tta_dropped_boxes": tta_drop,
         "conf_per_class": {class_names[k]: v for k, v in conf_per_class.items()} or None,
@@ -277,10 +243,11 @@ def score_pseudo_labels(iou_thr=0.5):
     """
     gt_dir = EXP_DIR / "pool" / "labels_gt"
     ps_dir = EXP_DIR / "pool" / "labels_pseudo"
-    tp = fp = fn = 0
+    tp = fp = n_gt = 0
     for gt_file in sorted(gt_dir.glob("*.txt")):
         gts = _read_boxes(gt_file)
         prs = _read_boxes(ps_dir / gt_file.name)
+        n_gt += len(gts)
         used = [False] * len(gts)
         for pc, pb in prs:
             best_i, best_v = -1, 0.0
@@ -295,7 +262,7 @@ def score_pseudo_labels(iou_thr=0.5):
                 tp += 1
             else:
                 fp += 1
-        fn += used.count(False)
+    fn = n_gt - tp  # 매칭 안 된 정답 수
     prec = tp / (tp + fp) if tp + fp else 0.0
     rec = tp / (tp + fn) if tp + fn else 0.0
     return {"tp": tp, "fp": fp, "fn": fn,
@@ -315,6 +282,7 @@ def main():
                     help="TTA 일관성 필터(원본/반전/축소 3뷰 모두 재현되는 예측만 채택)")
     ap.add_argument("--conf-per-class", default=None,
                     help="클래스별 임계값 덮어쓰기 (예: gear=0.45,bolt=0.7)")
+    # 실험은 빠른 반복이 목적이라 운영 기본(config.EPOCHS=100)보다 짧게 잡는다.
     ap.add_argument("--epochs", type=int, default=60)
     ap.add_argument("--imgsz", type=int, default=config.IMG_SIZE)
     ap.add_argument("--batch", type=int, default=config.BATCH)
