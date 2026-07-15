@@ -31,6 +31,7 @@ from PIL import Image
 from ultralytics import YOLO
 
 import config
+from pseudo_utils import boxes_of, consistent, iou, parse_conf_per_class
 
 
 def _free_cuda():
@@ -183,41 +184,6 @@ def train_and_eval(round_name, data_yaml, args):
     return result
 
 
-def parse_conf_per_class(spec, class_names):
-    """'gear=0.45,bolt=0.7' -> {클래스id: 임계값}. 클래스 소외(쉬운 클래스만 라벨 양산) 완화용."""
-    if not spec:
-        return {}
-    name_to_id = {v: k for k, v in class_names.items()}
-    out = {}
-    for part in spec.split(","):
-        name, _, val = part.partition("=")
-        name = name.strip()
-        if name not in name_to_id:
-            raise SystemExit(f"[오류] --conf-per-class 클래스가 데이터에 없음: {name} / 보유: {list(name_to_id)}")
-        out[name_to_id[name]] = float(val)
-    return out
-
-
-def _boxes_of(r, flip=False):
-    """Results -> [(클래스id, (cx,cy,w,h), conf)]. flip=True 면 좌우반전 좌표를 원본 기준으로 복원."""
-    bs = []
-    if r.boxes is not None and len(r.boxes) > 0:
-        for (cx, cy, w, h), c, cf in zip(r.boxes.xywhn.cpu().numpy(),
-                                         r.boxes.cls.cpu().numpy().astype(int),
-                                         r.boxes.conf.cpu().numpy()):
-            if flip:
-                cx = 1.0 - cx
-            bs.append((int(c), (float(cx), float(cy), float(w), float(h)), float(cf)))
-    return bs
-
-
-def _consistent(cand, others, iou_thr=0.8):
-    """후보 박스가 다른 모든 TTA 뷰에서 같은 클래스 + IoU>=0.8 로 재현되는지."""
-    c, box, _ = cand
-    return all(any(oc == c and _iou(box, ob) >= iou_thr for oc, ob, _ in other)
-               for other in others)
-
-
 def pseudo_label_pool(weights, conf, class_names, tta=False, conf_per_class=None):
     """라운드0 모델로 pool 이미지에 pseudo 라벨 생성. (라벨이미지수, 박스수, 분포통계) 반환.
 
@@ -259,7 +225,7 @@ def pseudo_label_pool(weights, conf, class_names, tta=False, conf_per_class=None
         # stream 제너레이터는 입력 순서를 보존하므로 입력 리스트와 zip 으로 짝지어 원본 파일명을 쓴다.
         results = model.predict(source=[str(p) for p in imgs], conf=min_conf, stream=True, verbose=False)
         for img_path, r in zip(imgs, results):
-            emit(img_path, _boxes_of(r))
+            emit(img_path, boxes_of(r))
         del results
     else:
         # TTA: 이미지당 3뷰(원본/좌우반전/0.8배 축소)를 한 배치로 추론.
@@ -270,9 +236,9 @@ def pseudo_label_pool(weights, conf, class_names, tta=False, conf_per_class=None
                         im.transpose(Image.FLIP_LEFT_RIGHT),
                         im.resize((max(32, int(im.width * 0.8)), max(32, int(im.height * 0.8))))]
             rs = model.predict(source=variants, conf=min_conf, verbose=False)
-            cands = [b for b in _boxes_of(rs[0]) if b[2] >= conf_per_class.get(b[0], conf)]
-            others = [_boxes_of(rs[1], flip=True), _boxes_of(rs[2])]
-            kept = [b for b in cands if _consistent(b, others)]
+            cands = [b for b in boxes_of(rs[0]) if b[2] >= conf_per_class.get(b[0], conf)]
+            others = [boxes_of(rs[1], flip=True), boxes_of(rs[2])]
+            kept = [b for b in cands if consistent(b, others)]
             tta_drop += len(cands) - len(kept)
             # kept 는 이미 conf 필터를 통과했으므로 emit 의 재필터에 그대로 통과된다.
             emit(img_path, kept)
@@ -293,17 +259,6 @@ def pseudo_label_pool(weights, conf, class_names, tta=False, conf_per_class=None
 
 
 # ---------------------------------------------------------------- pseudo 라벨 채점
-
-def _iou(a, b):
-    """정규화 cxcywh 두 박스의 IoU."""
-    ax1, ay1, ax2, ay2 = a[0]-a[2]/2, a[1]-a[3]/2, a[0]+a[2]/2, a[1]+a[3]/2
-    bx1, by1, bx2, by2 = b[0]-b[2]/2, b[1]-b[3]/2, b[0]+b[2]/2, b[1]+b[3]/2
-    ix = max(0.0, min(ax2, bx2) - max(ax1, bx1))
-    iy = max(0.0, min(ay2, by2) - max(ay1, by1))
-    inter = ix * iy
-    union = a[2]*a[3] + b[2]*b[3] - inter
-    return inter / union if union > 0 else 0.0
-
 
 def _read_boxes(p):
     out = []
@@ -332,7 +287,7 @@ def score_pseudo_labels(iou_thr=0.5):
             for i, (gc, gb) in enumerate(gts):
                 if used[i] or gc != pc:
                     continue
-                v = _iou(pb, gb)
+                v = iou(pb, gb)
                 if v > best_v:
                     best_i, best_v = i, v
             if best_i >= 0 and best_v >= iou_thr:
