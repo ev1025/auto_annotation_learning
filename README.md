@@ -65,7 +65,8 @@ xr_autolearning/
 │  ├─ 3_api_server.py            # FastAPI 추론 서버
 │  ├─ 4_experiment_autolearn.py  # 오토러닝 효과 실증 (정답 숨기고 자동 채점)
 │  ├─ dataset_utils.py           # 데이터셋 등록 공용 (names 정규화·data.yaml 등록 가드)
-│  └─ pseudo_utils.py            # 자동 라벨링 공용 (박스 선택 단일 구현: 추론·TTA·conf 필터)
+│  ├─ pseudo_utils.py            # 자동 라벨링 공용 (박스 선택 단일 구현: 추론·TTA·conf 필터)
+│  └─ data_viewer.ipynb          # COCO 어노테이션 점검 노트북 (클래스 분포·라벨 시각화)
 ├─ models/                       # base_model.pt(초기 생성기) / new_model.pt·onnx(학습 산출)
 ├─ datasets/                     # images/ labels/ unlabeled_images/
 └─ exp_results/                  # 실험 리포트 (report_*.json)
