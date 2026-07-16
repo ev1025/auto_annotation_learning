@@ -42,18 +42,18 @@ def build_runtime_data_yaml():
 
 
 def prepare_split(images_dir, labels_dir, val_ratio, seed=0):
-    """flat 한 images / labels 를 train / val 하위로 분할 복사한다.
+    """flat 한 images / labels 를 train / val 하위로 반영한다(누적 학습 지원).
 
     - ultralytics 는 이미지 경로의 마지막 'images' 를 'labels' 로 치환해 라벨을 찾는다.
       따라서 images/train 의 짝은 labels/train 이어야 하고, 둘 다 만들어 줘야 한다.
-    - 이미 분할돼 있으면(이전 실행 흔적) 건너뛴다(멱등성 보장).
-    - 원본은 보존(copy)한다. train == val 로 평가하는 잘못된 관행을 피하려고 실제로 나눈다.
+    - 최초 실행: 고정 seed 로 train/val 분할을 생성한다.
+    - 이후 실행(증분): val 은 최초 분할 그대로 고정하고, 아직 train/val 에 없는
+      새 flat 데이터(자동 라벨링으로 추가된 분)만 train 에 추가한다.
+      val 을 고정하는 이유: 매번 다시 섞으면 라운드 간 성능 비교가 불가능해지고,
+      검증 안 된 자동 라벨이 val 로 흘러들어 평가 자체가 오염되기 때문.
+    - 원본 flat 은 보존(copy)한다.
     """
     images_dir, labels_dir = Path(images_dir), Path(labels_dir)
-    train_img = images_dir / "train"
-    if train_img.exists() and any(train_img.iterdir()):
-        print("[분할] 기존 train/val 구조를 재사용(분할 건너뜀)")
-        return
 
     # 라벨(.txt)이 실제로 존재하는 이미지만 학습 대상으로 삼는다(짝이 맞는 데이터만).
     pairs = []
@@ -63,13 +63,29 @@ def prepare_split(images_dir, labels_dir, val_ratio, seed=0):
         lbl = labels_dir / f"{img.stem}.txt"
         if lbl.exists():
             pairs.append((img, lbl))
+
+    train_img = images_dir / "train"
+    if train_img.exists() and any(train_img.iterdir()):
+        # 증분 모드: 기존 분할(train/val)에 없는 새 데이터만 train 에 추가한다.
+        existing = {p.stem for p in (images_dir / "train").glob("*")} | \
+                   {p.stem for p in (images_dir / "val").glob("*")}
+        new_pairs = [(i, l) for i, l in pairs if i.stem not in existing]
+        for img, lbl in new_pairs:
+            shutil.copy2(img, images_dir / "train" / img.name)
+            shutil.copy2(lbl, labels_dir / "train" / lbl.name)
+        n_train = len(list((images_dir / "train").glob("*")))
+        n_val = len(list((images_dir / "val").glob("*")))
+        print(f"[분할] 기존 val 고정, 신규 {len(new_pairs)}장을 train 에 추가 "
+              f"(train {n_train} / val {n_val})")
+        return
+
     if not pairs:
         raise SystemExit(
             f"[오류] {images_dir} / {labels_dir} 에 짝이 맞는 데이터가 없습니다.\n"
             f"      먼저 1_auto_labeling.py 를 실행해 라벨을 생성하세요."
         )
 
-    # 고정 seed 로 셔플 -> 재현 가능한 분할.
+    # 최초 분할: 고정 seed 로 셔플 -> 재현 가능한 분할.
     random.Random(seed).shuffle(pairs)
     n_val = max(1, int(len(pairs) * val_ratio))  # 최소 1장은 검증에 둔다.
     splits = {"val": pairs[:n_val], "train": pairs[n_val:]}
