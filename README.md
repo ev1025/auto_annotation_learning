@@ -33,8 +33,8 @@ flowchart TD
     A["3D 렌더 합성 데이터 외부 공급<br/>(이미지 + 어노테이션)"]
     B["자동 전처리<br/>YOLO 포맷 정규화 · train/val 분할"]
     C["자동 학습<br/>YOLOv8n best.pt <br/>(최종 ONNX 변환)"]
-    D["자동 라벨 확장 (무인)<br/>미라벨 이미지 추론 → conf≥0.6 예측을 라벨로 채택·누적"]
-    E["배포 (무인)<br/>Jetson Thor 추론 서버: FastAPI /predict"]
+    D["자동 라벨 확장 <br/>미라벨 이미지 추론 → conf≥0.6 예측을 라벨로 채택·누적"]
+    E["자동 배포 <br/>Jetson Thor 추론 서버: <br/>FastAPI /predict"]
     F["클라이언트 (Magic Leap 2 · 태블릿)<br/>프레임 전송 → JSON(bbox / class / conf) 수신 → 화면 렌더"]
 
     A --> B --> C --> D
@@ -375,8 +375,8 @@ python scripts/4_experiment_autolearn.py --src ./mechanical-parts-yolo --classes
 # 모델 x 입력크기 매트릭스: 정확도(mAP)·단건 지연(ms)·FPS·파라미터 비교
 # --src 만 바꾸면 다른 데이터셋으로 즉시 재실행 가능
 python scripts/5_benchmark.py --src ./mechanical-parts-yolo \
-    --models yolov8n.pt yolov8s.pt yolov8m.pt yolo11n.pt yolo26n.pt \
-    --imgsz 640 1280 --epochs 60 --device 0
+    --models yolov8n.pt yolov8s.pt yolov8m.pt yolo11n.pt yolo26n.pt yolo26s.pt yolo26m.pt \
+    --imgsz 640 1280 --epochs 100 --device 0
 # 결과: bench_results/benchmark.json + benchmark.md (조합마다 누적 저장)
 # 지연/FPS 는 실행 장비 기준. Jetson Thor 실측은 Thor 에서 같은 명령 재실행
 ```

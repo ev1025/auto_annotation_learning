@@ -19,8 +19,12 @@
 
 실행:
   python scripts/5_benchmark.py --src ./mechanical-parts-yolo \
-      --models yolov8n.pt yolov8s.pt yolov8m.pt yolo11n.pt yolo26n.pt \
-      --imgsz 640 1280 --epochs 60 --device 0
+      --models yolov8n.pt yolov8s.pt yolov8m.pt yolo11n.pt yolo26n.pt yolo26s.pt yolo26m.pt \
+      --imgsz 640 1280 --epochs 100 --device 0
+
+참고(YOLO26 레시피): 크기별 권장 epochs 가 다르다(26n=245, 26s=70, 26m=80).
+동일 epochs 벤치는 '같은 학습 비용' 비교라 26n 은 잠재력보다 낮게 나올 수 있음.
+26 계열이 유력하면 레시피 조건으로 추가 검증할 것.
 """
 import argparse
 import json
@@ -115,9 +119,9 @@ def run_combo(model_name, imgsz, data_yaml, test_imgs, args):
     return row
 
 
-def save_and_print(rows):
+def save_and_print(rows, out="benchmark"):
     BENCH_DIR.mkdir(parents=True, exist_ok=True)
-    (BENCH_DIR / "benchmark.json").write_text(
+    (BENCH_DIR / f"{out}.json").write_text(
         json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
     # markdown 비교표
     cols = ["model", "imgsz", "map50", "map50_95", "latency_ms", "fps",
@@ -127,7 +131,7 @@ def save_and_print(rows):
     for r in rows:
         lines.append("| " + " | ".join(str(r.get(c, "")) for c in cols) + " |")
     table = "\n".join(lines)
-    (BENCH_DIR / "benchmark.md").write_text(table, encoding="utf-8")
+    (BENCH_DIR / f"{out}.md").write_text(table, encoding="utf-8")
     print("\n" + table)
 
 
@@ -142,6 +146,8 @@ def main():
     ap.add_argument("--epochs", type=int, default=60)
     ap.add_argument("--batch", type=int, default=-1, help="-1 = GPU 메모리 자동")
     ap.add_argument("--device", default=0)
+    ap.add_argument("--out", default="benchmark",
+                    help="결과 파일 이름(확장자 제외). 여러 GPU 병렬 실행 시 서로 다르게 지정")
     args = ap.parse_args()
 
     src = Path(args.src).resolve()
@@ -162,7 +168,7 @@ def main():
                 print(f"[실패] {model_name} x {imgsz}: {e}")
                 rows.append({"model": Path(model_name).stem, "imgsz": imgsz,
                              "error": str(e)[:200]})
-            save_and_print(rows)  # 조합마다 누적 저장
+            save_and_print(rows, args.out)  # 조합마다 누적 저장
 
     print(f"\n완료: {BENCH_DIR / 'benchmark.json'} / benchmark.md")
 
