@@ -54,6 +54,7 @@ flowchart TD
 | 클라이언트 | Magic Leap 2 · 태블릿: 프레임 전송 → JSON 수신 → 박스 렌더 (온디바이스 추론 없음) |
 | 배포 포맷 | PyTorch `.pt`(서빙 기본) / ONNX / TensorRT 엔진(Thor 가속, 변환 예정) |
 | 공용 모듈 | `pseudo_utils`(박스 선택 단일 구현: 운영·실험 공용) / `dataset_utils`(클래스 등록 가드) |
+| 모델 릴리스 | 학습마다 `models/releases/v<타임스탬프>/`에 best.pt·onnx·지표·**학습로그 전문** 자동 보관(최근 10개). **배포 게이트**: 직전 채택본보다 mAP50 하락 시 서빙 모델 미교체. 롤백은 `6_model_registry.py` |
 | 설정 | `scripts/config.py` 단일 소스(경로·임계값·하이퍼파라미터) |
 
 **폴더 구조**
@@ -72,10 +73,12 @@ xr_autolearning/
 │  ├─ 3_api_server.py            # FastAPI 추론 서버
 │  ├─ 4_experiment_autolearn.py  # 오토러닝 효과 실증 (정답 숨기고 자동 채점)
 │  ├─ 5_benchmark.py             # 모델 x 입력크기 매트릭스 벤치마크 (배포 모델 선정 근거)
+│  ├─ 6_model_registry.py        # 릴리스 조회/롤백 (이전 버전 복원)
 │  ├─ dataset_utils.py           # 데이터셋 등록 공용 (names 정규화·data.yaml 등록 가드)
 │  ├─ pseudo_utils.py            # 자동 라벨링 공용 (박스 선택 단일 구현: 추론·TTA·conf 필터)
 │  └─ data_viewer.ipynb          # COCO 어노테이션 점검 노트북 (클래스 분포·라벨 시각화)
-├─ models/                       # base_model.pt(초기 생성기) / new_model.pt·onnx(학습 산출)
+├─ models/                       # base_model.pt(초기 생성기) / new_model.pt·onnx(서빙 현재본)
+│  └─ releases/                  # 버전별 보관: v<타임스탬프>/{best.pt, best.onnx, metrics.json, train.log}
 ├─ datasets/                     # images/ labels/ unlabeled_images/
 ├─ bench_results/                # 벤치마크 결과 (benchmark.json / benchmark.md)
 └─ exp_results/                  # 실험 리포트 (report_*.json)
@@ -354,11 +357,18 @@ cp models/new_model.pt models/base_model.pt
 python scripts/1_auto_labeling.py --weights models/base_model.pt
 
 # 2) 재학습 + ONNX 변환: 누적 라벨로 학습 → best.pt/onnx  (1↔2 반복 = 오토러닝 루프)
+#    매 실행마다 models/releases/v<타임스탬프>/ 에 버전 보관(모델·지표·학습로그).
+#    배포 게이트: 직전 채택본보다 mAP50 낮으면 보관만 하고 서빙 모델은 유지 (--force-promote 로 무시)
 python scripts/2_train_pipeline.py --epochs 100 --device 0
 
 # 3) 추론 API 서버
 python scripts/3_api_server.py       # http://0.0.0.0:8000
 curl -X POST -F "file=@sample.jpg" "http://localhost:8000/predict?conf=0.3"
+
+# (운영) 릴리스 조회 / 문제 시 이전 버전으로 롤백
+python scripts/6_model_registry.py list
+python scripts/6_model_registry.py rollback            # 직전 채택본으로 복원
+python scripts/6_model_registry.py rollback v20260716_093012   # 특정 버전으로 복원
 ```
 
 ### 6.4 자동화 효과 재현 실험

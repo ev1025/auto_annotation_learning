@@ -30,6 +30,11 @@ AUTO_LABEL_CONF = 0.6   # 자동 라벨링: 이 값 이상만 '정답'으로 신
 API_CONF = 0.25         # 추론 API 기본 confidence 임계값
 API_IOU = 0.45          # 추론 API 기본 NMS IoU 임계값
 
+# --- 모델 릴리스(버전 보관·배포 게이트·롤백) ---
+RELEASES_DIR = MODELS_DIR / "releases"  # 학습마다 v<타임스탬프>/ 로 보관(best/onnx/지표/학습로그)
+KEEP_RELEASES = 10       # 보관할 릴리스 수(초과분은 오래된 것부터 자동 삭제)
+PROMOTE_MIN_DROP = 0.0   # 배포 게이트: 직전 배포본 대비 mAP50 하락 허용폭(0 = 하락하면 미채택)
+
 # --- 학습 하이퍼파라미터 기본값 ---
 PRETRAINED = "yolov8n.pt"  # base_model 이 없을 때 전이학습 시작점(자동 다운로드). n=경량, 데모/엣지용
 EPOCHS = 100

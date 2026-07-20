@@ -12,8 +12,12 @@
   python 2_train_pipeline.py --epochs 50 --batch 8 --device 0
 """
 import argparse
+import csv
+import json
 import random
 import shutil
+import sys
+from datetime import datetime
 from pathlib import Path
 
 import yaml  # ultralytics 가 의존성으로 끌어오므로 별도 설치 불필요
@@ -99,7 +103,73 @@ def prepare_split(images_dir, labels_dir, val_ratio, seed=0):
     print(f"[분할] train {len(splits['train'])}장 / val {len(splits['val'])}장")
 
 
+class _Tee:
+    """stdout/stderr 를 화면과 로그 파일에 동시에 기록(학습 터미널 로그 보존용)."""
+
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, s):
+        for st in self.streams:
+            st.write(s)
+
+    def flush(self):
+        for st in self.streams:
+            st.flush()
+
+
+def _last_metrics(results_csv):
+    """ultralytics results.csv 마지막 행에서 val 지표를 추출."""
+    rows = list(csv.DictReader(open(results_csv, encoding="utf-8")))
+    last = rows[-1]
+    pick = {}
+    for k, v in last.items():
+        k = k.strip()
+        if "mAP50(B)" in k:
+            pick["map50"] = round(float(v), 4)
+        elif "mAP50-95(B)" in k:
+            pick["map50_95"] = round(float(v), 4)
+        elif "precision(B)" in k:
+            pick["precision"] = round(float(v), 4)
+        elif "recall(B)" in k:
+            pick["recall"] = round(float(v), 4)
+    return pick
+
+
+def _latest_promoted():
+    """releases/ 에서 가장 최근에 '채택(promoted)'된 릴리스의 metrics 를 반환(없으면 None)."""
+    if not config.RELEASES_DIR.exists():
+        return None
+    for d in sorted(config.RELEASES_DIR.iterdir(), reverse=True):
+        mfile = d / "metrics.json"
+        if mfile.exists():
+            m = json.loads(mfile.read_text(encoding="utf-8"))
+            if m.get("status") == "promoted":
+                return m
+    return None
+
+
+def _prune_releases(keep):
+    """오래된 릴리스를 keep 개만 남기고 삭제(디스크 관리)."""
+    if not config.RELEASES_DIR.exists():
+        return
+    dirs = sorted([d for d in config.RELEASES_DIR.iterdir() if d.is_dir()])
+    for d in dirs[:-keep] if len(dirs) > keep else []:
+        shutil.rmtree(d, ignore_errors=True)
+        print(f"[정리] 오래된 릴리스 삭제: {d.name}")
+
+
 def train(args):
+    # 0) 릴리스 폴더 준비 + 학습 터미널 로그 tee 시작.
+    #    지속 배포에서 "언제 무엇을 어떻게 학습했나"는 사고 조사·롤백 판단의 근거라 전문 보존한다.
+    version = "v" + datetime.now().strftime("%Y%m%d_%H%M%S")
+    rel_dir = config.RELEASES_DIR / version
+    rel_dir.mkdir(parents=True, exist_ok=True)
+    log_f = open(rel_dir / "train.log", "w", encoding="utf-8")
+    sys.stdout = _Tee(sys.__stdout__, log_f)
+    sys.stderr = _Tee(sys.__stderr__, log_f)
+    print(f"[릴리스] {version} (로그: {rel_dir / 'train.log'})")
+
     # 1) 데이터셋을 train/val 구조로 정리(멱등).
     prepare_split(config.IMAGES_DIR, config.LABELS_DIR, args.val_ratio)
 
@@ -125,44 +195,75 @@ def train(args):
         verbose=True,
     )
 
-    # 3) 최고 성능 가중치(best.pt)를 약속된 위치로 복사.
-    #    model.trainer.best 는 버전에 관계없이 안정적으로 best.pt 경로를 가리킨다.
+    # 3) 산출물을 릴리스 폴더에 보관(best.pt / 지표 / 학습곡선 csv).
     best = Path(model.trainer.best)
     if not best.exists():
         raise SystemExit(f"[오류] best.pt 를 찾지 못했습니다: {best}")
+    run_dir = best.parent.parent  # runs/train
+    shutil.copy2(best, rel_dir / "best.pt")
+    if (run_dir / "results.csv").exists():
+        shutil.copy2(run_dir / "results.csv", rel_dir / "results.csv")
+
+    metrics = _last_metrics(rel_dir / "results.csv") if (rel_dir / "results.csv").exists() else {}
+    metrics.update({"version": version, "epochs": args.epochs, "imgsz": args.imgsz,
+                    "start_weights": str(start)})
+
+    del model
+    free_cuda()  # 학습 직후 GPU 메모리 회수(다음 단계 OOM 방지)
+
+    # 4) 배포 게이트: 직전 채택본보다 mAP50 이 떨어지면 서빙 모델을 갈아끼우지 않는다.
+    #    나빠진 모델의 자동 배포(오토러닝 오류 증폭)를 차단하는 운영 안전장치.
+    prev = _latest_promoted()
+    drop_ok = True
+    if prev and "map50" in metrics and not args.force_promote:
+        drop_ok = metrics["map50"] >= prev["map50"] - config.PROMOTE_MIN_DROP
+        print(f"[게이트] 직전 채택본 mAP50 {prev['map50']} vs 신규 {metrics['map50']} "
+              f"-> {'통과' if drop_ok else '미달(배포 보류)'}")
+
+    if not drop_ok:
+        metrics["status"] = "rejected"
+        (rel_dir / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2),
+                                              encoding="utf-8")
+        print(f"[보류] {version} 은 보관만 하고 서빙 모델은 유지합니다. "
+              f"강제 배포는 --force-promote, 복원은 6_model_registry.py rollback")
+        _prune_releases(config.KEEP_RELEASES)
+        return
+
+    # 5) 채택: 서빙 위치 갱신 + ONNX 변환(릴리스에도 보관).
     config.MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(best, config.NEW_MODEL_PT)
+    shutil.copy2(rel_dir / "best.pt", config.NEW_MODEL_PT)
     print(f"[학습] best.pt -> {config.NEW_MODEL_PT}")
 
-    # 학습 직후 GPU 메모리를 회수하고 다음 단계(변환용 모델 로드)로 넘어간다(OOM 방지).
-    del model
-    free_cuda()
-
-    # 4) ONNX 변환.
-    #    Unity/C# 등 비파이썬 런타임에서 onnxruntime 으로 바로 구동할 수 있게 한다.
     export_model = YOLO(str(config.NEW_MODEL_PT))
-    onnx_path = export_model.export(
+    onnx_path = Path(export_model.export(
         format="onnx",
         imgsz=args.imgsz,
         opset=12,        # 넓은 런타임 호환성을 위한 보수적 opset
         dynamic=False,   # 고정 입력 크기 -> 엣지/임베디드에서 단순하고 안정적
         simplify=True,   # 그래프 단순화로 추론 속도/호환성 개선
-    )
-    # export() 는 생성된 .onnx 경로(str)를 반환한다. 약속된 위치로 이동.
-    onnx_path = Path(onnx_path)
+    ))
     if onnx_path.resolve() != config.NEW_MODEL_ONNX.resolve():
         shutil.move(str(onnx_path), str(config.NEW_MODEL_ONNX))
+    shutil.copy2(config.NEW_MODEL_ONNX, rel_dir / "best.onnx")
     print(f"[변환] ONNX -> {config.NEW_MODEL_ONNX}")
+
+    metrics["status"] = "promoted"
+    (rel_dir / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2),
+                                          encoding="utf-8")
+    print(f"[배포] {version} 채택 완료 (보관: {rel_dir})")
+    _prune_releases(config.KEEP_RELEASES)
 
 
 def parse_args():
-    ap = argparse.ArgumentParser(description="YOLO 학습 + ONNX 변환 파이프라인")
+    ap = argparse.ArgumentParser(description="YOLO 학습 + 릴리스 보관 + 배포 게이트 + ONNX 변환")
     ap.add_argument("--weights", default=None, help="시작 가중치(미지정 시 base_model 또는 사전학습)")
     ap.add_argument("--epochs", type=int, default=config.EPOCHS)
     ap.add_argument("--imgsz", type=int, default=config.IMG_SIZE)
     ap.add_argument("--batch", type=int, default=config.BATCH)
     ap.add_argument("--val-ratio", type=float, default=config.VAL_RATIO)
     ap.add_argument("--device", default=None, help="'0'(GPU) / 'cpu'. 미지정 시 자동 선택")
+    ap.add_argument("--force-promote", action="store_true",
+                    help="배포 게이트 무시하고 무조건 서빙 모델 갱신")
     return ap.parse_args()
 
 
