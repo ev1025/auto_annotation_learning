@@ -2,13 +2,18 @@
 
 ## 1. 프로젝트 개요
 
-헬기 정비 부품을 마커(QR/바코드) 없이 인식하는 YOLO 객체탐지 모델을 **사람 개입 없이(zero-manual) 자동으로 학습·배포하는 MLOps 파이프라인**이다. 3D 렌더링으로 생성된 (이미지 + 어노테이션)을 입력으로 받아, 전처리 → 자동 라벨 확장 → YOLO 학습 → ONNX/API 배포까지 하나의 루프로 돌린다.
+헬기 정비 부품을 비마커(QR/바코드 없이) 인식하는 YOLO 객체탐지 모델을 **사람 개입 없이(zero-manual) 자동으로 학습·배포하는 MLOps 파이프라인**이다. 3D 렌더링으로 생성된 (이미지 + 어노테이션)을 입력으로 받아, 전처리 → 자동 라벨 확장 → YOLO 학습 → ONNX/API 배포까지 하나의 루프로 돌린다.
 
-**데이터 생성 방식**
+### 데이터 생성 방식
+**수작업 라벨링 없이 이미지+어노테이션 동시 산출**
 
-현장 정비사가 실제 부품의 2D 사진을 입력하면 시스템이 이를 3D 모델로 자동 변환한다. 이 3D 모델을 다각도로 렌더링하는 과정에서 객체의 좌표를 이미지 평면에 투영하여 '다시점 2D 이미지'와 정확한 '바운딩 박스'를 동시에 산출한다. 이를 통해 사람의 수작업 라벨링 없이, 오차 없는 고품질의 (이미지+어노테이션) 데이터를 자체 생성하여 YOLO 학습 파이프라인에 즉시 투입한다.
+1. 입력: 현장 정비사가 실제 부품의 2D 사진 촬영
+2. 3D화: 시스템이 2D 사진을 3D 모델로 자동 변환
+3. 다시점 렌더링: 3D 모델을 다각도로 렌더링하여 여러 시점의 2D 이미지 생성
+4. 자동 어노테이션: 렌더 시점의 3D 좌표를 이미지 평면에 투영해 정확한 바운딩 박스 자동 산출
+5. 투입: (이미지 + 어노테이션) 쌍을 YOLO 학습 파이프라인에 즉시 공급
 
-**핵심 기능**
+### 핵심 기능
 
 - **자동 데이터 파이프라인**: 입력 데이터 → YOLO 포맷 정규화 → train/val 분할까지 무인 처리
 - **자동 라벨 확장(self-training)**: 학습된 모델이 실제 이미지에 conf ≥ 0.6 라벨을 생성해 데이터셋을 자동 증분·재학습
@@ -25,12 +30,12 @@
 
 ```mermaid
 flowchart TD
-    A["3D 렌더 합성 데이터<br/>(이미지 + 자동 어노테이션, 외부 공급)"]
-    B["전처리 (무인)<br/>YOLO 포맷 정규화 · train/val 분할"]
-    C["학습 (무인)<br/>YOLOv8n imgsz 640 → best.pt → ONNX"]
+    A["3D 렌더 합성 데이터 외부 공급<br/>(이미지 + 어노테이션)"]
+    B["자동 전처리<br/>YOLO 포맷 정규화 · train/val 분할"]
+    C["자동 학습<br/>YOLOv8n best.pt <br/>(최종 ONNX 변환)"]
     D["자동 라벨 확장 (무인)<br/>미라벨 이미지 추론 → conf≥0.6 예측을 라벨로 채택·누적"]
-    E["배포 (무인)<br/>FastAPI /predict + ONNX"]
-    F["XR · 프론트엔드<br/>JSON(bbox / class / conf)"]
+    E["배포 (무인)<br/>Jetson Thor 추론 서버: FastAPI /predict"]
+    F["클라이언트 (Magic Leap 2 · 태블릿)<br/>프레임 전송 → JSON(bbox / class / conf) 수신 → 화면 렌더"]
 
     A --> B --> C --> D
     D -- "누적 데이터로 재학습<br/>(라운드마다 데이터↑ → 성능↑)" --> C
@@ -38,14 +43,16 @@ flowchart TD
 ```
 
 - 사람 개입은 데이터 투입뿐, 라벨링·학습·배포는 전부 스크립트가 수행 (단계별 실행 명령은 6장, 루프 효과 실측은 5.3)
+- **배포 구조 = 원격 추론(서버 사이드)**: 클라이언트(Magic Leap 2·태블릿)는 카메라 프레임을 보내고 JSON 결과만 받아 그린다. 전처리(레터박스)·추론·후처리(NMS·좌표 복원)·GPU 활용은 전부 Thor 서버의 ultralytics 런타임이 담당하므로 기기 쪽 구현 부담과 기종 의존성이 없다
 
 **컴포넌트 연동**
 
 | 계층 | 구성 |
 |------|------|
-| 모델 | YOLOv8n (Ultralytics), 단일 스테이지 탐지기 |
-| 백엔드 | FastAPI + Uvicorn (`/predict`, `/health`). 기동 시 모델 1회 로드+워밍업, 추론은 스레드풀에서 실행(요청 비차단) |
-| 배포 포맷 | PyTorch `.pt`(서빙) / ONNX(Unity·C# 등 비파이썬 런타임) |
+| 모델 | YOLOv8n (Ultralytics), 단일 스테이지 탐지기. 모델·입력크기 선정 벤치마크는 `5_benchmark.py` |
+| 추론 서버 | **NVIDIA Jetson Thor** (ARM64 + Blackwell GPU, JetPack 스택). FastAPI + Uvicorn (`/predict`, `/health`), 기동 시 모델 로드+워밍업, 추론은 스레드풀 실행(요청 비차단) |
+| 클라이언트 | Magic Leap 2 · 태블릿: 프레임 전송 → JSON 수신 → 박스 렌더 (온디바이스 추론 없음) |
+| 배포 포맷 | PyTorch `.pt`(서빙 기본) / ONNX / TensorRT 엔진(Thor 가속, 변환 예정) |
 | 공용 모듈 | `pseudo_utils`(박스 선택 단일 구현: 운영·실험 공용) / `dataset_utils`(클래스 등록 가드) |
 | 설정 | `scripts/config.py` 단일 소스(경로·임계값·하이퍼파라미터) |
 
@@ -64,11 +71,13 @@ xr_autolearning/
 │  ├─ 2_train_pipeline.py        # train/val 분할 → 학습 → ONNX export
 │  ├─ 3_api_server.py            # FastAPI 추론 서버
 │  ├─ 4_experiment_autolearn.py  # 오토러닝 효과 실증 (정답 숨기고 자동 채점)
+│  ├─ 5_benchmark.py             # 모델 x 입력크기 매트릭스 벤치마크 (배포 모델 선정 근거)
 │  ├─ dataset_utils.py           # 데이터셋 등록 공용 (names 정규화·data.yaml 등록 가드)
 │  ├─ pseudo_utils.py            # 자동 라벨링 공용 (박스 선택 단일 구현: 추론·TTA·conf 필터)
 │  └─ data_viewer.ipynb          # COCO 어노테이션 점검 노트북 (클래스 분포·라벨 시각화)
 ├─ models/                       # base_model.pt(초기 생성기) / new_model.pt·onnx(학습 산출)
 ├─ datasets/                     # images/ labels/ unlabeled_images/
+├─ bench_results/                # 벤치마크 결과 (benchmark.json / benchmark.md)
 └─ exp_results/                  # 실험 리포트 (report_*.json)
 ```
 
@@ -87,7 +96,8 @@ xr_autolearning/
 **Infra & Backend**
 
 - API: FastAPI, Uvicorn, python-multipart
-- 실행 환경: 단일 GPU(CUDA). 실험 환경 = NVIDIA RTX 5090 1장
+- 배포(운영) 서버: NVIDIA Jetson Thor (ARM64 + Blackwell, JetPack 기반 torch/ultralytics 스택, TensorRT 가속 예정. 도입 전으로 스택 구성은 7장 과제)
+- 학습·실험 환경: NVIDIA RTX 5090 1장 (단일 GPU, CUDA 12.8)
 - 형상 관리: Git (GitHub: `ev1025/auto_annotation_learning`)
 - 데이터셋/모델 가중치는 `.gitignore`로 제외(용량·재생성 가능), 소스·결과 리포트(json)만 추적
 
@@ -359,6 +369,18 @@ python scripts/4_experiment_autolearn.py --src ./mechanical-parts-yolo --classes
 # 결과: exp_autolearn/report.json (exp_results/ 에 조건별 리포트 보관)
 ```
 
+### 6.5 모델·입력크기 벤치마크
+
+```bash
+# 모델 x 입력크기 매트릭스: 정확도(mAP)·단건 지연(ms)·FPS·파라미터 비교
+# --src 만 바꾸면 다른 데이터셋으로 즉시 재실행 가능
+python scripts/5_benchmark.py --src ./mechanical-parts-yolo \
+    --models yolov8n.pt yolov8s.pt yolov8m.pt yolo11n.pt yolo26n.pt \
+    --imgsz 640 1280 --epochs 60 --device 0
+# 결과: bench_results/benchmark.json + benchmark.md (조합마다 누적 저장)
+# 지연/FPS 는 실행 장비 기준. Jetson Thor 실측은 Thor 에서 같은 명령 재실행
+```
+
 API 응답 예시:
 
 ```json
@@ -390,11 +412,13 @@ API 응답 예시:
 
 **추후 개선 과제(Next steps)**
 
+- **Jetson Thor 배포 스택 구성**: ARM64+JetPack용 torch/ultralytics 설치, TensorRT 엔진 변환(`model.export(format="engine")`), Thor에서 벤치마크(6.5) 재실행으로 실기 지연 실측
+- **실시간 왕복 지연 검증**: 클라이언트(Magic Leap 2·태블릿) ↔ Thor 프레임 전송~JSON 수신 전 구간 측정 (목표 fps 대비)
+- 모델·입력크기 벤치마크(6.5) 결과 기반 배포 모델 확정
 - 3D 렌더 합성 데이터 연동(입력 자동 수집 → 전처리 자동 트리거)으로 루프 완전 무인화
 - k-fold 교차검증 도입, 다회 라운드 누적 실험으로 수렴 곡선 확보
 - conf 임계값·초기 라벨 비율 스윕으로 정밀도-재현율 트레이드오프 최적화
 - 저성능 클래스(gear) 표적 데이터 증강 및 클래스 불균형 보정
-- ONNX 서빙의 Unity/HMD 실기기 연동 및 지연·정확도 검증
 - 아래 **논의사항 1·2** 확정 후 실제 데이터 전환
 
 **논의사항 1. YOLO 라벨의 클래스를 어디서 정의할 것인가**
