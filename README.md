@@ -431,6 +431,22 @@ API 응답 예시:
 - 저성능 클래스(gear) 표적 데이터 증강 및 클래스 불균형 보정
 - 아래 **논의사항 1·2** 확정 후 실제 데이터 전환
 
+**추후 시도할 것 (합성→실사 전환 시, 문헌 검증 기법)**
+
+실제 3D 렌더 데이터 전환 시점에 적용할 후보. 수치는 해당 논문의 실측(우리 데이터 미검증).
+
+| 기법 | 내용 | 근거 |
+|------|------|------|
+| 하이브리드 학습 | 합성 대량 사전학습 → 실사 50~100장만 라벨링해 낮은 학습률로 소량 파인튜닝 | 고품질 합성 + 실사 50장 ≈ 저품질 합성 + 실사 400장 (실사 라벨 약 8배 절감) [1] |
+| 파인튜닝 2단계 레시피 | 1단계 backbone 동결(`freeze=10`)·20ep·lr0 0.01 → 2단계 전층 해제·40ep·lr0 0.001, `cos_lr=True` | 기본 lr(0.01) 그대로 파인튜닝하면 합성에서 배운 가중치 파괴(catastrophic forgetting) [1] |
+| 파인튜닝용 실사 선별 | 모델이 틀린 어려운 프레임(hard mining)보다 **균등 랜덤 샘플링**이 우수 | 200Hard < 200Random 실측 [1] |
+| 파인튜닝 특화 증강 | `mosaic=1.0`·`mixup=0.3~0.5`(작은 객체·배경 혼합 강건성), `hsv_h/s/v` 지터(렌더의 완벽한 조명을 현실처럼 왜곡) | 렌더(부품이 크게)↔실사(작게 보임) 스케일 갭 대응 |
+| loss 가중치 튜닝 | 박스가 헐거우면 `box` 7.5→10, 클래스 혼동이면 `cls` 상향 | |
+| LLM 유도 증강 루프 | 왜곡 유형별 실패 통계를 LLM에 입력 → 증강 레시피(JSON) 자동 생성 → 오프라인 증강 후 재파인튜닝. 우리 report.json(클래스 분포·mean_conf)과 바로 연결 가능 | PCB 탐지에서 Gaussian blur mAP50 31.6→94.9% 회복, 추론 비용 증가 0 [2]. 단 motion blur는 증강만으로 한계(7.8→16.4%) |
+| 합성 데이터 반복 개선 | 씬 단위로 쪼개 성능 기여 분석 → 비효율 씬 재설계. 장소당 700~1,000장 초과 생성은 다양성 추가 없인 무효 | 3회 반복 개선으로 합성 단독 mAP50 0.24→0.49 [1] |
+
+- 하이브리드 학습은 "실사 소량 손라벨" 도입을 전제하므로 zero-manual 포지셔닝의 완화 여부 결정 필요 (논의사항 1·2와 함께 협의)
+
 **논의사항 1. YOLO 라벨의 클래스를 어디서 정의할 것인가**
 
 부품 클래스(번호↔부품명)를 누가, 어디서 정의해서 파이프라인에 넣을지 결정 필요. 현재는 반입 시 CLI(`0_import_render.py --classes ...`)로 임시 대응 중.
@@ -459,3 +475,23 @@ API 응답 예시:
 | 해상도/수량 | 단변 640px 이상. 부품(클래스)당 다양 조건 조합으로 수백 장 이상 | YOLOv8 입력 규격(640) 및 클래스 균형 확보 |
 
 - 핵심 원칙: **사실적으로 예쁘게(PBR 고품질)보다, 다양하고 지저분하게.** 모델이 배경·조명·표면 상태가 아니라 부품의 기하학적 형태로 인식하도록 강제하는 것이 목적.
+
+<br>
+
+## 참고 자료
+
+**논문** (원문 PDF는 `논문/` 폴더 보관, git 미추적)
+
+| # | 논문 | 우리와의 연결 |
+|---|------|--------------|
+| [1] | Dergachov & Aizatskyi, *Synthetic data for deep learning in object detection tasks* (WDA'26, CEUR-WS) | Unity 합성 데이터 3회 반복 개선 + 실사 소량 파인튜닝 전략·수치의 출처 (위 "추후 시도할 것") |
+| [2] | Lee, Chen & Jiang, *LLM-guided Data Augmentation for YOLOv8-based PCB Defect Detection* (Sensors and Materials 38, 2026) | LLM이 실패 통계 분석 → 증강 레시피 자동 생성 루프의 출처 |
+| [3] | Schmedemann et al., *Tuning domain randomization for 3D-rendered synthetic training data for defect detection in aircraft engine borescope inspection* (J. Electronic Imaging) | 항공 도메인 + 3D 렌더 도메인 랜덤화 튜닝 (논의사항 2의 근거) |
+| [4] | Horváth et al., *Object Detection Using Sim2Real Domain Randomization for Robotic Applications* (IEEE T-RO 39(2), 2023) | sim-to-real 갭 대응 방법론 |
+| [5] | Deogan et al., *Synthetic Dataset Generation for Autonomous Mobile Robots Using 3D Gaussian Splatting for Vision Training* (arXiv:2506.05092) | 2D 사진 → 3D 재구성 기반 합성 데이터 생성 기법 (1장 데이터 생성 방식의 구현 후보) |
+| [6] | Wiese et al., *Detection of Surgical Instruments Based on Synthetic Training Data* (Computers 14(2), 2025) | 합성 데이터로 기구(부품 유사) 탐지 사례 |
+| [7] | Karki et al., *Synthetic Data-Driven Mixed Reality for AR-Assisted Maintenance* (TechRxiv, 2025) | 합성 데이터 + AR 정비 지원 = 본 프로젝트와 동일 시나리오 |
+
+**대회·벤치마크**
+
+- Kaggle [Synthetic-2-Real Object Detection Challenge](https://www.kaggle.com/competitions/synthetic-2-real-object-detection-challenge) - 합성 학습 → 실사 평가 일반화 벤치마크. 우리 파이프라인 검증 무대로 쓸 수 있는지 **추후 검토**
