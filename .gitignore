@@ -32,3 +32,6 @@ venv/
 Thumbs.db
 .vscode/
 .idea/
+
+# 참고 논문(용량·저작권, git 제외)
+논문/
