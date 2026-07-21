@@ -74,6 +74,7 @@ xr_autolearning/
 │  ├─ 4_experiment_autolearn.py  # 오토러닝 효과 실증 (정답 숨기고 자동 채점)
 │  ├─ 5_benchmark.py             # 모델 x 입력크기 매트릭스 벤치마크 (배포 모델 선정 근거)
 │  ├─ 6_model_registry.py        # 릴리스 조회/롤백 (이전 버전 복원)
+│  ├─ 7_finetune_real.py         # 실사 소량 파인튜닝 (2단계: 동결 → 저lr 해제, 전/후 게이트)
 │  ├─ dataset_utils.py           # 데이터셋 등록 공용 (names 정규화·data.yaml 등록 가드)
 │  ├─ pseudo_utils.py            # 자동 라벨링 공용 (박스 선택 단일 구현: 추론·TTA·conf 필터)
 │  └─ data_viewer.ipynb          # COCO 어노테이션 점검 노트북 (클래스 분포·라벨 시각화)
@@ -389,6 +390,15 @@ python scripts/5_benchmark.py --src ./mechanical-parts-yolo \
     --imgsz 640 1280 --epochs 100 --device 0
 # 결과: bench_results/benchmark.json + benchmark.md (조합마다 누적 저장)
 # 지연/FPS 는 실행 장비 기준. Jetson Thor 실측은 Thor 에서 같은 명령 재실행
+```
+
+### 6.6 실사 소량 파인튜닝 (실제 데이터 확보 후)
+
+```bash
+# 합성 사전학습 모델을 실사 50~100장으로 2단계 파인튜닝 (7장 "추후 시도할 것" [1] 구현)
+# 1단계 backbone 동결 -> 2단계 저학습률 해제. 실사 val 전/후 비교 게이트 + 릴리스 보관
+python scripts/7_finetune_real.py --src ./real_photos --device 0
+# real_photos/images/*.jpg + real_photos/labels/*.txt (클래스 번호는 data.yaml 체계와 동일)
 ```
 
 API 응답 예시:

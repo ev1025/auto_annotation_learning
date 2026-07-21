@@ -8,6 +8,8 @@ data.generated.yaml
 exp_autolearn/
 exp_autolearn_*/
 runs/
+bench_results/runs/
+finetune_real/
 *.log
 *.marker
 
