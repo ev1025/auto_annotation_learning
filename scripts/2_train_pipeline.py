@@ -181,6 +181,34 @@ def train(args):
     print(f"[학습] 시작 가중치: {start}")
 
     model = YOLO(start)
+
+    # 학습률(데이터 산입률) 콜백: 입력 대비 실제 학습에 산입된 이미지 비율.
+    # ultralytics 는 학습 전 스캔에서 깨진 이미지/라벨을 제외하고 진행하므로
+    # (전량 불량이 아닌 한 중단되지 않음) 입력-산입 차이가 곧 '가공 실패분'이다.
+    # 시험항목 '학습데이터 학습률' 의 증빙 로그 겸 release metrics 에 기록.
+    n_input = {s: len([p for p in (config.IMAGES_DIR / s).glob("*")
+                       if p.suffix.lower() in config.IMG_EXTS]) for s in ("train", "val")}
+    ingest = {}
+
+    def report_ingest_rate(trainer):
+        used = {"train": len(trainer.train_loader.dataset.im_files)}
+        val_loader = getattr(trainer, "test_loader", None)
+        if val_loader is not None:
+            used["val"] = len(val_loader.dataset.im_files)
+        for split, n_used in used.items():
+            total = n_input.get(split, 0)
+            rate = (n_used / total * 100) if total else 0.0
+            ingest[split] = {"input": total, "used": n_used, "rate_pct": round(rate, 1)}
+            print(f"[학습률] {split}: 입력 {total}장 중 {n_used}장 산입 = {rate:.1f}%")
+            if n_used < total:  # 제외된 파일명을 로그에 남겨 원인 추적 가능하게
+                folder = {p.name for p in (config.IMAGES_DIR / split).glob("*")
+                          if p.suffix.lower() in config.IMG_EXTS}
+                loaded = {Path(f).name for f in
+                          (trainer.train_loader if split == "train" else val_loader).dataset.im_files}
+                print(f"[학습률] {split} 제외 파일: {sorted(folder - loaded)[:20]}")
+
+    model.add_callback("on_train_start", report_ingest_rate)
+
     # data.yaml 의 path 를 절대경로로 고정한 런타임 사본을 참조해 학습.
     data_yaml = build_runtime_data_yaml()
     model.train(
@@ -206,7 +234,7 @@ def train(args):
 
     metrics = _last_metrics(rel_dir / "results.csv") if (rel_dir / "results.csv").exists() else {}
     metrics.update({"version": version, "epochs": args.epochs, "imgsz": args.imgsz,
-                    "start_weights": str(start)})
+                    "start_weights": str(start), "ingest": ingest})
 
     del model
     free_cuda()  # 학습 직후 GPU 메모리 회수(다음 단계 OOM 방지)
