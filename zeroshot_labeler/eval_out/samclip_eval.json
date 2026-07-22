@@ -1,0 +1,289 @@
+{
+  "engine": "sam-auto + clip-vit-l14 gallery(NN)",
+  "n_images": 204,
+  "gallery_per_class": 10,
+  "gallery_source": "train GT crop (렌더 크롭 시뮬레이션, 동일 도메인이라 낙관적)",
+  "sec_per_image": 1.3,
+  "sweep": [
+    {
+      "tau": 0.6,
+      "precision": 0.0857,
+      "recall": 0.6439,
+      "f1": 0.1513,
+      "tp": 651,
+      "fp": 6944,
+      "fn": 360,
+      "mean_tp_iou": 0.8231,
+      "per_class": {
+        "bearing": {
+          "tp": 101,
+          "fp": 1000,
+          "fn": 96,
+          "precision": 0.0917,
+          "recall": 0.5127
+        },
+        "bolt": {
+          "tp": 218,
+          "fp": 1504,
+          "fn": 67,
+          "precision": 0.1266,
+          "recall": 0.7649
+        },
+        "gear": {
+          "tp": 154,
+          "fp": 3867,
+          "fn": 141,
+          "precision": 0.0383,
+          "recall": 0.522
+        },
+        "nut": {
+          "tp": 178,
+          "fp": 573,
+          "fn": 56,
+          "precision": 0.237,
+          "recall": 0.7607
+        }
+      }
+    },
+    {
+      "tau": 0.65,
+      "precision": 0.0897,
+      "recall": 0.6439,
+      "f1": 0.1575,
+      "tp": 651,
+      "fp": 6607,
+      "fn": 360,
+      "mean_tp_iou": 0.8231,
+      "per_class": {
+        "bearing": {
+          "tp": 101,
+          "fp": 1000,
+          "fn": 96,
+          "precision": 0.0917,
+          "recall": 0.5127
+        },
+        "bolt": {
+          "tp": 218,
+          "fp": 1356,
+          "fn": 67,
+          "precision": 0.1385,
+          "recall": 0.7649
+        },
+        "gear": {
+          "tp": 154,
+          "fp": 3680,
+          "fn": 141,
+          "precision": 0.0402,
+          "recall": 0.522
+        },
+        "nut": {
+          "tp": 178,
+          "fp": 571,
+          "fn": 56,
+          "precision": 0.2377,
+          "recall": 0.7607
+        }
+      }
+    },
+    {
+      "tau": 0.7,
+      "precision": 0.1005,
+      "recall": 0.6409,
+      "f1": 0.1738,
+      "tp": 648,
+      "fp": 5797,
+      "fn": 363,
+      "mean_tp_iou": 0.8232,
+      "per_class": {
+        "bearing": {
+          "tp": 101,
+          "fp": 993,
+          "fn": 96,
+          "precision": 0.0923,
+          "recall": 0.5127
+        },
+        "bolt": {
+          "tp": 218,
+          "fp": 1159,
+          "fn": 67,
+          "precision": 0.1583,
+          "recall": 0.7649
+        },
+        "gear": {
+          "tp": 152,
+          "fp": 3118,
+          "fn": 143,
+          "precision": 0.0465,
+          "recall": 0.5153
+        },
+        "nut": {
+          "tp": 177,
+          "fp": 527,
+          "fn": 57,
+          "precision": 0.2514,
+          "recall": 0.7564
+        }
+      }
+    },
+    {
+      "tau": 0.75,
+      "precision": 0.1444,
+      "recall": 0.6251,
+      "f1": 0.2346,
+      "tp": 632,
+      "fp": 3745,
+      "fn": 379,
+      "mean_tp_iou": 0.8247,
+      "per_class": {
+        "bearing": {
+          "tp": 101,
+          "fp": 907,
+          "fn": 96,
+          "precision": 0.1002,
+          "recall": 0.5127
+        },
+        "bolt": {
+          "tp": 213,
+          "fp": 759,
+          "fn": 72,
+          "precision": 0.2191,
+          "recall": 0.7474
+        },
+        "gear": {
+          "tp": 144,
+          "fp": 1720,
+          "fn": 151,
+          "precision": 0.0773,
+          "recall": 0.4881
+        },
+        "nut": {
+          "tp": 174,
+          "fp": 359,
+          "fn": 60,
+          "precision": 0.3265,
+          "recall": 0.7436
+        }
+      }
+    },
+    {
+      "tau": 0.8,
+      "precision": 0.3202,
+      "recall": 0.5529,
+      "f1": 0.4055,
+      "tp": 559,
+      "fp": 1187,
+      "fn": 452,
+      "mean_tp_iou": 0.827,
+      "per_class": {
+        "bearing": {
+          "tp": 85,
+          "fp": 491,
+          "fn": 112,
+          "precision": 0.1476,
+          "recall": 0.4315
+        },
+        "bolt": {
+          "tp": 193,
+          "fp": 306,
+          "fn": 92,
+          "precision": 0.3868,
+          "recall": 0.6772
+        },
+        "gear": {
+          "tp": 120,
+          "fp": 236,
+          "fn": 175,
+          "precision": 0.3371,
+          "recall": 0.4068
+        },
+        "nut": {
+          "tp": 161,
+          "fp": 154,
+          "fn": 73,
+          "precision": 0.5111,
+          "recall": 0.688
+        }
+      }
+    },
+    {
+      "tau": 0.85,
+      "precision": 0.5996,
+      "recall": 0.3155,
+      "f1": 0.4135,
+      "tp": 319,
+      "fp": 213,
+      "fn": 692,
+      "mean_tp_iou": 0.8311,
+      "per_class": {
+        "bearing": {
+          "tp": 42,
+          "fp": 90,
+          "fn": 155,
+          "precision": 0.3182,
+          "recall": 0.2132
+        },
+        "bolt": {
+          "tp": 118,
+          "fp": 78,
+          "fn": 167,
+          "precision": 0.602,
+          "recall": 0.414
+        },
+        "gear": {
+          "tp": 45,
+          "fp": 30,
+          "fn": 250,
+          "precision": 0.6,
+          "recall": 0.1525
+        },
+        "nut": {
+          "tp": 114,
+          "fp": 15,
+          "fn": 120,
+          "precision": 0.8837,
+          "recall": 0.4872
+        }
+      }
+    }
+  ],
+  "best_f1": {
+    "tau": 0.85,
+    "precision": 0.5996,
+    "recall": 0.3155,
+    "f1": 0.4135,
+    "tp": 319,
+    "fp": 213,
+    "fn": 692,
+    "mean_tp_iou": 0.8311,
+    "per_class": {
+      "bearing": {
+        "tp": 42,
+        "fp": 90,
+        "fn": 155,
+        "precision": 0.3182,
+        "recall": 0.2132
+      },
+      "bolt": {
+        "tp": 118,
+        "fp": 78,
+        "fn": 167,
+        "precision": 0.602,
+        "recall": 0.414
+      },
+      "gear": {
+        "tp": 45,
+        "fp": 30,
+        "fn": 250,
+        "precision": 0.6,
+        "recall": 0.1525
+      },
+      "nut": {
+        "tp": 114,
+        "fp": 15,
+        "fn": 120,
+        "precision": 0.8837,
+        "recall": 0.4872
+      }
+    }
+  }
+}
