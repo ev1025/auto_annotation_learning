@@ -25,6 +25,31 @@ def normalize_names(raw):
     return None
 
 
+def append_class(name):
+    """클래스 1개를 data.yaml 에 추가하고 클래스 번호를 반환(이미 있으면 기존 번호).
+
+    register_classes 와 달리 '추가'가 목적: 기존 번호는 절대 바꾸지 않고 끝에만
+    붙이므로 기존 datasets/ 라벨과 호환된다. 부품 등록(0_register_part)처럼
+    운영 중 클래스가 늘어나는 경로에서 쓴다.
+    """
+    cfg, names = {}, {}
+    if config.DATA_YAML.exists():
+        cfg = yaml.safe_load(config.DATA_YAML.read_text(encoding="utf-8")) or {}
+        names = normalize_names(cfg.get("names")) or {}
+    for k, v in names.items():
+        if v.lower() == name.lower():
+            return k
+    new_id = max(names.keys(), default=-1) + 1
+    names[new_id] = name
+    cfg.setdefault("path", "./datasets")
+    cfg.setdefault("train", "images/train")
+    cfg.setdefault("val", "images/val")
+    cfg["names"] = {int(k): names[k] for k in sorted(names)}
+    write_yaml(config.DATA_YAML, cfg)
+    print(f"[등록] 클래스 추가: {new_id} = {name}")
+    return new_id
+
+
 def register_classes(class_names):
     """클래스 정의({id: 이름})를 프로젝트 data.yaml 에 등록한다.
 

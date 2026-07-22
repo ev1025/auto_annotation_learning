@@ -36,7 +36,7 @@ import numpy as np
 import torch
 
 import config
-from dataset_utils import normalize_names, register_classes
+from dataset_utils import append_class
 
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 MIN_AREA_FRAC = 0.005   # 등록 사진은 부품이 크게 나오므로 후보 하한을 높게
@@ -209,10 +209,8 @@ def label_one_part(name, src, models, ref_tau=REF_TAU):
 
 
 def ingest(name, accepted):
-    """클래스 등록(가드) + datasets/ 플랫 반입. 반입 장수 반환."""
-    class_names = register_classes([name])
-    names = normalize_names(class_names)
-    cid = [k for k, v in names.items() if v == name][0]
+    """클래스 등록(기존 번호 보존, 신규는 끝에 추가) + datasets/ 플랫 반입."""
+    cid = append_class(name)
     config.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     config.LABELS_DIR.mkdir(parents=True, exist_ok=True)
     for p, im, keep in accepted:
