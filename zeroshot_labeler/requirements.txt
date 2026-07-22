@@ -1,0 +1,12 @@
+# 제로샷 오토 어노테이션 (Grounding DINO + SAM) 전용 의존성
+# ⚠️ 메인 파이프라인 venv 와 분리된 전용 venv 에 설치할 것 (torch 버전 충돌 방지)
+#
+# torch 는 자기 GPU 의 CUDA 버전에 맞춰 "먼저" 설치:
+#   RTX 5090(Blackwell): pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+#   그 외 최신 GPU:      pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+#   CPU 전용(느림):      pip install torch torchvision
+
+autodistill
+autodistill-grounded-sam   # Grounding DINO(텍스트→박스) + SAM(마스크). 첫 실행 시 가중치 ~3GB 자동 다운로드
+supervision                # 결과 통계·미리보기 시각화
+opencv-python
