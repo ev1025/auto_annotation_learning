@@ -10,12 +10,14 @@
 결과: zeroshot_labeler/eval_out/zeroshot_eval.json + 미리보기 8장(초록=예측, 빨강=정답)
 """
 import json
+import sys
 import time
 from pathlib import Path
 
 import cv2
+import numpy as np
 from autodistill.detection import CaptionOntology
-from autodistill_grounding_dino import GroundingDINO
+from autodistill_grounded_sam import GroundedSAM
 
 BASE = Path(__file__).resolve().parent.parent
 SRC = BASE / "mechanical-parts-yolo" / "test"
@@ -32,6 +34,7 @@ CLASSES = list(PROMPTS.values())
 BOX_THR = 0.35
 IOU_THR = 0.5
 # 후처리(v2): Grounding DINO 원시 출력의 두 가지 고질 문제 교정
+TIGHT = "--no-tight" not in sys.argv  # False = DINO 원본 박스로 채점(타이트닝 효과 비교용)
 NMS_IOU = 0.5        # 같은 클래스 중복 박스 제거 (DINO 출력엔 NMS 가 없음)
 MAX_AREA_FRAC = 0.7  # 화면의 70% 이상을 덮는 거대 박스 제거 (배경/접시 오탐)
 
@@ -77,10 +80,11 @@ def main():
     imgs = sorted((SRC / "images").glob("*.jpg"))
     print(f"[준비] test {len(imgs)}장 / 클래스 {CLASSES} / box_thr {BOX_THR}")
 
-    model = GroundingDINO(ontology=CaptionOntology(PROMPTS),
-                          box_threshold=BOX_THR, text_threshold=0.25)
+    model = GroundedSAM(ontology=CaptionOntology(PROMPTS),
+                        box_threshold=BOX_THR, text_threshold=0.25)
 
     stats = {c: {"tp": 0, "fp": 0, "fn": 0} for c in CLASSES}
+    tp_iou_sum, tp_iou_n = 0.0, 0
     t0 = time.perf_counter()
     n_preview = 0
     for i, img_path in enumerate(imgs):
@@ -89,10 +93,16 @@ def main():
         h, w = im.shape[:2]
         gt = load_gt(img_path, w, h)
 
-        preds = sorted(
-            [(int(c), float(cf), tuple(map(float, xy)))
-             for xy, c, cf in zip(det.xyxy, det.class_id, det.confidence)],
-            key=lambda p: -p[1])
+        # SAM 마스크가 있으면 마스크 경계로 타이트 박스 재계산 (--no-tight 로 끄면 DINO 원본 박스)
+        raw = []
+        for i in range(len(det.xyxy)):
+            box = tuple(map(float, det.xyxy[i]))
+            if TIGHT and det.mask is not None:
+                ys, xs = np.where(det.mask[i])
+                if len(xs):
+                    box = (float(xs.min()), float(ys.min()), float(xs.max() + 1), float(ys.max() + 1))
+            raw.append((int(det.class_id[i]), float(det.confidence[i]), box))
+        preds = sorted(raw, key=lambda p: -p[1])
         preds = postprocess(preds, w, h)
 
         # 신뢰도 내림차순 그리디 매칭: 같은 클래스 + IoU>=0.5 미매칭 GT 가 있으면 TP
@@ -109,6 +119,8 @@ def main():
             if hit >= 0:
                 used[hit] = True
                 stats[CLASSES[c]]["tp"] += 1
+                tp_iou_sum += best
+                tp_iou_n += 1
             else:
                 stats[CLASSES[c]]["fp"] += 1
         for j, (gc, _) in enumerate(gt):
@@ -130,6 +142,8 @@ def main():
     # 집계
     report = {"n_images": len(imgs), "box_thr": BOX_THR, "iou_thr": IOU_THR,
               "post": {"nms_iou": NMS_IOU, "max_area_frac": MAX_AREA_FRAC},
+              "engine": f"grounded-sam({'tight' if TIGHT else 'dino-box'})",
+              "mean_tp_iou": None,  # 아래에서 채움
               "prompts": PROMPTS, "sec_per_image": round((time.perf_counter() - t0) / len(imgs), 2),
               "per_class": {}}
     T = {"tp": 0, "fp": 0, "fn": 0}
@@ -139,10 +153,11 @@ def main():
         report["per_class"][c] = {**s, "precision": round(p, 4), "recall": round(r, 4)}
         for k in T:
             T[k] += s[k]
+    report["mean_tp_iou"] = round(tp_iou_sum / tp_iou_n, 4) if tp_iou_n else None
     report["micro"] = {
         "precision": round(T["tp"] / (T["tp"] + T["fp"]), 4) if T["tp"] + T["fp"] else 0.0,
         "recall": round(T["tp"] / (T["tp"] + T["fn"]), 4) if T["tp"] + T["fn"] else 0.0, **T}
-    (OUT / "zeroshot_eval.json").write_text(json.dumps(report, ensure_ascii=False, indent=2),
+    (OUT / ("zeroshot_eval.json" if TIGHT else "zeroshot_eval_dinobox.json")).write_text(json.dumps(report, ensure_ascii=False, indent=2),
                                             encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))
     print(f"\n완료: {OUT / 'zeroshot_eval.json'}")

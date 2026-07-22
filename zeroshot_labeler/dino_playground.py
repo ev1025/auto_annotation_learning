@@ -15,8 +15,9 @@ from pathlib import Path
 
 import cv2
 import gradio as gr
+import numpy as np
 from autodistill.detection import CaptionOntology
-from autodistill_grounding_dino import GroundingDINO
+from autodistill_grounded_sam import GroundedSAM
 
 BASE = Path(__file__).resolve().parent.parent
 TEST_IMG = BASE / "mechanical-parts-yolo" / "test" / "images"
@@ -29,15 +30,15 @@ metal hex bolt screw : bolt
 metal gear cog wheel : gear
 metal hex nut : nut"""
 
-EXP_NOTE = """### Grounding DINO 프롬프트 실험대
+EXP_NOTE = """### Grounded-SAM(DINO+SAM) 프롬프트 실험대 - SAM 이 윤곽을 따서 타이트 박스로 교정(주황 = 마스크)
 - 위 초기 프롬프트로 test 204장 평가 결과: **정밀도 0.24 / 재현율 0.42** (NMS+거대박스 제거 후)
 - 주요 실패: 둥근 접시를 gear 로 오인, 유사 금속 부품 혼동 → **프롬프트를 바꿔 개선되는지 확인해보세요**
 - 초록 = 예측(신뢰도), 빨강 = 정답(테스트셋 이미지 + 체크박스 켰을 때)
 """
 
-print("[로드] Grounding DINO 모델 로딩 중... (~20초)")
-MODEL = GroundingDINO(ontology=CaptionOntology({"object": "object"}),
-                      box_threshold=0.35, text_threshold=0.25)
+print("[로드] Grounded-SAM(DINO+SAM) 모델 로딩 중... (첫 실행은 SAM 가중치 2.4GB 다운로드)")
+MODEL = GroundedSAM(ontology=CaptionOntology({"object": "object"}),
+                    box_threshold=0.35, text_threshold=0.25)
 print("[로드] 완료")
 
 
@@ -72,12 +73,21 @@ def detect(image_path, prompts_text, box_thr, text_thr, show_gt):
     im = cv2.imread(str(image_path))
     classes = list(mapping.values())
     lines = []
-    for xy, c, cf in zip(det.xyxy, det.class_id, det.confidence):
-        x1, y1, x2, y2 = map(int, xy)
+    for i in range(len(det.xyxy)):
+        c, cf = int(det.class_id[i]), float(det.confidence[i])
+        x1, y1, x2, y2 = map(int, det.xyxy[i])
+        if det.mask is not None:  # SAM 마스크 -> 타이트 박스 + 윤곽 오버레이
+            m = det.mask[i]
+            ys, xs = np.where(m)
+            if len(xs):
+                x1, y1, x2, y2 = int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())
+            overlay = im.copy()
+            overlay[m] = (overlay[m] * 0.5 + np.array([0, 200, 255]) * 0.5).astype(im.dtype)
+            im = overlay
         cv2.rectangle(im, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        cv2.putText(im, f"{classes[int(c)]} {cf:.2f}", (x1, max(y1 - 6, 14)),
+        cv2.putText(im, f"{classes[c]} {cf:.2f}", (x1, max(y1 - 6, 14)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        lines.append(f"{classes[int(c)]}  conf {cf:.2f}")
+        lines.append(f"{classes[c]}  conf {cf:.2f}")
 
     lbl = TEST_LBL / f"{Path(image_path).stem}.txt"
     if show_gt and lbl.exists():

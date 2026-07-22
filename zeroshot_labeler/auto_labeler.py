@@ -35,6 +35,9 @@ mechanical-parts test 204장) 기준 정밀도 0.22~0.29 로, 무검수 초기 �
 회복 안 됨(exp_zeroshot_eval.py 로 재현 가능). 이 도구는 ① 일반 사물(사람·안전모 등)
 라벨링 ② 사람 검수 전 초벌 박스(그리기보다 고치기가 빠름) 용도로 한정 권장.
 세밀 부품의 초기 라벨은 3D 렌더 자동 어노테이션이 정답.
+박스 정밀도 실측: 맞은 탐지의 TP 평균 IoU 는 DINO 원본 0.908 / SAM 타이트 0.876
+(본 데이터셋의 사람 라벨 기준). 즉 오탐의 원인은 여백이 아니라 클래스 혼동이며,
+SAM 타이트닝은 여백이 실제로 큰 사진(원거리·복잡 배경)에서 가치가 있다.
 """
 import argparse
 import shutil
@@ -96,8 +99,36 @@ def label_images(args):
     print("       한 클래스가 0에 가깝다면: 프롬프트 표현을 바꾸거나 --box-thr 를 낮춰 재시도")
     print(f"[저장] {out} (images + labels + data.yaml, train/valid 자동 분할)")
 
+    tighten_labels(dataset, out)
+
     if args.preview > 0:
         save_previews(dataset, out, args.preview)
+
+
+def tighten_labels(dataset, out):
+    """저장된 YOLO 라벨을 SAM 마스크 경계 기반 '타이트 박스'로 재작성.
+
+    autodistill 기본 출력은 DINO 박스(여백 많음)를 쓸 수 있어, 마스크가 있으면
+    픽셀 경계로 박스를 다시 계산해 학습 라벨 품질을 높인다.
+    """
+    import numpy as np
+    n = 0
+    for img_path, image, det in dataset:
+        h, w = image.shape[:2]
+        lines = []
+        for i in range(len(det.xyxy)):
+            x1, y1, x2, y2 = det.xyxy[i]
+            if det.mask is not None:
+                ys, xs = np.where(det.mask[i])
+                if len(xs):
+                    x1, y1, x2, y2 = xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
+            cx, cy = (x1 + x2) / 2 / w, (y1 + y2) / 2 / h
+            bw, bh = (x2 - x1) / w, (y2 - y1) / h
+            lines.append(f"{int(det.class_id[i])} {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}")
+        for lf in out.rglob(f"{Path(img_path).stem}.txt"):
+            lf.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+            n += 1
+    print(f"[타이트닝] SAM 마스크 기반으로 라벨 {n}개 파일 재작성 (여백 제거)")
 
 
 def save_previews(dataset, out, n):
