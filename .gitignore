@@ -37,3 +37,8 @@ Thumbs.db
 
 # 참고 논문(용량·저작권, git 제외)
 논문/
+
+# 등록 테스트 산출물·영상 (git 제외)
+_regtest*/
+uploads/
+*.mp4
