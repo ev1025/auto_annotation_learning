@@ -36,7 +36,9 @@ KEEP_RELEASES = 10       # 보관할 릴리스 수(초과분은 오래된 것부
 PROMOTE_MIN_DROP = 0.0   # 배포 게이트: 직전 배포본 대비 mAP50 하락 허용폭(0 = 하락하면 미채택)
 
 # --- 학습 하이퍼파라미터 기본값 ---
-PRETRAINED = "yolov8n.pt"  # base_model 이 없을 때 전이학습 시작점(자동 다운로드). n=경량, 데모/엣지용
+# 벤치마크(bench_results/, 7모델x2크기 + 시드 3반복)로 선정: 정확도 동급 최고
+# (mAP50-95 평균 1위), 시드 분산 최소, 지연 최단(NMS-free), Thor TensorRT 적합
+PRETRAINED = "yolo26s.pt"  # base_model 이 없을 때 전이학습 시작점(자동 다운로드)
 EPOCHS = 100
 IMG_SIZE = 640
 BATCH = 16
