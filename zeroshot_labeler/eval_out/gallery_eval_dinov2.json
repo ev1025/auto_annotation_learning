@@ -1,0 +1,520 @@
+{
+  "engine": "sam + dinov2 gallery(NN, margin)",
+  "n_images": 204,
+  "gallery_per_class": 10,
+  "sec_per_image": 1.21,
+  "sweep": [
+    {
+      "tau": 0.4,
+      "margin": 0.0,
+      "precision": 0.35,
+      "recall": 0.729,
+      "f1": 0.4729,
+      "tp": 737,
+      "fp": 1369,
+      "fn": 274,
+      "per_class_p": {
+        "bearing": 0.342,
+        "bolt": 0.39,
+        "gear": 0.287,
+        "nut": 0.381
+      }
+    },
+    {
+      "tau": 0.4,
+      "margin": 0.03,
+      "precision": 0.3585,
+      "recall": 0.7141,
+      "f1": 0.4774,
+      "tp": 722,
+      "fp": 1292,
+      "fn": 289,
+      "per_class_p": {
+        "bearing": 0.34,
+        "bolt": 0.406,
+        "gear": 0.289,
+        "nut": 0.401
+      }
+    },
+    {
+      "tau": 0.4,
+      "margin": 0.05,
+      "precision": 0.3655,
+      "recall": 0.7003,
+      "f1": 0.4803,
+      "tp": 708,
+      "fp": 1229,
+      "fn": 303,
+      "per_class_p": {
+        "bearing": 0.348,
+        "bolt": 0.416,
+        "gear": 0.291,
+        "nut": 0.414
+      }
+    },
+    {
+      "tau": 0.45,
+      "margin": 0.0,
+      "precision": 0.3778,
+      "recall": 0.7092,
+      "f1": 0.493,
+      "tp": 717,
+      "fp": 1181,
+      "fn": 294,
+      "per_class_p": {
+        "bearing": 0.373,
+        "bolt": 0.399,
+        "gear": 0.317,
+        "nut": 0.415
+      }
+    },
+    {
+      "tau": 0.45,
+      "margin": 0.03,
+      "precision": 0.3858,
+      "recall": 0.6954,
+      "f1": 0.4963,
+      "tp": 703,
+      "fp": 1119,
+      "fn": 308,
+      "per_class_p": {
+        "bearing": 0.371,
+        "bolt": 0.412,
+        "gear": 0.319,
+        "nut": 0.436
+      }
+    },
+    {
+      "tau": 0.45,
+      "margin": 0.05,
+      "precision": 0.3912,
+      "recall": 0.6825,
+      "f1": 0.4973,
+      "tp": 690,
+      "fp": 1074,
+      "fn": 321,
+      "per_class_p": {
+        "bearing": 0.373,
+        "bolt": 0.423,
+        "gear": 0.32,
+        "nut": 0.446
+      }
+    },
+    {
+      "tau": 0.5,
+      "margin": 0.0,
+      "precision": 0.4073,
+      "recall": 0.6845,
+      "f1": 0.5107,
+      "tp": 692,
+      "fp": 1007,
+      "fn": 319,
+      "per_class_p": {
+        "bearing": 0.42,
+        "bolt": 0.411,
+        "gear": 0.353,
+        "nut": 0.441
+      }
+    },
+    {
+      "tau": 0.5,
+      "margin": 0.03,
+      "precision": 0.4156,
+      "recall": 0.6726,
+      "f1": 0.5138,
+      "tp": 680,
+      "fp": 956,
+      "fn": 331,
+      "per_class_p": {
+        "bearing": 0.421,
+        "bolt": 0.421,
+        "gear": 0.354,
+        "nut": 0.461
+      }
+    },
+    {
+      "tau": 0.5,
+      "margin": 0.05,
+      "precision": 0.4198,
+      "recall": 0.6597,
+      "f1": 0.5131,
+      "tp": 667,
+      "fp": 922,
+      "fn": 344,
+      "per_class_p": {
+        "bearing": 0.418,
+        "bolt": 0.433,
+        "gear": 0.354,
+        "nut": 0.467
+      }
+    },
+    {
+      "tau": 0.55,
+      "margin": 0.0,
+      "precision": 0.4404,
+      "recall": 0.6538,
+      "f1": 0.5263,
+      "tp": 661,
+      "fp": 840,
+      "fn": 350,
+      "per_class_p": {
+        "bearing": 0.451,
+        "bolt": 0.429,
+        "gear": 0.392,
+        "nut": 0.482
+      }
+    },
+    {
+      "tau": 0.55,
+      "margin": 0.03,
+      "precision": 0.4474,
+      "recall": 0.6429,
+      "f1": 0.5276,
+      "tp": 650,
+      "fp": 803,
+      "fn": 361,
+      "per_class_p": {
+        "bearing": 0.451,
+        "bolt": 0.438,
+        "gear": 0.392,
+        "nut": 0.499
+      }
+    },
+    {
+      "tau": 0.55,
+      "margin": 0.05,
+      "precision": 0.4522,
+      "recall": 0.632,
+      "f1": 0.5272,
+      "tp": 639,
+      "fp": 774,
+      "fn": 372,
+      "per_class_p": {
+        "bearing": 0.45,
+        "bolt": 0.449,
+        "gear": 0.392,
+        "nut": 0.505
+      }
+    },
+    {
+      "tau": 0.6,
+      "margin": 0.0,
+      "precision": 0.4842,
+      "recall": 0.6063,
+      "f1": 0.5384,
+      "tp": 613,
+      "fp": 653,
+      "fn": 398,
+      "per_class_p": {
+        "bearing": 0.442,
+        "bolt": 0.459,
+        "gear": 0.474,
+        "nut": 0.541
+      }
+    },
+    {
+      "tau": 0.6,
+      "margin": 0.03,
+      "precision": 0.4914,
+      "recall": 0.5964,
+      "f1": 0.5389,
+      "tp": 603,
+      "fp": 624,
+      "fn": 408,
+      "per_class_p": {
+        "bearing": 0.442,
+        "bolt": 0.467,
+        "gear": 0.474,
+        "nut": 0.56
+      }
+    },
+    {
+      "tau": 0.6,
+      "margin": 0.05,
+      "precision": 0.4971,
+      "recall": 0.5865,
+      "f1": 0.5381,
+      "tp": 593,
+      "fp": 600,
+      "fn": 418,
+      "per_class_p": {
+        "bearing": 0.442,
+        "bolt": 0.477,
+        "gear": 0.474,
+        "nut": 0.568
+      }
+    },
+    {
+      "tau": 0.65,
+      "margin": 0.0,
+      "precision": 0.5322,
+      "recall": 0.5648,
+      "f1": 0.548,
+      "tp": 571,
+      "fp": 502,
+      "fn": 440,
+      "per_class_p": {
+        "bearing": 0.481,
+        "bolt": 0.486,
+        "gear": 0.587,
+        "nut": 0.586
+      }
+    },
+    {
+      "tau": 0.65,
+      "margin": 0.03,
+      "precision": 0.5393,
+      "recall": 0.5559,
+      "f1": 0.5475,
+      "tp": 562,
+      "fp": 480,
+      "fn": 449,
+      "per_class_p": {
+        "bearing": 0.481,
+        "bolt": 0.493,
+        "gear": 0.587,
+        "nut": 0.602
+      }
+    },
+    {
+      "tau": 0.65,
+      "margin": 0.05,
+      "precision": 0.5444,
+      "recall": 0.546,
+      "f1": 0.5452,
+      "tp": 552,
+      "fp": 462,
+      "fn": 459,
+      "per_class_p": {
+        "bearing": 0.481,
+        "bolt": 0.497,
+        "gear": 0.587,
+        "nut": 0.613
+      }
+    },
+    {
+      "tau": 0.7,
+      "margin": 0.0,
+      "precision": 0.6036,
+      "recall": 0.4926,
+      "f1": 0.5425,
+      "tp": 498,
+      "fp": 327,
+      "fn": 513,
+      "per_class_p": {
+        "bearing": 0.514,
+        "bolt": 0.543,
+        "gear": 0.705,
+        "nut": 0.681
+      }
+    },
+    {
+      "tau": 0.7,
+      "margin": 0.03,
+      "precision": 0.6059,
+      "recall": 0.4866,
+      "f1": 0.5398,
+      "tp": 492,
+      "fp": 320,
+      "fn": 519,
+      "per_class_p": {
+        "bearing": 0.514,
+        "bolt": 0.545,
+        "gear": 0.705,
+        "nut": 0.689
+      }
+    },
+    {
+      "tau": 0.7,
+      "margin": 0.05,
+      "precision": 0.6113,
+      "recall": 0.4807,
+      "f1": 0.5382,
+      "tp": 486,
+      "fp": 309,
+      "fn": 525,
+      "per_class_p": {
+        "bearing": 0.514,
+        "bolt": 0.551,
+        "gear": 0.705,
+        "nut": 0.698
+      }
+    },
+    {
+      "tau": 0.75,
+      "margin": 0.0,
+      "precision": 0.7184,
+      "recall": 0.4214,
+      "f1": 0.5312,
+      "tp": 426,
+      "fp": 167,
+      "fn": 585,
+      "per_class_p": {
+        "bearing": 0.643,
+        "bolt": 0.644,
+        "gear": 0.816,
+        "nut": 0.812
+      }
+    },
+    {
+      "tau": 0.75,
+      "margin": 0.03,
+      "precision": 0.7186,
+      "recall": 0.4194,
+      "f1": 0.5297,
+      "tp": 424,
+      "fp": 166,
+      "fn": 587,
+      "per_class_p": {
+        "bearing": 0.643,
+        "bolt": 0.644,
+        "gear": 0.816,
+        "nut": 0.814
+      }
+    },
+    {
+      "tau": 0.75,
+      "margin": 0.05,
+      "precision": 0.7199,
+      "recall": 0.4144,
+      "f1": 0.5261,
+      "tp": 419,
+      "fp": 163,
+      "fn": 592,
+      "per_class_p": {
+        "bearing": 0.643,
+        "bolt": 0.648,
+        "gear": 0.816,
+        "nut": 0.812
+      }
+    },
+    {
+      "tau": 0.8,
+      "margin": 0.0,
+      "precision": 0.7853,
+      "recall": 0.2967,
+      "f1": 0.4307,
+      "tp": 300,
+      "fp": 82,
+      "fn": 711,
+      "per_class_p": {
+        "bearing": 0.6,
+        "bolt": 0.762,
+        "gear": 0.875,
+        "nut": 0.844
+      }
+    },
+    {
+      "tau": 0.8,
+      "margin": 0.03,
+      "precision": 0.7874,
+      "recall": 0.2967,
+      "f1": 0.431,
+      "tp": 300,
+      "fp": 81,
+      "fn": 711,
+      "per_class_p": {
+        "bearing": 0.6,
+        "bolt": 0.762,
+        "gear": 0.875,
+        "nut": 0.85
+      }
+    },
+    {
+      "tau": 0.8,
+      "margin": 0.05,
+      "precision": 0.7878,
+      "recall": 0.2938,
+      "f1": 0.428,
+      "tp": 297,
+      "fp": 80,
+      "fn": 714,
+      "per_class_p": {
+        "bearing": 0.6,
+        "bolt": 0.765,
+        "gear": 0.875,
+        "nut": 0.848
+      }
+    },
+    {
+      "tau": 0.85,
+      "margin": 0.0,
+      "precision": 0.9266,
+      "recall": 0.1622,
+      "f1": 0.2761,
+      "tp": 164,
+      "fp": 13,
+      "fn": 847,
+      "per_class_p": {
+        "bearing": 1.0,
+        "bolt": 0.902,
+        "gear": 1.0,
+        "nut": 0.942
+      }
+    },
+    {
+      "tau": 0.85,
+      "margin": 0.03,
+      "precision": 0.9266,
+      "recall": 0.1622,
+      "f1": 0.2761,
+      "tp": 164,
+      "fp": 13,
+      "fn": 847,
+      "per_class_p": {
+        "bearing": 1.0,
+        "bolt": 0.902,
+        "gear": 1.0,
+        "nut": 0.942
+      }
+    },
+    {
+      "tau": 0.85,
+      "margin": 0.05,
+      "precision": 0.9318,
+      "recall": 0.1622,
+      "f1": 0.2763,
+      "tp": 164,
+      "fp": 12,
+      "fn": 847,
+      "per_class_p": {
+        "bearing": 1.0,
+        "bolt": 0.914,
+        "gear": 1.0,
+        "nut": 0.942
+      }
+    }
+  ],
+  "best_f1": {
+    "tau": 0.65,
+    "margin": 0.0,
+    "precision": 0.5322,
+    "recall": 0.5648,
+    "f1": 0.548,
+    "tp": 571,
+    "fp": 502,
+    "fn": 440,
+    "per_class_p": {
+      "bearing": 0.481,
+      "bolt": 0.486,
+      "gear": 0.587,
+      "nut": 0.586
+    }
+  },
+  "best_recall_at_p85": {
+    "tau": 0.85,
+    "margin": 0.0,
+    "precision": 0.9266,
+    "recall": 0.1622,
+    "f1": 0.2761,
+    "tp": 164,
+    "fp": 13,
+    "fn": 847,
+    "per_class_p": {
+      "bearing": 1.0,
+      "bolt": 0.902,
+      "gear": 1.0,
+      "nut": 0.942
+    }
+  }
+}
