@@ -58,10 +58,10 @@ def parse_prompts(text):
 
 def detect(image_path, prompts_text, box_thr, text_thr, show_gt):
     if not image_path:
-        return None, "이미지를 먼저 선택(랜덤 버튼)하거나 업로드하세요."
+        return None, "이미지를 먼저 선택(랜덤 버튼)하거나 업로드하세요.", ""
     mapping = parse_prompts(prompts_text)
     if not mapping:
-        return None, "프롬프트를 한 줄 이상 입력하세요."
+        return None, "프롬프트를 한 줄 이상 입력하세요.", Path(image_path).name
 
     # 모델은 1회만 로드, 프롬프트/임계값은 요청마다 교체(재로드 없음 = 빠른 반복)
     MODEL.ontology = CaptionOntology(mapping)
@@ -105,6 +105,7 @@ with gr.Blocks(title="DINO 프롬프트 실험대") as app:
     with gr.Row():
         with gr.Column(scale=1):
             image_in = gr.Image(type="filepath", label="입력 이미지 (업로드 가능)")
+            fname = gr.Textbox(label="현재 이미지 파일명", interactive=False)
             rand_btn = gr.Button("테스트셋 랜덤 이미지 불러오기")
             prompts = gr.Textbox(value=DEFAULT_PROMPTS, lines=6,
                                  label="프롬프트 (한 줄에 하나, '영어 프롬프트 : 클래스명')")
@@ -117,9 +118,9 @@ with gr.Blocks(title="DINO 프롬프트 실험대") as app:
             image_out = gr.Image(label="탐지 결과")
             result_txt = gr.Textbox(label="탐지 목록", lines=8)
 
-    rand_btn.click(random_image, outputs=image_in)
+    rand_btn.click(random_image, outputs=[image_in, fname])
     run_btn.click(detect, inputs=[image_in, prompts, box_thr, text_thr, show_gt],
-                  outputs=[image_out, result_txt])
+                  outputs=[image_out, result_txt, fname])
 
 if __name__ == "__main__":
     # 127.0.0.1 바인딩: 공유 서버라 외부 노출 금지, SSH 터널로만 접속
