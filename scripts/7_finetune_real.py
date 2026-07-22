@@ -30,6 +30,7 @@ from ultralytics import YOLO
 import config
 from dataset_utils import normalize_names, write_yaml
 from pseudo_utils import free_cuda
+from release_utils import finalize_metrics
 
 WORK_DIR = config.BASE_DIR / "finetune_real"
 
@@ -122,8 +123,7 @@ def finetune(args):
                "epochs": [args.epochs1, args.epochs2], "imgsz": args.imgsz,
                "start_weights": str(start), "n_real": len(list((WORK_DIR / 'images' / 'train').iterdir())),
                "status": "promoted" if (improved or args.force_promote) else "rejected"}
-    (rel_dir / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2),
-                                          encoding="utf-8")
+    finalize_metrics(rel_dir, metrics)
 
     if improved or args.force_promote:
         shutil.copy2(best2, config.NEW_MODEL_PT)

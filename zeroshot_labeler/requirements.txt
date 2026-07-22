@@ -10,3 +10,8 @@ autodistill
 autodistill-grounded-sam   # Grounding DINO(텍스트→박스) + SAM(마스크). 첫 실행 시 가중치 ~3GB 자동 다운로드
 supervision                # 결과 통계·미리보기 시각화
 opencv-python
+
+# --- 아래 3개: autodistill 이 명시하지 않는 숨은 의존성 (서버 설치 실측으로 확인) ---
+scikit-learn               # autodistill.core 가 임포트
+roboflow                   # autodistill.detection 이 임포트
+transformers<4.50          # 5.x 는 get_head_mask 제거로 groundingdino BERT 인코더가 깨짐

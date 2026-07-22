@@ -39,13 +39,14 @@ def cmd_list():
         return
     # 현재 서빙 중인 모델과 크기 비교로 현재 버전 추정 표시
     cur_size = config.NEW_MODEL_PT.stat().st_size if config.NEW_MODEL_PT.exists() else -1
-    print(f"{'버전':<20}{'상태':<10}{'mAP50':>8}{'mAP50-95':>10}{'epochs':>8}  비고")
+    print(f"{'버전':<20}{'학습 일시':<18}{'상태':<10}{'mAP50':>8}{'mAP50-95':>10}{'epochs':>8}  비고")
     for m in rels:
         mark = ""
         best = m["_dir"] / "best.pt"
         if best.exists() and best.stat().st_size == cur_size:
             mark = "<- 현재 서빙 중(추정)"
-        print(f"{m.get('version',''):<20}{m.get('status','?'):<10}"
+        when = str(m.get('trained_at', ''))[:16].replace('T', ' ')
+        print(f"{m.get('version',''):<20}{when:<18}{m.get('status','?'):<10}"
               f"{m.get('map50','-'):>8}{m.get('map50_95','-'):>10}"
               f"{m.get('epochs','-'):>8}  {mark}")
 

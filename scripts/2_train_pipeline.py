@@ -25,6 +25,7 @@ from ultralytics import YOLO
 
 import config
 from pseudo_utils import free_cuda
+from release_utils import finalize_metrics
 
 
 def build_runtime_data_yaml():
@@ -250,8 +251,7 @@ def train(args):
 
     if not drop_ok:
         metrics["status"] = "rejected"
-        (rel_dir / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2),
-                                              encoding="utf-8")
+        finalize_metrics(rel_dir, metrics)
         print(f"[보류] {version} 은 보관만 하고 서빙 모델은 유지합니다. "
               f"강제 배포는 --force-promote, 복원은 6_model_registry.py rollback")
         _prune_releases(config.KEEP_RELEASES)
@@ -276,8 +276,7 @@ def train(args):
     print(f"[변환] ONNX -> {config.NEW_MODEL_ONNX}")
 
     metrics["status"] = "promoted"
-    (rel_dir / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2),
-                                          encoding="utf-8")
+    finalize_metrics(rel_dir, metrics)
     print(f"[배포] {version} 채택 완료 (보관: {rel_dir})")
     _prune_releases(config.KEEP_RELEASES)
 

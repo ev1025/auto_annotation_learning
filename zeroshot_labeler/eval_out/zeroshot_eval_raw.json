@@ -1,0 +1,49 @@
+{
+  "n_images": 204,
+  "box_thr": 0.35,
+  "iou_thr": 0.5,
+  "prompts": {
+    "metal ball bearing ring": "bearing",
+    "metal hex bolt screw": "bolt",
+    "metal gear cog wheel": "gear",
+    "metal hex nut": "nut"
+  },
+  "sec_per_image": 0.43,
+  "per_class": {
+    "bearing": {
+      "tp": 87,
+      "fp": 330,
+      "fn": 110,
+      "precision": 0.2086,
+      "recall": 0.4416
+    },
+    "bolt": {
+      "tp": 108,
+      "fp": 323,
+      "fn": 177,
+      "precision": 0.2506,
+      "recall": 0.3789
+    },
+    "gear": {
+      "tp": 64,
+      "fp": 451,
+      "fn": 231,
+      "precision": 0.1243,
+      "recall": 0.2169
+    },
+    "nut": {
+      "tp": 179,
+      "fp": 492,
+      "fn": 55,
+      "precision": 0.2668,
+      "recall": 0.765
+    }
+  },
+  "micro": {
+    "precision": 0.2153,
+    "recall": 0.4332,
+    "tp": 438,
+    "fp": 1596,
+    "fn": 573
+  }
+}
