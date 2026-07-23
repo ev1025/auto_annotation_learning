@@ -115,15 +115,23 @@ def show_register(part_dir):
 # ---------------- ③ 추론 검증 ----------------
 def get_model():
     from ultralytics import YOLO
+    if not config.SERVE_MODEL.exists():
+        return None
     if not hasattr(get_model, "m"):
         get_model.m = YOLO(str(config.SERVE_MODEL))
     return get_model.m
+
+
+NO_MODEL_MSG = ("서빙 모델이 없습니다 (models/new_model.pt). "
+                "2_train_pipeline 실행 또는 서버에서 모델 회수 후 사용하세요.")
 
 
 def infer_image(img_path, conf):
     if not img_path:
         return None, "이미지를 업로드하세요."
     m = get_model()
+    if m is None:
+        return None, NO_MODEL_MSG
     r = m.predict(source=img_path, conf=conf, verbose=False)[0]
     im = cv2.imread(img_path)
     lines = []
@@ -140,6 +148,8 @@ def infer_video(video_path, conf, stride):
     if not video_path:
         return None, "영상을 업로드하세요."
     m = get_model()
+    if m is None:
+        return None, NO_MODEL_MSG
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
