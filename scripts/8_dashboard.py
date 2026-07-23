@@ -12,9 +12,8 @@
 
 실행(서버):
   nohup ./venv/bin/python scripts/8_dashboard.py > dashboard.log 2>&1 &
-접속(로컬 PC):
-  1) 터미널: ssh -L 7862:127.0.0.1:7862 <서버>   (창 열어둔 채)
-  2) 브라우저: http://localhost:7862
+접속: http://<서버IP>:7862  (외부 접속 가능, 아래 AUTH 계정으로 로그인)
+  - 방화벽이 포트를 막으면 SSH 터널로 대체: ssh -L 7862:127.0.0.1:7862 <서버> 후 localhost:7862
 """
 import json
 from pathlib import Path
@@ -26,6 +25,8 @@ import yaml
 import config
 
 PORT = 7862
+# 외부 공개용 로그인 (0.0.0.0 바인딩이므로 인증 필수. 계정 변경은 여기서)
+AUTH = ("suri", "xr-auto2026")
 PALETTE = [(0, 255, 0), (255, 160, 0), (0, 160, 255), (255, 0, 200), (160, 255, 0),
            (0, 255, 255), (255, 80, 80), (180, 120, 255)]
 
@@ -243,5 +244,5 @@ with gr.Blocks(title="XR 오토러닝 대시보드") as app:
         hist_btn.click(show_history, None, [hist_df, serving_txt])
 
 if __name__ == "__main__":
-    # 127.0.0.1 바인딩: 공유 서버라 외부 노출 금지, SSH 터널로만 접속
-    app.launch(server_name="127.0.0.1", server_port=PORT)
+    # 0.0.0.0 바인딩(외부 접속 허용) + 로그인 인증. 무인증 개방 금지.
+    app.launch(server_name="0.0.0.0", server_port=PORT, auth=AUTH)
