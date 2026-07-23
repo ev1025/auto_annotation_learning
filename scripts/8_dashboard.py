@@ -204,54 +204,118 @@ def show_history():
     return rows, serving
 
 
+def render_dataset(split, cls, idx):
+    """탭① 렌더 + 슬라이더 동기화."""
+    files = list_dataset(split, cls)
+    if not files:
+        return None, "해당 조건의 이미지가 없습니다. 분할/클래스를 바꿔보세요.", gr.update(value=0, maximum=0)
+    idx = int(idx) % len(files)
+    img, info, _ = show_dataset(split, cls, idx)
+    return img, info, gr.update(value=idx, maximum=len(files) - 1)
+
+
+def nav_dataset(split, cls, idx, step):
+    files = list_dataset(split, cls)
+    new = (int(idx) + step) % max(len(files), 1)
+    return render_dataset(split, cls, new)
+
+
+def rand_dataset(split, cls):
+    import random as _r
+    files = list_dataset(split, cls)
+    return render_dataset(split, cls, _r.randrange(max(len(files), 1)))
+
+
+def status_summary():
+    m = get_model()
+    model_line = (f"서빙 모델: {config.SERVE_MODEL.name} / 클래스: {list(m.names.values())}"
+                  if m else "서빙 모델: 없음 (models/new_model.pt 부재) - ③탭 추론 불가")
+    tr = len(list_dataset("train", "전체"))
+    va = len(list_dataset("val", "전체"))
+    ds_line = f"데이터셋: train {tr}장 / val {va}장 / 클래스 정의: {list(class_names().values())}"
+    return model_line + chr(10) + ds_line
+
+
 with gr.Blocks(title="XR 오토러닝 대시보드") as app:
-    gr.Markdown("## XR 오토러닝 육안 검증 대시보드\n라벨·등록·추론·이력을 이미지/영상 단위로 확인")
+    gr.Markdown("## XR 오토러닝 육안 검증 대시보드")
+    status = gr.Textbox(label="현재 상태", lines=2, interactive=False)
 
     with gr.Tab("① 데이터셋 라벨"):
+        gr.Markdown("**무엇을 확인하는 탭인가**: 학습에 들어가는 이미지와 라벨(박스)을 직접 봅니다. "
+                    "박스가 부품을 정확히 감싸는지, 엉뚱한 곳(배경·손·공구)에 라벨이 붙지 않았는지가 판정 포인트입니다. "
+                    "자동 라벨이 잘못되면 모델이 그대로 잘못 배우므로, 등록·재학습 후 이 탭으로 표본 확인을 권장합니다.")
         with gr.Row():
-            split = gr.Radio(["train", "val"], value="train", label="분할")
-            cls = gr.Dropdown(["전체"] + list(class_names().values()), value="전체", label="클래스 필터")
-            idx = gr.Slider(0, 1, step=1, value=0, label="이미지 번호")
+            split = gr.Radio(["train", "val"], value="train", label="분할 (train=학습용, val=검증용)")
+            cls = gr.Dropdown(["전체"] + list(class_names().values()), value="전체",
+                              label="클래스 필터 (해당 부품이 포함된 이미지만)")
         with gr.Row():
-            ds_img = gr.Image(label="이미지 + 라벨 박스", scale=2)
-            ds_info = gr.Textbox(label="파일명·라벨", lines=10)
-        for comp in (split, cls, idx):
-            comp.change(show_dataset, [split, cls, idx], [ds_img, ds_info, idx])
+            prev_b = gr.Button("← 이전")
+            next_b = gr.Button("다음 →")
+            rand_b = gr.Button("랜덤")
+            idx = gr.Slider(0, 1, step=1, value=0, label="이미지 번호 (드래그로 이동)", scale=3)
+        with gr.Row():
+            ds_img = gr.Image(label="이미지 + 라벨 박스 (색 = 클래스)", scale=2)
+            ds_info = gr.Textbox(label="파일명 · 박스 목록 (클래스, 픽셀 좌표)", lines=10)
+        outs = [ds_img, ds_info, idx]
+        split.change(render_dataset, [split, cls, idx], outs)
+        cls.change(lambda sp, c: render_dataset(sp, c, 0), [split, cls], outs)
+        idx.release(render_dataset, [split, cls, idx], outs)
+        prev_b.click(lambda sp, c, i: nav_dataset(sp, c, i, -1), [split, cls, idx], outs)
+        next_b.click(lambda sp, c, i: nav_dataset(sp, c, i, +1), [split, cls, idx], outs)
+        rand_b.click(rand_dataset, [split, cls], outs)
 
     with gr.Tab("② 등록 결과"):
-        part = gr.Dropdown(upload_dirs(), label="등록 폴더 (uploads*/부품명)")
-        reg_btn = gr.Button("불러오기")
-        reg_info = gr.Textbox(label="요약")
-        reg_gal = gr.Gallery(label="자동 라벨 미리보기", columns=4, height=520)
-        reg_btn.click(show_register, part, [reg_gal, reg_info])
+        gr.Markdown("**무엇을 확인하는 탭인가**: 부품 등록(`0_register_part.py`) 시 자동 생성된 라벨의 미리보기를 봅니다. "
+                    "'참조(탭) 확인' 이미지에서 노란 박스가 등록 대상 부품을 제대로 잡았는지 먼저 보고, "
+                    "이어서 초록 박스(자동 라벨)가 부품에만 붙었는지 확인하세요. 이상하면 반입 전에 재등록해야 합니다.")
+        with gr.Row():
+            part = gr.Dropdown(upload_dirs(), label="등록 폴더 (uploads*/부품명)", scale=3)
+            reload_b = gr.Button("폴더 목록 갱신")
+        reg_info = gr.Textbox(label="요약", interactive=False)
+        reg_gal = gr.Gallery(label="자동 라벨 미리보기 (초록 = 라벨, 노란 = 참조 분할)", columns=4, height=520)
+        part.change(show_register, part, [reg_gal, reg_info])
+        reload_b.click(lambda: gr.update(choices=upload_dirs()), None, part)
 
     with gr.Tab("③ 추론 검증"):
-        conf = gr.Slider(0.05, 0.9, value=0.4, step=0.05, label="confidence 임계값")
+        gr.Markdown("**무엇을 확인하는 탭인가**: 현재 서빙 모델이 실제로 무엇을 탐지하는지 시험합니다. "
+                    "학습에 쓰지 않은 사진/영상을 넣어보는 것이 가장 의미 있는 검증입니다. "
+                    "confidence 임계값을 낮추면 더 많이 잡고(오탐↑), 높이면 확실한 것만 잡습니다(누락↑).")
+        conf = gr.Slider(0.05, 0.9, value=0.4, step=0.05,
+                         label="confidence 임계값 (이 값 이상 확신하는 탐지만 표시)")
         with gr.Row():
             with gr.Column():
                 im_in = gr.Image(type="filepath", label="이미지 업로드")
                 im_btn = gr.Button("이미지 추론", variant="primary")
             with gr.Column():
-                im_out = gr.Image(label="탐지 결과")
+                im_out = gr.Image(label="탐지 결과 (박스 + 클래스 + 신뢰도)")
                 im_txt = gr.Textbox(label="탐지 목록", lines=5)
         im_btn.click(infer_image, [im_in, conf], [im_out, im_txt])
         gr.Markdown("---")
         with gr.Row():
             with gr.Column():
                 vid_in = gr.Video(label="영상 업로드")
-                stride = gr.Slider(1, 30, value=5, step=1, label="추론 간격(프레임)")
-                vid_btn = gr.Button("영상 추론 (박스 입힌 mp4 생성)", variant="primary")
+                stride = gr.Slider(1, 30, value=5, step=1,
+                                   label="추론 간격 (N프레임마다 1회 추론. 클수록 처리 빠름, 박스 갱신은 성김)")
+                vid_btn = gr.Button("영상 추론 → 박스 입힌 mp4 생성", variant="primary")
             with gr.Column():
-                vid_out = gr.Video(label="어노테이션 영상")
+                vid_out = gr.Video(label="어노테이션 영상 (다운로드 가능)")
                 vid_txt = gr.Textbox(label="요약", lines=4)
         vid_btn.click(infer_video, [vid_in, conf, stride], [vid_out, vid_txt])
 
     with gr.Tab("④ 학습 이력"):
+        gr.Markdown("**무엇을 확인하는 탭인가**: 언제 무엇이 학습·배포됐는지의 타임라인입니다. "
+                    "게이트 = promoted(채택되어 서빙 교체) / rejected(성능 하락으로 보류). "
+                    "산입(train) = 입력 이미지 중 실제 학습에 들어간 비율(깨진 파일 제외분)로, 100% 미만이면 제외 사유를 학습 로그에서 확인하세요.")
         hist_btn = gr.Button("새로고침")
-        serving_txt = gr.Textbox(label="현재 서빙")
+        serving_txt = gr.Textbox(label="현재 서빙", interactive=False)
         hist_df = gr.Dataframe(headers=["학습 일시", "버전", "게이트", "mAP50", "mAP50-95",
-                                        "산입(train)", "epochs"], label="릴리스 타임라인")
+                                        "산입(train)", "epochs"], label="릴리스 타임라인 (최신순)")
         hist_btn.click(show_history, None, [hist_df, serving_txt])
+
+    # 접속 즉시 초기 화면 자동 로드 (빈 화면 방지)
+    app.load(status_summary, None, status)
+    app.load(lambda: render_dataset("train", "전체", 0), None, outs)
+    app.load(show_history, None, [hist_df, serving_txt])
 
 if __name__ == "__main__":
     # 0.0.0.0 바인딩(외부 접속 허용) + 로그인 인증. 무인증 개방 금지.
