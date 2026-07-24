@@ -106,12 +106,14 @@ def load_followup(_):
 # badge: adopt(채택) / drop(탈락) / partial(부분 성공)
 METHODS = [
     dict(
-        id="m1", no=1, title="self-training 오토라벨", badge="adopt", badge_label="채택 (운영 루프)",
+        id="m1", no=1, title="Pseudo-labeling", badge="adopt", badge_label="채택 (운영 루프)",
+        subtitle="의사 라벨링(Pseudo-labeling)은 라벨이 없는 데이터에 모델이 예측한 값을 임시 라벨로 지정해 학습에 재활용하는 준지도학습 기법입니다.",
+        ordered=True,
         bullets=[
-            "**1차 모델 만들기**: 순수 YOLO(COCO 사전학습 yolo26s)에 Roboflow 기계부품 데이터(bolt·nut·gear·bearing)의 **10~15%(시드)만** 학습시킴",
-            "**자동 라벨 생성**: 이 1차 모델이 **미라벨 풀(65~70%, 647~1,463장)**에 예측을 만들고, **신뢰도(conf) 0.6 이상 박스만** 라벨로 채택 (전체의 20%는 채점용 평가셋으로 따로 떼둠)",
-            "**재학습**: 순수 YOLO 에 [시드 + 자동 라벨]을 합쳐 **처음부터 다시** 학습 (1차 모델에 이어붙이지 않음 - 성능 변화가 오직 '자동 라벨 추가분' 때문이도록)",
-            "**채점**: 어느 학습에도 안 쓴 별도 평가셋에서 1차 모델(라운드0) vs 재학습 모델(라운드1) 점수 비교"],
+            "**1차 모델**: 순수 YOLO 모델에 기계부품 데이터(bolt·nut·gear·bearing) 10~15%(149장)를 학습시킨다.",
+            "1차 모델에게 라벨이 없는 데이터 65~70%(647장)를 예측시키고, 신뢰도(confidence)가 0.6 이상인 라벨만 채택.",
+            "**2차 모델**: 순수 YOLO 모델에 1의 학습데이터와 2의 결과(0.6 이상 데이터)를 학습시킨다.",
+            "1차 모델과 2차 모델의 점수를 비교한다."],
         gallery=None, live=True,
         code=[dict(
             file="scripts/labeling/pseudo_utils.py · auto_labeling.py",

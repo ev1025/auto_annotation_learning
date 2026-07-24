@@ -168,6 +168,10 @@ def sub(t):
     return f"<h3>{t}</h3>"
 
 
+def ordered(items):
+    return "<ol>" + "".join(f"<li>{i}</li>" for i in items) + "</ol>"
+
+
 def bullets(items):
     return "<ul>" + "".join(f"<li>{i}</li>" for i in items) + "</ul>"
 
@@ -217,20 +221,21 @@ def build():
                       '현재 모델은 임시 2클래스(bolt·nut)로, 서버 복구 후 5클래스 모델 기준으로 재생성 예정.</p>')
     else:
         pair_html = f'<p class="fn">{pair_note}</p>'
-    m1 = section("m1", "방법 1 · self-training 오토라벨", badge("adopt"),
-        sub("① 어떤 데이터를 어떻게 사용했나") + bullets([
-            "<b>1차 모델 만들기</b>: 순수 YOLO(COCO 사전학습 yolo26s)에 Roboflow 기계부품 데이터(bolt·nut·gear·bearing)의 <b>10~15%(시드)만</b> 학습",
-            "<b>자동 라벨 생성</b>: 이 1차 모델이 <b>미라벨 풀(65~70%)</b>에 예측을 만들고, <b>신뢰도(conf) 0.6 이상 박스만</b> 라벨로 채택 (전체의 20%는 채점용 평가셋으로 따로 떼둠)",
-            "<b>재학습</b>: 순수 YOLO 에 [시드 + 자동 라벨]을 합쳐 <b>처음부터 다시</b> 학습 (1차 모델에 이어붙이지 않음 - 효과를 자동 라벨 추가분만으로 분리)",
-            "<b>채점</b>: 어느 학습에도 안 쓴 별도 평가셋에서 1차 모델(라운드0) vs 재학습 모델(라운드1) 점수 비교"]) +
-        sub("② 모델이 만든 바운딩박스 vs 정답 라벨") + pair_html +
-        sub("③ 실험 지표") +
+    m1 = section("m1", "Pseudo-labeling", badge("adopt"),
+        '<p class="method-desc">의사 라벨링(Pseudo-labeling)은 라벨이 없는 데이터에 모델이 예측한 값을 '
+        '임시 라벨로 지정해 학습에 재활용하는 준지도학습 기법입니다.</p>' +
+        ordered([
+            "<b>1차 모델</b>: 순수 YOLO 모델에 기계부품 데이터(bolt·nut·gear·bearing) 10~15%(149장)를 학습시킨다.",
+            "1차 모델에게 라벨이 없는 데이터 65~70%(647장)를 예측시키고, 신뢰도(confidence)가 0.6 이상인 라벨만 채택.",
+            "<b>2차 모델</b>: 순수 YOLO 모델에 1의 학습데이터와 2의 결과(0.6 이상 데이터)를 학습시킨다.",
+            "1차 모델과 2차 모델의 점수를 비교한다."]) +
+        pair_html +
         callout(f"자동 라벨로 재학습하자 mAP50 {al['round0']['map50']} → {al['round1']['map50']}. "
                 "4개 조건(2·3·4클래스) 전부 상승 = 오토러닝 효과 입증 (조건별 상세는 부록)") +
         table(["항목", "값"], autolearn_rows("exp_results/report_2cls_seed15.json")))
 
     # ---- 방법 2 ----
-    m2 = section("m2", "방법 2 · 텍스트 제로샷 (Grounding DINO)", badge("drop"),
+    m2 = section("m2", "텍스트 제로샷 (Grounding DINO)", badge("drop"),
         sub("① 어떤 데이터를 어떻게 사용했나") + bullets([
             "<b>방식</b>: 학습 없이 영어 프롬프트 4종('metal hex bolt screw' 등)만으로 박스 생성",
             "<b>데이터</b>: 정답을 숨긴 평가셋 204장, 숨긴 정답과 IoU 0.5 기준 채점",
@@ -242,7 +247,7 @@ def build():
         table(["클래스", "정밀도", "재현율", "맞음", "오탐", "누락"], zs_rows))
 
     # ---- 방법 3 ----
-    m3 = section("m3", "방법 3 · Grounded-SAM 타이트박스", badge("drop"),
+    m3 = section("m3", "Grounded-SAM 타이트박스", badge("drop"),
         sub("① 어떤 데이터를 어떻게 사용했나") + bullets([
             "<b>방식</b>: 방법 2와 동일 + SAM 마스크로 박스를 픽셀 경계까지 타이트하게 교정",
             "<b>결과</b>: 정밀도 개선 없음. '박스 여백이 문제'라는 가설이 실측으로 기각됨 (맞은 박스 평균 IoU: DINO 원본 0.908 > SAM 0.876)",
@@ -252,7 +257,7 @@ def build():
         table(["클래스", "정밀도", "재현율", "맞음", "오탐", "누락"], gs_rows))
 
     # ---- 방법 4 ----
-    m4 = section("m4", "방법 4 · SAM + CLIP 갤러리", badge("drop"),
+    m4 = section("m4", "SAM + CLIP 갤러리", badge("drop"),
         sub("① 어떤 데이터를 어떻게 사용했나") + bullets([
             "<b>방식</b>: SAM 이 물체 후보를 전부 분할 → 각 후보를 참조 갤러리(정답에서 오린 크롭, 클래스당 10장)와 CLIP 임베딩 유사도로 분류",
             "<b>의의</b>: 텍스트 → 시각 매칭 전환으로 정밀도 2.5배 도약 (0.24 → 0.60)",
@@ -263,7 +268,7 @@ def build():
 
     # ---- 방법 5 ----
     hp = dino_hp or {}
-    m5 = section("m5", "방법 5 · SAM + DINOv2 갤러리", badge("adopt"),
+    m5 = section("m5", "SAM + DINOv2 갤러리", badge("adopt"),
         sub("① 어떤 데이터를 어떻게 사용했나") + bullets([
             "<b>방식</b>: 방법 4와 동일하되 임베딩을 CLIP → <b>DINOv2</b>(질감·형상 특징)로 교체",
             f"<b>성과</b>: 임계값 {hp.get('tau')}에서 정밀도 {hp.get('precision')} = 무검수 기준(0.87) 최초 충족",
@@ -274,7 +279,7 @@ def build():
         table(["유사도 임계값", "정밀도", "재현율", "F1"], dino_rows))
 
     # ---- 방법 6 ----
-    m6 = section("m6", "방법 6 · 상호 일관성 매칭", badge("partial"),
+    m6 = section("m6", "상호 일관성 매칭", badge("partial"),
         sub("① 어떤 데이터를 어떻게 사용했나") + bullets([
             "<b>방식</b>: 등록 폴더(부품 1종)의 SAM 후보 중 '다른 모든 사진에도 비슷한 물체가 있는 후보'를 DINOv2 로 식별해 라벨링",
             "<b>적용 ①</b>: 사진 묶음 시뮬 (부품 크롭 2종 × 15장) → 성공",
@@ -288,7 +293,7 @@ def build():
             ["실사 영상 (기어박스 49프레임)", "채택률 98%였으나 배경 오채택 → 폐기"]]))
 
     # ---- 방법 7 ----
-    m7 = section("m7", "방법 7 · 1탭 참조 매칭", badge("adopt"),
+    m7 = section("m7", "1탭 참조 매칭", badge("adopt"),
         sub("① 어떤 데이터를 어떻게 사용했나") + bullets([
             "<b>방식</b>: 등록 화면에서 부품을 <b>한 번 클릭</b> → SAM 포인트 분할로 참조 크롭 확보 → 모든 프레임의 SAM 후보를 참조와 DINOv2 유사도(임계값 0.7)로 매칭",
             "<b>데이터</b>: 실사 기어박스 영상 (1차 33프레임 → 완결 193프레임)",
@@ -316,7 +321,7 @@ def build():
         cond_rows.append([name, d["split"]["seed"], d["pseudo"]["precision"],
                           d["round0"]["map50"], d["round1"]["map50"],
                           f"+{round(d['delta_map50']*100,1)}%p"])
-    appendix = section("appendix", "부록 · 관련 실험", "",
+    appendix = section("appendix", "관련 실험", "",
         sub("배포 모델 벤치마크 (7모델 × 2크기, epochs 100 동일 조건)") +
         callout("선정 = yolo26s@640: 정확도 동급 + 시드 분산 최소 + 지연 최단(NMS-free). 입력 1280은 전 모델에서 이득 없이 지연 1.5~2배") +
         table(["모델", "입력", "mAP50", "mAP50-95", "지연", "FPS", "크기"], bench_rows) +
@@ -324,10 +329,10 @@ def build():
         table(["조건", "초기 라벨(장)", "자동 라벨 정밀도", "라운드0 mAP50", "라운드1 mAP50", "효과"], cond_rows))
 
     toc_items = [("intro", "프로젝트 배경"), ("overview", "결과 한눈에"),
-                 ("m1", "방법 1 · self-training [채택]"), ("m2", "방법 2 · 텍스트 제로샷"),
-                 ("m3", "방법 3 · Grounded-SAM"), ("m4", "방법 4 · SAM+CLIP"),
-                 ("m5", "방법 5 · SAM+DINOv2 [채택]"), ("m6", "방법 6 · 상호 일관성"),
-                 ("m7", "방법 7 · 1탭 참조 [채택]"), ("appendix", "부록 · 벤치마크")]
+                 ("m1", "self-training [채택]"), ("m2", "텍스트 제로샷"),
+                 ("m3", "Grounded-SAM"), ("m4", "SAM+CLIP"),
+                 ("m5", "SAM+DINOv2 [채택]"), ("m6", "상호 일관성"),
+                 ("m7", "1탭 참조 [채택]"), ("appendix", "부록 · 벤치마크")]
     toc = "".join(f'<a href="#{a}">{t}</a>' for a, t in toc_items)
 
     intro = section("intro", "프로젝트 배경", "",
@@ -377,6 +382,9 @@ td{border-bottom:1px solid var(--line);padding:6px 10px}
 .badge.partial{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
 .callout{border-left:4px solid var(--accent);background:var(--bg);padding:10px 14px;border-radius:0 8px 8px 0;
          font-weight:600;margin:6px 0 10px}
+.method-desc{color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:8px;
+             padding:10px 14px;margin:6px 0 12px}
+ol{padding-left:22px}ol li{margin:5px 0}
 .grid{display:grid;gap:14px;margin:8px 0}
 .grid.c2{grid-template-columns:1fr 1fr}
 figure img{width:100%;border:1px solid var(--line);border-radius:8px;display:block}

@@ -87,7 +87,12 @@ h3 {
   padding-top: 18px; border-top: 1px solid var(--line);
 }
 h2 + h3, .chips + .callout { border-top: 0; padding-top: 8px; }
-ul { padding-left: 22px; }
+ul, ol { padding-left: 22px; }
+ol li { margin: 5px 0; padding-left: 3px; }
+.method-desc {
+  font-size: 15px; color: var(--muted); background: #f8fafc;
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin: 4px 0 14px;
+}
 li { margin: 4px 0; }
 p { margin: 6px 0; }
 .fn { font-size: 13.5px; color: var(--muted); }

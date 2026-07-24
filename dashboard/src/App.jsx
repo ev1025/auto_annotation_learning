@@ -93,9 +93,12 @@ function MethodView({ id }) {
 
   return (
     <div>
-      <h2>방법 {m.no} · {m.title} <Badge kind={m.badge} label={m.badge_label} /></h2>
+      <h2>{m.title} <Badge kind={m.badge} label={m.badge_label} /></h2>
 
-      <ul>{m.bullets.map((b, i) => <li key={i}>{md(b)}</li>)}</ul>
+      {m.subtitle && <p className="method-desc">{m.subtitle}</p>}
+      {m.ordered
+        ? <ol>{m.bullets.map((b, i) => <li key={i}>{md(b)}</li>)}</ol>
+        : <ul>{m.bullets.map((b, i) => <li key={i}>{md(b)}</li>)}</ul>}
 
       {m.code?.length > 0 && m.code.map((sn, i) => (
         <div className="snippet" key={i}>
