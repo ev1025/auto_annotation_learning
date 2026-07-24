@@ -108,28 +108,32 @@ METHODS = [
     dict(
         id="m1", no=1, title="self-training 오토라벨", badge="adopt", badge_label="채택 (운영 루프)",
         bullets=[
-            "**방식**: 학습된 모델이 미라벨 이미지에 예측을 만들고, 신뢰도(conf) **0.6 이상만** 라벨로 채택해 학습 데이터에 누적",
-            "**데이터**: 공개 기계부품 데이터. **초기 라벨셋 10~15%만** 학습에 사용, 나머지 미라벨 풀(647~1,463장)은 라벨을 숨겨 자동 라벨 대상으로 사용",
-            "**채점**: 별도 평가셋에서 라운드0(초기 라벨만) vs 라운드1(자동 라벨 추가) 성능 비교"],
+            "**1차 모델 만들기**: 순수 YOLO(COCO 사전학습 yolo26s)에 Roboflow 기계부품 데이터(bolt·nut·gear·bearing)의 **10~15%(시드)만** 학습시킴",
+            "**자동 라벨 생성**: 이 1차 모델이 나머지 85~90%(라벨을 숨긴 미라벨 풀 647~1,463장)에 예측을 만들고, **신뢰도(conf) 0.6 이상 박스만** 라벨로 채택",
+            "**재학습**: 순수 YOLO 에 [시드 + 자동 라벨]을 합쳐 **처음부터 다시** 학습 (1차 모델에 이어붙이지 않음 - 성능 변화가 오직 '자동 라벨 추가분' 때문이도록)",
+            "**채점**: 어느 학습에도 안 쓴 별도 평가셋에서 1차 모델(라운드0) vs 재학습 모델(라운드1) 점수 비교"],
         gallery=None, live=True,
         code=[dict(
-            file="scripts/labeling/pseudo_utils.py",
-            note="박스 채택 규칙의 단일 구현. 실험(experiment_autolearn.py)과 운영이 같은 함수를 써서 규칙이 어긋날 수 없다",
-            src="""def ok(b):                              # b = (클래스, 박스, conf)
-    return b[2] >= cpc.get(b[0], conf)  # 신뢰도 0.6 이상만 채택
+            file="scripts/labeling/pseudo_utils.py · auto_labeling.py",
+            note="자동 라벨 생성 - 핵심 로직을 읽기 쉽게 풀어 쓴 것 (원문은 파일 참조)",
+            src="""# 시드로 학습한 1차 모델이 미라벨 이미지 전체를 추론
+results = model.predict(source=unlabeled_images, stream=True)
 
-results = model.predict(source=[str(p) for p in imgs], conf=min_conf,
-                        stream=True, verbose=False)
-for img_path, r in zip(imgs, results):
-    yield img_path, [b for b in boxes_of(r) if ok(b)], 0"""),
+for image, result in zip(unlabeled_images, results):
+    accepted = []
+    for (cls, box, confidence) in result.boxes:
+        if confidence >= 0.6:                  # 신뢰도 0.6 미만 예측은 버림
+            accepted.append((cls, box))
+
+    # 채택 박스를 YOLO 라벨(.txt)로 저장 - 이미지와 같은 이름이 짝 규칙
+    save_label(labels_dir / f"{image.stem}.txt", accepted)"""),
               dict(
-            file="scripts/labeling/auto_labeling.py",
-            note="채택된 박스를 YOLO 라벨(.txt)로 저장. 이미지와 같은 이름이 YOLO 가 짝을 찾는 규칙",
-            src="""lines = [f"{c} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}"
-         for c, (cx, cy, w, h), _cf in boxes]
-txt_path = labels_out / f"{img_path.stem}.txt"
-txt_path.write_text("
-".join(lines), encoding="utf-8")""")],
+            file="scripts/training/train_pipeline.py",
+            note="재학습 - 1차 모델 가중치가 아니라 순수 YOLO 에서 다시 시작",
+            src="""model = YOLO("yolo26s.pt")            # 순수(COCO 사전학습) 가중치에서 시작
+model.train(data=시드_라벨 + 자동_라벨,  # 사람 라벨과 자동 라벨을 합쳐 학습
+            epochs=100)
+# 게이트: 새 모델 mAP50 가 기존보다 낮으면 배포하지 않고 폐기"""),],
         metrics=("exp_results/report_2cls_seed15.json", load_autolearn),
     ),
     dict(
@@ -178,15 +182,23 @@ txt_path.write_text("
             "**교훈**: 채택률 98%라는 수치만 보면 합격이었으나, 육안 검증이 실패를 적발"],
         gallery="mutual", live=False,
         code=[dict(
-            file="scripts/labeling/register_part.py",
-            note="후보 점수 = '다른 사진들의 후보 중 최고 유사도'의 평균. 배경 고정 영상에선 배경도 매 프레임 등장해 이 조건을 만족 -> 오채택 (실패 원인이 이 수식 자체에 있음)",
-            src="""scores = torch.zeros(len(boxes), device=DEV)
-for j, (_, _, _, emb_j) in enumerate(per_img):
-    if j == i or emb_j is None:
+            file="scripts/labeling/register_part.py - label_one_part()",
+            note="상호 일관성 점수 - 읽기 쉽게 풀어 쓴 것. 실패 원인이 이 수식 자체에 있음",
+            src="""# 사진 i 의 후보 하나하나에 대해:
+# "다른 모든 사진에도 이것과 닮은 물체가 있는가" 를 점수로 만든다
+score = 0
+for j in range(len(all_photos)):
+    if j == i:
         continue
-    scores += (emb_i @ emb_j.T).max(dim=1).values   # 다른 사진과의 최고 유사도
-scores = (scores / max(n_other, 1)).cpu().numpy()   # 평균
-tau = CONSIST_TAU                                    # 0.55 이상만 채택""")],
+    best = max(similarity(candidate, other) for other in photo_j.candidates)
+    score += best                        # 사진 j 에서 가장 닮은 후보와의 유사도
+score = score / (len(all_photos) - 1)    # 전체 평균
+
+if score >= 0.55:                        # 임계값 통과 -> 부품으로 채택
+    keep(candidate)
+
+# 함정: 배경(매트·드릴·사람)도 모든 프레임에 등장한다
+# -> 배경 후보도 score 가 높게 나와 오채택 (한 장면 영상에서 실패한 이유)"""),],
         metrics=static_metrics(
             [["사진 묶음 시뮬 (볼트·너트 15장씩)", "채택률 100%, 부품만 정확히 라벨"],
              ["실사 영상 (기어박스 49프레임)", "채택률 98%였으나 배경(매트·드릴·사람) 오채택 -> 폐기"],
@@ -202,20 +214,23 @@ tau = CONSIST_TAU                                    # 0.55 이상만 채택""")
         gallery="one_tap", live=False,
         code=[dict(
             file="scripts/labeling/register_part.py - build_ref_embedding()",
-            note="'1탭'의 실체: 클릭 좌표 하나를 SAM 에 주면 그 점이 속한 물체 마스크를 돌려줌 -> 참조 크롭 확보",
-            src="""fname, rx, ry = (src / "ref.txt").read_text().split()[:3]  # 탭 좌표
-masks, scores, _ = predictor.predict(
-    point_coords=np.array([[int(rx), int(ry)]]),
-    point_labels=np.array([1]), multimask_output=True)
-m = masks[int(np.argmax(scores))]     # 탭 지점이 속한 물체 마스크
-crop_ = im[y1:y2, x1:x2]              # 참조 크롭"""),
+            note="1단계: 탭 한 번 -> 부품의 '기준 사진' 확보",
+            src="""point = read("ref.txt")            # 사용자가 등록 화면에서 탭한 좌표 1개
+mask = sam.predict(point)           # SAM: 그 점이 속한 물체 영역을 돌려줌
+reference = image[mask]             # 그 영역을 오려냄 = 부품의 기준 사진
+save("_preview/ref_check.jpg")      # 탭이 엉뚱한 물체를 잡았는지 육안 확인용"""),
               dict(
             file="scripts/labeling/register_part.py - label_one_part()",
-            note="전 프레임의 SAM 후보를 참조 크롭과 DINOv2 유사도로 비교, 0.70 이상 전부 채택(다중 인스턴스) 후 중복 제거",
-            src="""scores = (emb_i @ ref_emb.T).squeeze(1).cpu().numpy()  # 참조와의 유사도
-tau = ref_tau                                          # 0.70
-keep = _nms([(boxes[k], float(scores[k])) for k in range(len(boxes))
-             if scores[k] >= tau])   # NMS + 포함 억제(부분-전체 중복 제거)""")],
+            note="2단계: 모든 프레임의 후보를 기준 사진과 생김새 비교",
+            src="""for frame in all_frames:
+    for candidate in sam_candidates(frame):      # SAM 이 찾은 물체 후보들
+        sim = similarity(candidate, reference)    # 기준 사진과 얼마나 닮았나 (DINOv2)
+        if sim >= 0.70:                           # 0.70 이상은 전부 채택
+            keep(candidate)                       #   (한 프레임에 여러 개 가능)
+    remove_duplicates()                           # 겹침(NMS) + 부분-전체 중복 제거
+
+# 방법 6과의 차이: 비교 대상이 '다른 사진들'이 아니라 '사용자가 찍어준 기준'
+# -> 배경은 기준과 안 닮았으므로 오채택이 원천 차단됨 (오채택 0 실측)"""),],
         metrics=static_metrics(
             [["라벨 생성 (1차, 33프레임)", "20장 채택, 배경 오채택 0"],
              ["라벨 생성 (완결, 193프레임)", "114장 채택 (59%)"],
