@@ -187,10 +187,10 @@ def bar_row(name, value, note="", adopt=None):
 # ---------------- 본문 구성 ----------------
 def build():
     al = jload("exp_results/report_2cls_seed15.json")
-    zs_rows, zs_p = zeroshot_rows("zeroshot_labeler/eval_out/zeroshot_eval_post.json")
-    gs_rows, gs_p = zeroshot_rows("zeroshot_labeler/eval_out/zeroshot_eval_gsam_tight.json")
-    clip_rows, _ = sweep_rows("zeroshot_labeler/eval_out/gallery_eval_clip.json")
-    dino_rows, dino_hp = sweep_rows("zeroshot_labeler/eval_out/gallery_eval_dinov2.json")
+    zs_rows, zs_p = zeroshot_rows("exp_results/zeroshot/zeroshot_eval_post.json")
+    gs_rows, gs_p = zeroshot_rows("exp_results/zeroshot/zeroshot_eval_gsam_tight.json")
+    clip_rows, _ = sweep_rows("exp_results/zeroshot/gallery_eval_clip.json")
+    dino_rows, dino_hp = sweep_rows("exp_results/zeroshot/gallery_eval_dinov2.json")
     pairs, pair_note = gen_selftrain_pairs()
 
     # ---- 결과 한눈에 ----
@@ -401,7 +401,7 @@ figcaption{font-size:13px;color:var(--muted);margin-top:4px;text-align:center}
 <h1>오토라벨링 검증 리포트</h1>
 <p class="subtitle">사람 대신 AI 학습 라벨을 자동 생성하는 7가지 방법의 실험 기록 · XR 오토러닝 프로젝트</p>
 {intro}{overview_sec}{m1}{m2}{m3}{m4}{m5}{m6}{m7}{appendix}
-<p class="fn" style="text-align:center;margin:10px 0 30px">본 리포트는 scripts/verify/build_report.py 가 실험 결과 파일에서 자동 생성 · 수치 원본: exp_results/, bench_results/, zeroshot_labeler/eval_out/</p>
+<p class="fn" style="text-align:center;margin:10px 0 30px">본 리포트는 scripts/verify/build_report.py 가 실험 결과 파일에서 자동 생성 · 수치 원본: exp_results/, bench_results/, exp_results/zeroshot/</p>
 </main></div></body></html>"""
     OUT.write_text(html, encoding="utf-8")
     size = OUT.stat().st_size / 1e6

@@ -56,7 +56,7 @@ def load_models():
     ckpts = sorted(Path(os.path.expanduser("~")).rglob("sam_vit_h*.pth"))
     if not ckpts:
         raise SystemExit("[오류] SAM 체크포인트(sam_vit_h*.pth)가 없습니다. "
-                         "zeroshot_labeler/requirements.txt 안내대로 1회 받아두세요.")
+                         "requirements.txt 의 부품 등록 섹션 안내대로 1회 받아두세요.")
     from segment_anything import SamPredictor
     sam = sam_model_registry["vit_h"](checkpoint=str(ckpts[0])).to(DEV)
     gen = SamAutomaticMaskGenerator(sam, points_per_side=32, min_mask_region_area=256)

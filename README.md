@@ -97,7 +97,6 @@ xr_autolearning/
 │     ├─ dashboard_core.py       #   대시보드·리포트 공용 데이터 계층
 │     └─ build_report.py         #   검증 리포트(단일 HTML) 생성 -> docs/report.html
 ├─ dashboard/                    # 검증 대시보드 프론트 (React + Vite, 빌드 산출물 dist/ 는 미커밋)
-├─ zeroshot_labeler/             # 제로샷 라벨링 실험·프롬프트 실험대 (등록 방식 선정 근거, eval_out/)
 ├─ data/                         # 모든 데이터의 단일 루트 (전체 git 제외)
 │  ├─ datasets/                  #   운영 학습 데이터 (images/ labels/ unlabeled_images/)
 │  ├─ mechanical-parts-coco/     #   실험용 공개 데이터 원본 (COCO 포맷)
@@ -111,7 +110,7 @@ xr_autolearning/
 ├─ models/                       # base_model.pt(초기 생성기) / new_model.pt·onnx(서빙 현재본)
 │  └─ releases/                  # 버전별 보관: v<타임스탬프>/{best.pt, best.onnx, metrics.json, train.log}
 ├─ bench_results/                # 벤치마크 결과 (benchmark.json / benchmark.md)
-└─ exp_results/                  # 실험 리포트 (report_*.json)
+└─ exp_results/                  # 실험 리포트 (report_*.json, zeroshot/ = 콜드스타트 채점 결과)
 ```
 
 <br>
@@ -213,7 +212,7 @@ train/labels/239_jpg.rf.9urQ....txt   ← 같은 이름의 .jpg 와 짝
 
 | 장치 | 동작 | 이유 |
 |------|------|------|
-| 상호 일관성 매칭 | SAM 이 분할한 물체 후보 중 "같은 폴더의 **다른 모든 사진에도 등장하는 물체**"를 DINOv2 임베딩 유사도로 식별 | 업로드 사진엔 그 부품이 매 장 등장하고 배경 물체는 바뀜. 텍스트 프롬프트 제로샷(정밀도 0.24 실측, zeroshot_labeler/eval_out)과 달리 클래스 혼동이 원천 배제됨 |
+| 상호 일관성 매칭 | SAM 이 분할한 물체 후보 중 "같은 폴더의 **다른 모든 사진에도 등장하는 물체**"를 DINOv2 임베딩 유사도로 식별 | 업로드 사진엔 그 부품이 매 장 등장하고 배경 물체는 바뀜. 텍스트 프롬프트 제로샷(정밀도 0.24 실측, exp_results/zeroshot)과 달리 클래스 혼동이 원천 배제됨 |
 | 일관성 임계값(τ) 0.55 이상 | 미달 후보는 라벨 포기(해당 사진 제외) | 고순도 우선. DINOv2 임계값 0.85 고정밀 추출은 정밀도 0.927 실측 |
 | 다중 채택 + 포함 억제 | 임계값 이상 후보 전부 라벨(NMS 중복 제거), 큰 박스에 70%+ 포함되는 작은 박스 제거 | 한 사진에 같은 부품 여러 개 대응(빠뜨리면 배경으로 오학습) + SAM 부분-전체 이중 분할 교정 |
 | 최소 채택 수(5장) | 미만이면 그 부품 등록 보류, 재촬영 안내 | 저품질 등록이 학습을 오염시키는 것 차단 |
@@ -599,7 +598,8 @@ YOLO는 아키텍처상 수백 클래스도 학습 가능(COCO 80, Objects365 36
 ### 2026-07-22 등록 라벨링 방식 선정까지의 시도 (콜드스타트 실험 여정)
 
 "라벨·모델이 전무한 상태에서 자동 라벨 생성" 문제를 정답 있는 test 204장으로 검증
-(라벨 없는 척 생성 → 숨긴 정답과 IoU 0.5 채점, zeroshot_labeler/eval_out 에 결과 보존):
+(라벨 없는 척 생성 → 숨긴 정답과 IoU 0.5 채점, exp_results/zeroshot 에 결과 보존.
+실험 스크립트는 결론 확정 후 정리 - 필요 시 git 이력 2026-07-22~24 참고):
 
 | 순서 | 시도 | 정밀도 | 판정·배운 것 |
 |------|------|--------|--------------|
@@ -614,7 +614,6 @@ YOLO는 아키텍처상 수백 클래스도 학습 가능(COCO 80, Objects365 36
 
 - 등록 파이프라인 자체도 3라운드 개선: 사진당 1박스 채택(주 부품 미포착) → 임계값 이상 전부 채택 +
   NMS(부분-전체 이중 라벨 발생) → **포함 억제**(큰 박스 안 70%+ 소박스 제거)로 확정
-- 부산물: Grounding DINO 프롬프트 실험대 웹 UI(`zeroshot_labeler/dino_playground.py`, Gradio)
 - 부수 함정: autodistill 숨은 의존성 3종(scikit-learn, roboflow, **transformers<4.50** - 5.x는
   groundingdino BERT 파열), gradio 설치가 huggingface-hub 를 올려 transformers 와 충돌(재고정 필요)
 - 검토 자료: Kaggle Synthetic-2-Real 대회(종료·데이터 MIT, sim2real 리허설 후보였으나 피벗으로 보류)

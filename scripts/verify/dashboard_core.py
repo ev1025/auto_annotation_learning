@@ -121,7 +121,7 @@ METHODS = [
             "**데이터**: 정답을 숨긴 평가셋 204장, 숨긴 정답과 IoU 0.5 기준 채점",
             "**탈락 사유**: 유사 금속 부품 간 클래스 혼동 (둥근 접시를 gear 로 오인)"],
         gallery="dino_text", live=False,
-        metrics=("zeroshot_labeler/eval_out/zeroshot_eval_post.json", load_zeroshot),
+        metrics=("exp_results/zeroshot/zeroshot_eval_post.json", load_zeroshot),
     ),
     dict(
         id="m3", no=3, title="Grounded-SAM 타이트박스", badge="drop", badge_label="탈락",
@@ -130,7 +130,7 @@ METHODS = [
             "**결과**: 정밀도 개선 없음. '박스 여백이 문제'라는 가설이 실측으로 기각됨 (맞은 박스 평균 IoU: DINO 원본 0.908 > SAM 0.876)",
             "**비고**: 증거 이미지는 서버 유실로 미보존, 지표로 확인"],
         gallery=None, live=False,
-        metrics=("zeroshot_labeler/eval_out/zeroshot_eval_gsam_tight.json", load_zeroshot),
+        metrics=("exp_results/zeroshot/zeroshot_eval_gsam_tight.json", load_zeroshot),
     ),
     dict(
         id="m4", no=4, title="SAM + CLIP 갤러리", badge="drop", badge_label="탈락",
@@ -139,7 +139,7 @@ METHODS = [
             "**의의**: 텍스트 -> 시각 매칭 전환으로 정밀도 2.5배 도약 (0.24 -> 0.60)",
             "**비고**: 증거 이미지 미보존"],
         gallery=None, live=False,
-        metrics=("zeroshot_labeler/eval_out/gallery_eval_clip.json", load_sweep),
+        metrics=("exp_results/zeroshot/gallery_eval_clip.json", load_sweep),
     ),
     dict(
         id="m5", no=5, title="SAM + DINOv2 갤러리", badge="adopt", badge_label="고정밀 달성",
@@ -149,7 +149,7 @@ METHODS = [
             "**의의**: 1탭 참조 방식(방법 7)의 이론적 기반",
             "**비고**: 증거 이미지 미보존"],
         gallery=None, live=False,
-        metrics=("zeroshot_labeler/eval_out/gallery_eval_dinov2.json", load_sweep),
+        metrics=("exp_results/zeroshot/gallery_eval_dinov2.json", load_sweep),
     ),
     dict(
         id="m6", no=6, title="상호 일관성 매칭", badge="partial", badge_label="사진 성공 / 영상 실패",
