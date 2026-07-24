@@ -207,7 +207,7 @@ def show_method(key):
         headers, rows, summary = res
     gal = method_gallery(key)
     gal_note = "" if gal else " (이 방법은 저장된 비교 이미지가 없습니다. 지표로 확인하세요)"
-    return (info["data"] + gal_note, gal,
+    return (info["data"] + gal_note, gr.update(value=gal, visible=bool(gal)),
             gr.update(value=rows, headers=headers), summary,
             gr.update(visible=info.get("live", False)))
 
@@ -305,39 +305,61 @@ def on_category(cat):
 # ==================== UI ====================
 FIRST = list(METHODS.keys())[0]
 
-with gr.Blocks(title="오토라벨링 방법 비교") as app:
-    gr.Markdown("## 오토라벨링 방법 비교 대시보드")
+THEME = gr.themes.Soft(
+    primary_hue="indigo",
+    neutral_hue="slate",
+    font=[gr.themes.GoogleFont("Noto Sans KR"), "system-ui", "sans-serif"],
+).set(body_text_size="16px")
+
+CSS = """
+.gradio-container {max-width: 1320px !important; margin: 0 auto !important;}
+.gradio-container table {font-variant-numeric: tabular-nums;}      /* 표 숫자 자릿수 정렬 */
+.gradio-container thead th {font-weight: 600;}
+#page-title h2 {font-weight: 700; letter-spacing: -0.01em; margin-bottom: 0;}
+#page-sub {color: var(--body-text-color-subdued); margin-top: 2px;}
+.section-h h3 {font-weight: 600; margin: 6px 0 2px 0;}
+#live-btn {max-width: 240px;}
+#judge textarea, #judge2 textarea {
+  border-left: 4px solid var(--primary-500);
+  font-weight: 600;
+  background: var(--background-fill-secondary);
+}
+"""
+
+with gr.Blocks(title="오토라벨링 방법 비교", theme=THEME, css=CSS) as app:
+    gr.Markdown("## 오토라벨링 방법 비교", elem_id="page-title")
+    gr.Markdown("시도 방법별 데이터 사용 방식 · 박스 비교 · 지표를 한 화면에서 확인", elem_id="page-sub")
 
     with gr.Tab("① 오토라벨링 방법 비교"):
         method = gr.Dropdown(list(METHODS.keys()), value=FIRST,
                              label="시도 방법 (번호 = 시도 순서)")
-        gr.Markdown("### 1. 어떤 데이터를 어떻게 사용했나")
+        gr.Markdown("### 1. 어떤 데이터를 어떻게 사용했나", elem_classes="section-h")
         desc_md = gr.Markdown()
-        gr.Markdown("### 2. 모델이 만든 바운딩박스 vs 정답 라벨")
+        gr.Markdown("### 2. 모델이 만든 바운딩박스 vs 정답 라벨", elem_classes="section-h")
         gal = gr.Gallery(label="비교 이미지 (초록/색 박스 = 모델·자동 라벨, 빨강 = 정답)", columns=2, height=480)
         with gr.Group(visible=False) as live_grp:
             gr.Markdown("**즉석 비교**: 평가셋에서 무작위 이미지를 뽑아 왼쪽 = 모델 박스, 오른쪽 = 정답 라벨")
-            with gr.Row():
-                live_conf = gr.Slider(0.1, 0.9, value=0.6, step=0.05, label="conf (오토라벨 채택 기준 = 0.6)")
-                live_btn = gr.Button("무작위 이미지 비교", variant="primary")
+            live_conf = gr.Slider(0.1, 0.9, value=0.6, step=0.05, label="conf (오토라벨 채택 기준 = 0.6)")
+            live_btn = gr.Button("무작위 이미지 비교", variant="primary", elem_id="live-btn")
             with gr.Row():
                 live_pred = gr.Image(label="모델이 만든 바운딩박스")
                 live_gt = gr.Image(label="정답 라벨")
             live_note = gr.Textbox(label="비고", interactive=False)
-        gr.Markdown("### 3. 실험 지표 결과")
-        met_summary = gr.Textbox(label="판정·요약", lines=2, interactive=False)
+        gr.Markdown("### 3. 실험 지표 결과", elem_classes="section-h")
+        met_summary = gr.Textbox(label="판정·요약", lines=2, interactive=False, elem_id="judge")
         met_table = gr.Dataframe(label="지표", interactive=False)
 
         method.change(show_method, method, [desc_md, gal, met_table, met_summary, live_grp])
         live_btn.click(live_compare, live_conf, [live_pred, live_gt, live_note])
         app.load(show_method, method, [desc_md, gal, met_table, met_summary, live_grp])
+        app.load(live_compare, live_conf, [live_pred, live_gt, live_note])
 
     with gr.Tab("② 기타 실험 결과"):
         with gr.Row():
             cat = gr.Dropdown(list(EXPERIMENTS.keys()), value=list(EXPERIMENTS.keys())[0],
                               label="카테고리", scale=2)
             topic = gr.Dropdown(list(EXPERIMENTS[list(EXPERIMENTS.keys())[0]].keys()), label="주제", scale=2)
-        exp_summary = gr.Textbox(label="요약·판정", lines=2, interactive=False)
+        exp_summary = gr.Textbox(label="요약·판정", lines=2, interactive=False, elem_id="judge2")
         exp_table = gr.Dataframe(label="결과", interactive=False)
         cat.change(on_category, cat, [topic, exp_table, exp_summary])
         topic.change(show_experiment, [cat, topic], [exp_table, exp_summary])
