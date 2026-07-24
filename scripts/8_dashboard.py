@@ -248,7 +248,7 @@ def draw_gt(im, lbl_path, w, h):
     return im
 
 
-def live_compare(conf):
+def live_compare(conf=0.6):
     import random as _r
     m = get_model()
     if m is None:
@@ -348,8 +348,8 @@ with gr.Blocks(title="오토라벨링 방법 비교", theme=THEME, css=CSS) as a
         gr.Markdown("### 2. 모델이 만든 바운딩박스 vs 정답 라벨", elem_classes="section-h")
         gal = gr.Gallery(label="비교 이미지 (초록/색 박스 = 모델·자동 라벨, 빨강 = 정답)", columns=2, height=480)
         with gr.Group(visible=False) as live_grp:
-            gr.Markdown("**즉석 비교**: 평가셋에서 무작위 이미지를 뽑아 왼쪽 = 모델 박스, 오른쪽 = 정답 라벨")
-            live_conf = gr.Slider(0.1, 0.9, value=0.6, step=0.05, label="conf (오토라벨 채택 기준 = 0.6)")
+            gr.Markdown("**즉석 비교**: 평가셋에서 무작위 이미지를 뽑아 왼쪽 = 모델 박스, 오른쪽 = 정답 라벨 "
+                        "(신뢰도 기준은 오토라벨 채택 조건인 conf 0.6 고정)")
             live_btn = gr.Button("무작위 이미지 비교", variant="primary", elem_id="live-btn")
             with gr.Row():
                 with gr.Column():
@@ -364,9 +364,9 @@ with gr.Blocks(title="오토라벨링 방법 비교", theme=THEME, css=CSS) as a
         met_table = gr.Dataframe(label="지표", interactive=False)
 
         method.change(show_method, method, [desc_md, gal, met_table, met_summary, live_grp])
-        live_btn.click(live_compare, live_conf, [live_pred, live_gt, live_note])
+        live_btn.click(live_compare, None, [live_pred, live_gt, live_note])
         app.load(show_method, method, [desc_md, gal, met_table, met_summary, live_grp])
-        app.load(live_compare, live_conf, [live_pred, live_gt, live_note])
+        app.load(live_compare, None, [live_pred, live_gt, live_note])
 
     with gr.Tab("② 기타 실험 결과"):
         with gr.Row():
