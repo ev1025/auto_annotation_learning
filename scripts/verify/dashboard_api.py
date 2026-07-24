@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
-"""10_dashboard_api.py - 대시보드 API 서버 (FastAPI) + React 프론트 서빙.
+"""scripts/verify/dashboard_api.py - 대시보드 API 서버 (FastAPI) + React 프론트 서빙.
 
 프론트 소스: dashboard/ (React + Vite). 빌드 산출물 dashboard/dist 를 루트에 서빙.
 데이터 계층은 scripts/dashboard_core.py 공용 모듈.
 
 실행:
   cd dashboard && npm install && npm run build   # 프론트 변경 시 1회
-  python scripts/10_dashboard_api.py             # http://127.0.0.1:7862
+  python scripts/verify/dashboard_api.py             # http://127.0.0.1:7862
 """
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import uvicorn

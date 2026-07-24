@@ -1,4 +1,4 @@
-"""5_benchmark.py - 모델 x 입력크기 매트릭스 벤치마크.
+"""scripts/experiments/benchmark.py - 모델 x 입력크기 매트릭스 벤치마크.
 
 목적: 배포 모델 선정 근거 만들기. 어떤 YOLO 계열/크기, 어떤 입력 해상도가
       정확도-속도 균형이 좋은지 같은 데이터로 정량 비교한다.
@@ -18,7 +18,7 @@
     같은 명령을 다시 실행하면 된다(스크립트는 장비 독립적).
 
 실행:
-  python scripts/5_benchmark.py --src ./mechanical-parts-yolo \
+  python scripts/experiments/benchmark.py --src ./data/mechanical-parts-yolo \
       --models yolov8n.pt yolov8s.pt yolov8m.pt yolo11n.pt yolo26n.pt yolo26s.pt yolo26m.pt \
       --imgsz 640 1280 --epochs 100 --device 0
 
@@ -34,9 +34,13 @@ from pathlib import Path
 import yaml
 from ultralytics import YOLO
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용(config 등)
 import config
-from dataset_utils import normalize_names, write_yaml
-from pseudo_utils import free_cuda
+from data_import.dataset_utils import normalize_names, write_yaml
+from gpu_utils import free_cuda
 
 BENCH_DIR = config.BASE_DIR / "bench_results"
 

@@ -1,20 +1,24 @@
-"""6_model_registry.py - 모델 릴리스 조회/롤백.
+"""scripts/training/model_registry.py - 모델 릴리스 조회/롤백.
 
 오토러닝이 지속적으로 새 모델을 배포하므로, 문제가 생겼을 때
 "직전에 잘 되던 버전"으로 즉시 되돌릴 수단이 필요하다.
-2_train_pipeline.py 가 학습마다 models/releases/v<타임스탬프>/ 에
+scripts/training/train_pipeline.py 가 학습마다 models/releases/v<타임스탬프>/ 에
 (best.pt / best.onnx / metrics.json / train.log / results.csv) 를 보관하고,
 이 스크립트가 그 보관본을 조회·복원한다.
 
 실행:
-  python scripts/6_model_registry.py list                 # 릴리스 목록·지표·상태
-  python scripts/6_model_registry.py rollback             # 직전 '채택(promoted)' 버전으로 복원
-  python scripts/6_model_registry.py rollback v20260716_093012   # 특정 버전으로 복원
+  python scripts/training/model_registry.py list                 # 릴리스 목록·지표·상태
+  python scripts/training/model_registry.py rollback             # 직전 '채택(promoted)' 버전으로 복원
+  python scripts/training/model_registry.py rollback v20260716_093012   # 특정 버전으로 복원
 """
 import argparse
 import json
 import shutil
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용(config 등)
 import config
 
 
@@ -35,7 +39,7 @@ def load_releases():
 def cmd_list():
     rels = load_releases()
     if not rels:
-        print("보관된 릴리스가 없습니다. (2_train_pipeline.py 실행 시 자동 생성)")
+        print("보관된 릴리스가 없습니다. (scripts/training/train_pipeline.py 실행 시 자동 생성)")
         return
     # 현재 서빙 중인 모델과 크기 비교로 현재 버전 추정 표시
     cur_size = config.NEW_MODEL_PT.stat().st_size if config.NEW_MODEL_PT.exists() else -1
@@ -78,7 +82,7 @@ def cmd_rollback(version):
         shutil.copy2(d / "best.onnx", config.NEW_MODEL_ONNX)
         msg.append(f"[롤백] ONNX 도 복원 -> {config.NEW_MODEL_ONNX}")
     print("\n".join(msg))
-    print("API 서버(3_api_server.py)를 재시작하면 복원된 모델로 서빙됩니다.")
+    print("API 서버(scripts/serving/api_server.py)를 재시작하면 복원된 모델로 서빙됩니다.")
 
 
 def main():

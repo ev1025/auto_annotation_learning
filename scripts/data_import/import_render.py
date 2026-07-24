@@ -1,4 +1,4 @@
-"""0_import_render.py - 3D 렌더 합성 데이터 반입(클래스 등록 + 라벨 검증 + 배치).
+"""scripts/data_import/import_render.py - 3D 렌더 합성 데이터 반입(클래스 등록 + 라벨 검증 + 배치).
 
 3D 렌더 공급분은 라벨(.txt)의 클래스가 '번호'로만 적혀 있어서,
 그 번호가 무슨 부품인지(0=bolt? 0=gear?)는 공급자와 약속으로만 존재한다.
@@ -16,14 +16,18 @@
   <src>/images/*.jpg + <src>/labels/*.txt   또는   <src>/ 에 .jpg 와 .txt 나란히
 
 실행:
-  python 0_import_render.py --src ./render_delivery --classes bolt nut gear
-  python 0_import_render.py --src ./render_delivery --classes-file ./render_delivery/classes.txt
+  python scripts/data_import/import_render.py --src ./render_delivery --classes bolt nut gear
+  python scripts/data_import/import_render.py --src ./render_delivery --classes-file ./render_delivery/classes.txt
 """
 import argparse
 import shutil
 from collections import Counter
 from pathlib import Path
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용(config 등)
 import config
 from dataset_utils import register_classes
 
@@ -140,7 +144,7 @@ def main():
         (config.LABELS_DIR / f"{img.stem}.txt").write_text("\n".join(lines), encoding="utf-8")
 
     print(f"\n완료: {len(validated)}장 반입 -> {config.IMAGES_DIR.parent}")
-    print("다음: python 2_train_pipeline.py  (첫 모델 학습)")
+    print("다음: python scripts/training/train_pipeline.py  (첫 모델 학습)")
 
 
 if __name__ == "__main__":

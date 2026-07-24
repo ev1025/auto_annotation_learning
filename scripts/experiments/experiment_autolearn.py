@@ -1,4 +1,4 @@
-"""4_experiment_autolearn.py - 오토러닝이 실제로 성능을 올리는지 숫자로 검증하는 실험.
+"""scripts/experiments/experiment_autolearn.py - 오토러닝이 실제로 성능을 올리는지 숫자로 검증하는 실험.
 
 목적: "라벨 일부만 손라벨(시드) -> 모델이 나머지를 자동 라벨 -> 재학습" 루프가
       정말 mAP 를 올리는지, 라벨 있는 공개 데이터로 자동 채점한다.
@@ -14,8 +14,8 @@
   추가로 pseudo 라벨 자체를 숨겨둔 정답과 IoU 매칭해 정밀도/재현율 채점.
 
 실행:
-  python 4_experiment_autolearn.py --src ./mechanical-parts.v1 --classes bolt nut
-  python 4_experiment_autolearn.py --src ./mp.v1 --classes bolt nut gear --epochs 80 --conf 0.6
+  python scripts/experiments/experiment_autolearn.py --src ./data/mechanical-parts.v1 --classes bolt nut
+  python scripts/experiments/experiment_autolearn.py --src ./mp.v1 --classes bolt nut gear --epochs 80 --conf 0.6
 """
 import argparse
 import json
@@ -27,9 +27,14 @@ from pathlib import Path
 import yaml
 from ultralytics import YOLO
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용(config 등)
 import config
-from dataset_utils import normalize_names
-from pseudo_utils import free_cuda, iou, parse_conf_per_class, predict_boxes
+from data_import.dataset_utils import normalize_names
+from gpu_utils import free_cuda
+from labeling.pseudo_utils import iou, parse_conf_per_class, predict_boxes
 
 EXP_DIR = config.BASE_DIR / "exp_autolearn"  # 실험 산출물 루트(원본 데이터는 건드리지 않음)
 

@@ -1,4 +1,4 @@
-"""0_import_roboflow.py - Roboflow(YOLOv8/YOLOv11) export 를 이 파이프라인 구조로 변환.
+"""scripts/data_import/import_roboflow.py - Roboflow(YOLOv8/YOLOv11) export 를 이 파이프라인 구조로 변환.
 
 Roboflow 다운로드 zip 을 풀면 보통 이런 구조다:
     <export>/
@@ -14,8 +14,8 @@ Roboflow 다운로드 zip 을 풀면 보통 이런 구조다:
   - Roboflow data.yaml 의 names -> 우리 data.yaml 의 names 로 동기화
 
 실행:
-  python 0_import_roboflow.py --src <풀어놓은 export 폴더>
-  python 0_import_roboflow.py --src ./aircraft-component.v1 --holdout valid --no-include-valid
+  python scripts/data_import/import_roboflow.py --src <풀어놓은 export 폴더>
+  python scripts/data_import/import_roboflow.py --src ./aircraft-component.v1 --holdout valid --no-include-valid
 """
 import argparse
 import shutil
@@ -23,6 +23,10 @@ from pathlib import Path
 
 import yaml  # ultralytics 가 끌어오므로 별도 설치 불필요
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용(config 등)
 import config
 from dataset_utils import normalize_names, register_classes
 
@@ -115,9 +119,9 @@ def main():
     print(f"[미라벨] {holdout.name}: {c}장 -> {config.UNLABELED_DIR.name} (정답은 {gt_out.name} 에 보관)")
 
     print(f"\n완료: 라벨풀 {total_labeled}장 / 미라벨 {c}장")
-    print("다음: python 2_train_pipeline.py  (base_model 만들기)")
+    print("다음: python scripts/training/train_pipeline.py  (base_model 만들기)")
     print("      copy models/new_model.pt models/base_model.pt  (첫 생성기로 승격)")
-    print("      python 1_auto_labeling.py --weights models/base_model.pt  (자동 라벨)")
+    print("      python scripts/labeling/auto_labeling.py --weights models/base_model.pt  (자동 라벨)")
 
 
 if __name__ == "__main__":

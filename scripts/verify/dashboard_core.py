@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """dashboard_core.py - 대시보드 공용 로직 (UI 프레임워크 무관).
 
-10_dashboard_api.py(FastAPI)와 9_build_report.py(HTML 내보내기)가 공유하는
+verify/dashboard_api.py(FastAPI)와 verify/build_report.py(HTML 내보내기)가 공유하는
 데이터 계층: 실험 결과 json 로더, 오토라벨링 방법 레지스트리, 즉석 비교 추론.
 """
 import base64
@@ -13,8 +13,8 @@ import cv2
 import config
 
 PREV_DIR = config.BASE_DIR / "docs" / "method_previews"
-TEST_IMG = config.BASE_DIR / "mechanical-parts-yolo" / "test" / "images"
-TEST_LBL = config.BASE_DIR / "mechanical-parts-yolo" / "test" / "labels"
+TEST_IMG = config.DATA_DIR / "mechanical-parts-yolo" / "test" / "images"
+TEST_LBL = config.DATA_DIR / "mechanical-parts-yolo" / "test" / "labels"
 GT_CLASSES = ["bearing", "bolt", "gear", "nut"]
 PALETTE = [(0, 255, 0), (255, 160, 0), (0, 160, 255), (255, 0, 200), (160, 255, 0),
            (0, 255, 255), (255, 80, 80), (180, 120, 255)]
@@ -260,7 +260,7 @@ def compare(idx=0, conf=0.6):
         return {"error": "서빙 모델 없음 (models/new_model.pt)"}
     imgs = test_images()
     if not imgs:
-        return {"error": "테스트 이미지 없음 (mechanical-parts-yolo/test)"}
+        return {"error": "테스트 이미지 없음 (data/mechanical-parts-yolo/test)"}
     idx = int(idx) % len(imgs)
     p = imgs[idx]
     src = cv2.imread(str(p))
@@ -309,7 +309,7 @@ def experiment_metrics(cat, topic):
 def export_report():
     import importlib.util
     spec = importlib.util.spec_from_file_location(
-        "report_builder", Path(__file__).resolve().parent / "9_build_report.py")
+        "report_builder", Path(__file__).resolve().parent / "build_report.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     mod.build()

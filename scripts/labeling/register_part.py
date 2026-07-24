@@ -1,4 +1,4 @@
-"""0_register_part.py - 부품 등록 (사용자 2D 사진 -> 자동 라벨 -> 데이터셋 반입).
+"""scripts/labeling/register_part.py - 부품 등록 (사용자 2D 사진 -> 자동 라벨 -> 데이터셋 반입).
 
 운영 시나리오(A브랜치): 새 부품 등록 시 부품별 사진을 업로드하면 자동 라벨링해
 학습 데이터로 반입한다. 여러 부품을 업로드 목록에 쌓아두고 배치로 처리한 뒤
@@ -21,10 +21,10 @@
 공통: 임계값 이상 후보 전부 채택(다중 인스턴스) + NMS + 포함 억제. 미달 사진은 라벨 포기.
 
 실행:
-  python scripts/0_register_part.py --batch ./uploads              # 부품 여러 개 일괄
-  python scripts/0_register_part.py --name bolt --src ./photos     # 단일 부품
+  python scripts/labeling/register_part.py --batch ./data/uploads  # 부품 여러 개 일괄
+  python scripts/labeling/register_part.py --name bolt --src ./photos  # 단일 부품
   ... --dry-run                                                    # 반입 없이 검증만
-반입 후: python scripts/2_train_pipeline.py  (증분 학습 1회 -> 게이트 -> 배포)
+반입 후: python scripts/training/train_pipeline.py  (증분 학습 1회 -> 게이트 -> 배포)
 """
 import argparse
 import os
@@ -35,8 +35,12 @@ import cv2
 import numpy as np
 import torch
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용(config 등)
 import config
-from dataset_utils import append_class
+from data_import.dataset_utils import append_class
 
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 MIN_AREA_FRAC = 0.005   # 등록 사진은 부품이 크게 나오므로 후보 하한을 높게
@@ -262,7 +266,7 @@ def main():
     for name, n, status in summary:
         print(f"  {name:<20} {n:>4}장  {status}")
     if not args.dry_run and any(s == "반입" for _, _, s in summary):
-        print("\n다음 단계(재학습은 배치당 1회): python scripts/2_train_pipeline.py")
+        print("\n다음 단계(재학습은 배치당 1회): python scripts/training/train_pipeline.py")
 
 
 if __name__ == "__main__":

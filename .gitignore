@@ -1,7 +1,5 @@
-# ===== 데이터셋 (용량 큼, git 부적합) =====
-mechanical-parts-coco/
-mechanical-parts-yolo/
-datasets/
+# ===== 데이터 (용량 큼, git 부적합) - 모든 데이터는 data/ 아래 =====
+data/
 data.generated.yaml
 
 # ===== 학습/실험 산출물 =====
@@ -38,7 +36,7 @@ Thumbs.db
 # 참고 논문(용량·저작권, git 제외)
 논문/
 
-# 등록 테스트 산출물·영상 (git 제외)
+# 등록 테스트 산출물·영상 (data/ 밖에 생겨도 제외)
 _regtest*/
 uploads/
 *.mp4

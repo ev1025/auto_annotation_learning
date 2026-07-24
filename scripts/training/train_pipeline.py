@@ -1,4 +1,4 @@
-"""2_train_pipeline.py - 자동 라벨링 결과로 새 모델 학습 후 ONNX 변환.
+"""scripts/training/train_pipeline.py - 자동 라벨링 결과로 새 모델 학습 후 ONNX 변환.
 
 흐름:
   datasets/images + datasets/labels (flat)
@@ -8,8 +8,8 @@
      ──(YOLO.export)──> models/new_model.onnx
 
 실행:
-  python 2_train_pipeline.py
-  python 2_train_pipeline.py --epochs 50 --batch 8 --device 0
+  python scripts/training/train_pipeline.py
+  python scripts/training/train_pipeline.py --epochs 50 --batch 8 --device 0
 """
 import argparse
 import csv
@@ -23,8 +23,12 @@ from pathlib import Path
 import yaml  # ultralytics 가 의존성으로 끌어오므로 별도 설치 불필요
 from ultralytics import YOLO
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용(config 등)
 import config
-from pseudo_utils import free_cuda
+from gpu_utils import free_cuda
 from release_utils import finalize_metrics
 
 
@@ -87,7 +91,7 @@ def prepare_split(images_dir, labels_dir, val_ratio, seed=0):
     if not pairs:
         raise SystemExit(
             f"[오류] {images_dir} / {labels_dir} 에 짝이 맞는 데이터가 없습니다.\n"
-            f"      먼저 1_auto_labeling.py 를 실행해 라벨을 생성하세요."
+            f"      먼저 scripts/labeling/auto_labeling.py 를 실행해 라벨을 생성하세요."
         )
 
     # 최초 분할: 고정 seed 로 셔플 -> 재현 가능한 분할.
@@ -253,7 +257,7 @@ def train(args):
         metrics["status"] = "rejected"
         finalize_metrics(rel_dir, metrics)
         print(f"[보류] {version} 은 보관만 하고 서빙 모델은 유지합니다. "
-              f"강제 배포는 --force-promote, 복원은 6_model_registry.py rollback")
+              f"강제 배포는 --force-promote, 복원은 scripts/training/model_registry.py rollback")
         _prune_releases(config.KEEP_RELEASES)
         return
 

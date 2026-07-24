@@ -1,6 +1,6 @@
 """config.py - 파이프라인 전역 설정 (경로 / 클래스 / 임계값).
 
-세 실행 스크립트(1_auto_labeling, 2_train_pipeline, 3_api_server)가
+실행 스크립트들(labeling/auto_labeling, training/train_pipeline, serving/api_server)가
 공통으로 참조하는 값을 한 곳에 모은다.
 - 경로를 각 스크립트에 하드코딩하지 않고 여기서만 바꾸면 전체 파이프라인이 따라오도록 모듈화.
 - 숫자로 시작하는 실행 스크립트(1_, 2_, 3_)는 파이썬 식별자 규칙상 import 가 불가능하므로,
@@ -19,7 +19,8 @@ NEW_MODEL_PT = MODELS_DIR / "new_model.pt"      # 본 학습 결과(best.pt)를 
 NEW_MODEL_ONNX = MODELS_DIR / "new_model.onnx"  # ONNX 변환 산출물(Unity/C# 등 비파이썬 런타임용)
 
 # --- 데이터셋 경로 ---
-DATASETS_DIR = BASE_DIR / "datasets"
+DATA_DIR = BASE_DIR / "data"          # 모든 데이터(원본·데이터셋·등록영상)의 단일 루트
+DATASETS_DIR = DATA_DIR / "datasets"
 UNLABELED_DIR = DATASETS_DIR / "unlabeled_images"  # 자동 라벨링 입력(원본)
 IMAGES_DIR = DATASETS_DIR / "images"   # 라벨링된 이미지(ultralytics 가 labels 와 짝지음)
 LABELS_DIR = DATASETS_DIR / "labels"   # YOLO 포맷 .txt 정답

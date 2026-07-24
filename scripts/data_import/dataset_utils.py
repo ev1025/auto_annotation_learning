@@ -29,7 +29,7 @@ def append_class(name):
     """클래스 1개를 data.yaml 에 추가하고 클래스 번호를 반환(이미 있으면 기존 번호).
 
     register_classes 와 달리 '추가'가 목적: 기존 번호는 절대 바꾸지 않고 끝에만
-    붙이므로 기존 datasets/ 라벨과 호환된다. 부품 등록(0_register_part)처럼
+    붙이므로 기존 datasets/ 라벨과 호환된다. 부품 등록(labeling/register_part)처럼
     운영 중 클래스가 늘어나는 경로에서 쓴다.
     """
     cfg, names = {}, {}
@@ -41,7 +41,7 @@ def append_class(name):
             return k
     new_id = max(names.keys(), default=-1) + 1
     names[new_id] = name
-    cfg.setdefault("path", "./datasets")
+    cfg.setdefault("path", "./data/datasets")
     cfg.setdefault("train", "images/train")
     cfg.setdefault("val", "images/val")
     cfg["names"] = {int(k): names[k] for k in sorted(names)}
@@ -66,7 +66,7 @@ def register_classes(class_names):
                 f"      기존: {list(old.values())}\n"
                 f"      반입: {list(class_names.values())}\n"
                 f"      기존 데이터셋과 섞이면 라벨 번호가 꼬입니다. data.yaml/datasets 를 정리 후 재실행하세요.")
-    cfg.setdefault("path", "./datasets")
+    cfg.setdefault("path", "./data/datasets")
     cfg.setdefault("train", "images/train")
     cfg.setdefault("val", "images/val")
     cfg["names"] = class_names

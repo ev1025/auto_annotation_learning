@@ -1,4 +1,4 @@
-"""3_api_server.py - FastAPI 추론 서버 (타 부서 제공용 REST 포맷).
+"""scripts/serving/api_server.py - FastAPI 추론 서버 (타 부서 제공용 REST 포맷).
 
 엔드포인트:
   GET  /health            서버/모델 상태 확인
@@ -22,7 +22,7 @@ bbox 좌표 약속(중요):
   -> XR/프론트엔드가 화면에 바로 사각형을 그릴 수 있는 가장 보편적인 형태로 통일했다.
 
 실행:
-  python 3_api_server.py
+  python scripts/serving/api_server.py
   # 또는: uvicorn 3_api_server:app --host 0.0.0.0 --port 8000   <- 파일명이 숫자로 시작해 import 명이 어색하므로 직접 실행 권장
   # 테스트: curl -X POST -F "file=@sample.jpg" http://localhost:8000/predict
 """
@@ -33,6 +33,10 @@ from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from PIL import Image
 from ultralytics import YOLO
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용(config 등)
 import config
 
 # 모델은 무겁다 -> 요청마다 로드하지 않고 프로세스 시작 시 1회만 로드해 전역 공유한다.
@@ -47,7 +51,7 @@ async def lifespan(app: FastAPI):
         # 모델이 없으면 즉시 알 수 있게 명확히 실패시킨다(요청 때 미스터리 에러 방지).
         raise RuntimeError(
             f"서빙 모델이 없습니다: {model_path}\n"
-            f"먼저 2_train_pipeline.py 로 new_model.pt 를 만드세요."
+            f"먼저 scripts/training/train_pipeline.py 로 new_model.pt 를 만드세요."
         )
     print(f"[서버] 모델 로드: {model_path}")
     STATE["model"] = YOLO(model_path)        # .pt / .onnx 모두 로드 가능

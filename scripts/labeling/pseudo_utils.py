@@ -1,25 +1,12 @@
 """pseudo_utils.py - 자동 라벨링(pseudo-labeling) 공용 유틸.
 
-운영 스크립트(1_auto_labeling.py)와 실험 스크립트(4_experiment_autolearn.py)가
+운영 스크립트(labeling/auto_labeling.py)와 실험 스크립트(experiments/experiment_autolearn.py)가
 같은 로직을 쓰므로 한 곳에 모은다. 특히 predict_boxes() 는 '박스 선택 규칙'의
 단일 구현이다: 실험이 검증하는 규칙과 운영이 쓰는 규칙이 두 벌로 갈라져
 몰래 어긋나는 것(drift)을 구조적으로 막는다.
 """
-import gc
-
 import torch
 from PIL import Image
-
-
-def free_cuda():
-    """무거운 학습/추론 직후 GPU 메모리가 곧바로 안 풀리는 경우가 있어 명시적으로 회수한다.
-
-    (교훈) 대용량 조건에서 학습 직후 다음 단계가 OOM 으로 죽는 사고가 있었다.
-    학습 -> 추론/변환으로 넘어가는 경계마다 호출한다.
-    """
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
 
 
 def iou(a, b):

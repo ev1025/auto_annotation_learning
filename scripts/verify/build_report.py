@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""9_build_report.py - 오토라벨링 검증 리포트(단일 HTML) 생성.
+"""scripts/verify/build_report.py - 오토라벨링 검증 리포트(단일 HTML) 생성.
 
 기획(승인본): 조작형 대시보드 대신 "위에서 아래로 읽는 스토리형 리포트".
   구성 = 프로젝트 배경 -> 결과 한눈에(정밀도 막대) -> 방법 1~7 (①데이터 ②증거
@@ -7,7 +7,7 @@
 원본 = 리포에 커밋된 결과 json + docs/method_previews/ 증거 이미지.
 방법 1의 '모델 박스 vs 정답' 비교쌍은 빌드 시 로컬 모델로 자동 생성.
 
-실행:  ./venv/Scripts/python.exe scripts/9_build_report.py
+실행:  ./venv/Scripts/python.exe scripts/verify/build_report.py
 출력:  docs/report.html  (이미지 임베드 단일 파일 - 브라우저로 열면 끝)
 """
 import base64
@@ -17,12 +17,16 @@ from pathlib import Path
 
 import cv2
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용(config 등)
 import config
 
 OUT = config.BASE_DIR / "docs" / "report.html"
 PREV = config.BASE_DIR / "docs" / "method_previews"
-TEST_IMG = config.BASE_DIR / "mechanical-parts-yolo" / "test" / "images"
-TEST_LBL = config.BASE_DIR / "mechanical-parts-yolo" / "test" / "labels"
+TEST_IMG = config.DATA_DIR / "mechanical-parts-yolo" / "test" / "images"
+TEST_LBL = config.DATA_DIR / "mechanical-parts-yolo" / "test" / "labels"
 GT_CLASSES = ["bearing", "bolt", "gear", "nut"]
 BOX_COLORS = [(0, 200, 90), (255, 160, 0), (0, 160, 255), (255, 0, 200)]
 
@@ -397,7 +401,7 @@ figcaption{font-size:13px;color:var(--muted);margin-top:4px;text-align:center}
 <h1>오토라벨링 검증 리포트</h1>
 <p class="subtitle">사람 대신 AI 학습 라벨을 자동 생성하는 7가지 방법의 실험 기록 · XR 오토러닝 프로젝트</p>
 {intro}{overview_sec}{m1}{m2}{m3}{m4}{m5}{m6}{m7}{appendix}
-<p class="fn" style="text-align:center;margin:10px 0 30px">본 리포트는 scripts/9_build_report.py 가 실험 결과 파일에서 자동 생성 · 수치 원본: exp_results/, bench_results/, zeroshot_labeler/eval_out/</p>
+<p class="fn" style="text-align:center;margin:10px 0 30px">본 리포트는 scripts/verify/build_report.py 가 실험 결과 파일에서 자동 생성 · 수치 원본: exp_results/, bench_results/, zeroshot_labeler/eval_out/</p>
 </main></div></body></html>"""
     OUT.write_text(html, encoding="utf-8")
     size = OUT.stat().st_size / 1e6

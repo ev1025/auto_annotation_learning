@@ -1,8 +1,8 @@
-"""0_coco_to_yolo.py - Roboflow COCO export 를 YOLOv8 export 와 같은 구조로 변환.
+"""scripts/data_import/coco_to_yolo.py - Roboflow COCO export 를 YOLOv8 export 와 같은 구조로 변환.
 
 입력(Roboflow COCO):
     <src>/train/_annotations.coco.json + 이미지들   (valid/, test/ 동일)
-출력(YOLOv8 export 동일 구조 -> 0_import_roboflow.py / 4_experiment_autolearn.py 가 그대로 소비):
+출력(YOLOv8 export 동일 구조 -> scripts/data_import/import_roboflow.py / scripts/experiments/experiment_autolearn.py 가 그대로 소비):
     <dst>/train/images/*.jpg
     <dst>/train/labels/*.txt      (class cx cy w h, 0~1 정규화)
     <dst>/data.yaml               (names)
@@ -13,7 +13,7 @@
     어노테이션이 실제로 달린 카테고리만 골라 0..k-1 로 재매핑한다.
 
 실행:
-  python 0_coco_to_yolo.py --src ./mechanical-parts-coco --dst ./mechanical-parts-yolo
+  python scripts/data_import/coco_to_yolo.py --src ./data/mechanical-parts-coco --dst ./data/mechanical-parts-yolo
 """
 import argparse
 import json
@@ -103,7 +103,7 @@ def main():
         yaml.safe_dump({"names": names, "nc": len(names)}, allow_unicode=True, sort_keys=False),
         encoding="utf-8")
     print(f"\n완료: 총 {total_i}장 / {total_b}건 -> {dst}")
-    print(f"다음: python 4_experiment_autolearn.py --src {dst} --classes bolt nut")
+    print(f"다음: python scripts/experiments/experiment_autolearn.py --src {dst} --classes bolt nut")
 
 
 if __name__ == "__main__":

@@ -68,30 +68,48 @@ flowchart TD
 xr_autolearning/
 ├─ data.yaml                     # 클래스 정의(names)·데이터 경로
 ├─ requirements.txt
-├─ scripts/                      # 파이프라인 스크립트 (번호 = 실행 순서)
-│  ├─ config.py                  # 경로·클래스·임계값·하이퍼파라미터 공통 설정
-│  ├─ 0_register_part.py         # 부품 등록: 업로드 사진 → 자동 라벨 → 반입 (운영 진입점)
-│  ├─ 0_coco_to_yolo.py          # Roboflow COCO → YOLO 포맷 변환 (샘플 데이터용)
-│  ├─ 0_import_render.py         # 라벨 딸린 외부 데이터 반입 (클래스 등록·라벨 검증·배치)
-│  ├─ 0_import_roboflow.py       # Roboflow YOLOv8 export 정리
-│  ├─ 1_auto_labeling.py         # 자동 라벨링 (conf 필터, --tta, --conf-per-class)
-│  ├─ 2_train_pipeline.py        # train/val 분할 → 학습 → ONNX export
-│  ├─ 3_api_server.py            # FastAPI 추론 서버
-│  ├─ 4_experiment_autolearn.py  # 오토러닝 효과 실증 (정답 숨기고 자동 채점)
-│  ├─ 5_benchmark.py             # 모델 x 입력크기 매트릭스 벤치마크 (배포 모델 선정 근거)
-│  ├─ 6_model_registry.py        # 릴리스 조회/롤백 (이전 버전 복원)
-│  ├─ 7_finetune_real.py         # 실사 소량 파인튜닝 (2단계: 동결 → 저lr 해제, 전/후 게이트)
-│  ├─ 9_build_report.py          # 오토라벨링 검증 리포트(단일 HTML) 생성 -> docs/report.html
-│  ├─ 10_dashboard_api.py        # 대시보드 API 서버 (FastAPI, React 프론트 서빙 + 즉석 비교 추론)
-│  ├─ dashboard_core.py          # 대시보드·리포트 공용 데이터 계층 (지표 로더·방법 레지스트리)
-│  ├─ dataset_utils.py           # 데이터셋 등록 공용 (names 정규화·data.yaml 등록 가드)
-│  ├─ pseudo_utils.py            # 자동 라벨링 공용 (박스 선택 단일 구현: 추론·TTA·conf 필터)
-│  └─ data_viewer.ipynb          # COCO 어노테이션 점검 노트북 (클래스 분포·라벨 시각화)
+├─ scripts/                      # 파이프라인 코드 (폴더 = 역할, 실행 순서는 6장)
+│  ├─ config.py                  # 경로·클래스·임계값·하이퍼파라미터 공통 설정 (유일한 최상위)
+│  ├─ gpu_utils.py               # GPU 메모리 회수 공용 (labeling/training 양쪽 사용)
+│  ├─ data_import/               # 데이터 반입·변환
+│  │  ├─ coco_to_yolo.py         #   Roboflow COCO → YOLO 포맷 변환 (샘플 데이터용)
+│  │  ├─ import_render.py        #   라벨 딸린 외부 데이터 반입 (클래스 등록·라벨 검증·배치)
+│  │  ├─ import_roboflow.py      #   Roboflow YOLOv8 export 정리
+│  │  ├─ dataset_utils.py        #   데이터셋 등록 공용 (names 정규화·data.yaml 등록 가드)
+│  │  └─ data_viewer.ipynb       #   COCO 어노테이션 점검 노트북
+│  ├─ labeling/                  # ① 라벨 자동 생성
+│  │  ├─ register_part.py        #   부품 등록: 업로드 사진/영상 → 자동 라벨 → 반입 (운영 진입점)
+│  │  ├─ auto_labeling.py        #   self-training 자동 라벨링 (conf 필터, --tta, --conf-per-class)
+│  │  └─ pseudo_utils.py         #   박스 선택 단일 구현 (추론·TTA·conf 필터)
+│  ├─ training/                  # ② YOLO 학습·배포
+│  │  ├─ train_pipeline.py       #   train/val 분할 → 학습 → 게이트 → ONNX export → 릴리스
+│  │  ├─ finetune_real.py        #   실사 소량 파인튜닝 (2단계: 동결 → 저lr 해제, 전/후 게이트)
+│  │  ├─ model_registry.py       #   릴리스 조회/롤백 (이전 버전 복원)
+│  │  └─ release_utils.py        #   릴리스 기록 공용 (trained_at·history.jsonl)
+│  ├─ serving/
+│  │  └─ api_server.py           # FastAPI 추론 서버 (XR 기기가 소비)
+│  ├─ experiments/               # 실증·벤치마크 (운영과 분리된 실험 전용)
+│  │  ├─ experiment_autolearn.py #   오토러닝 효과 실증 (정답 숨기고 자동 채점)
+│  │  ├─ benchmark.py            #   모델 x 입력크기 매트릭스 벤치마크 (배포 모델 선정 근거)
+│  │  └─ exp_epochs.py           #   후속 검증 (300ep·레시피·시드 반복)
+│  └─ verify/                    # 육안 검증
+│     ├─ dashboard_api.py        #   대시보드 API 서버 (React 프론트 서빙 + 즉석 비교 추론)
+│     ├─ dashboard_core.py       #   대시보드·리포트 공용 데이터 계층
+│     └─ build_report.py         #   검증 리포트(단일 HTML) 생성 -> docs/report.html
 ├─ dashboard/                    # 검증 대시보드 프론트 (React + Vite, 빌드 산출물 dist/ 는 미커밋)
 ├─ zeroshot_labeler/             # 제로샷 라벨링 실험·프롬프트 실험대 (등록 방식 선정 근거, eval_out/)
+├─ data/                         # 모든 데이터의 단일 루트 (전체 git 제외)
+│  ├─ datasets/                  #   운영 학습 데이터 (images/ labels/ unlabeled_images/)
+│  ├─ mechanical-parts-coco/     #   실험용 공개 데이터 원본 (COCO 포맷)
+│  ├─ mechanical-parts-yolo/     #   실험용 공개 데이터 (YOLO 변환본, 대시보드 즉석 비교가 사용)
+│  ├─ uploads/                   #   부품 등록 입력 (uploads/<부품명>/ 사진·영상)
+│  └─ 기어박스*.mp4              #   실사 검증 영상
+├─ docs/                         # 문서 자산 (코드 아님: 이미지·리포트)
+│  ├─ method_previews/           #   오토라벨링 방법별 증거 이미지 (대시보드·리포트가 표시, git 추적)
+│  ├─ report.html                #   '내보내기' 산출물 (verify/build_report.py 가 생성)
+│  └─ sample_*.jpg               #   README 예시 이미지
 ├─ models/                       # base_model.pt(초기 생성기) / new_model.pt·onnx(서빙 현재본)
 │  └─ releases/                  # 버전별 보관: v<타임스탬프>/{best.pt, best.onnx, metrics.json, train.log}
-├─ datasets/                     # images/ labels/ unlabeled_images/
 ├─ bench_results/                # 벤치마크 결과 (benchmark.json / benchmark.md)
 └─ exp_results/                  # 실험 리포트 (report_*.json)
 ```
@@ -391,46 +409,46 @@ pip install -r requirements.txt
 
 ```bash
 # (검증용) Roboflow COCO 데이터를 YOLO 구조로 변환
-python scripts/0_coco_to_yolo.py --src ./mechanical-parts-coco --dst ./mechanical-parts-yolo
+python scripts/data_import/coco_to_yolo.py --src ./data/mechanical-parts-coco --dst ./data/mechanical-parts-yolo
 
-# (운영용) 부품 등록: uploads/<부품명>/ 에 사진을 쌓고 배치 실행 (폴더명 = 클래스)
-python scripts/0_register_part.py --batch ./uploads --dry-run   # 라벨 품질 검증만(미리보기 저장)
-python scripts/0_register_part.py --batch ./uploads             # 자동 라벨 + 클래스 등록 + 반입
+# (운영용) 부품 등록: data/uploads/<부품명>/ 에 사진을 쌓고 배치 실행 (폴더명 = 클래스)
+python scripts/labeling/register_part.py --batch ./data/uploads --dry-run   # 라벨 품질 검증만(미리보기 저장)
+python scripts/labeling/register_part.py --batch ./data/uploads             # 자동 라벨 + 클래스 등록 + 반입
 
 # (선택) 라벨이 이미 있는 외부 데이터 반입
-python scripts/0_import_render.py --src ./labeled_delivery --classes bolt nut gear
+python scripts/data_import/import_render.py --src ./labeled_delivery --classes bolt nut gear
 ```
 
 ### 6.3 실행 순서 (자동화 루프)
 
 ```bash
 # 0) 부트스트랩(1회): 등록·반입된 라벨셋으로 첫 모델 학습 후 라벨 생성기로 승격
-python scripts/2_train_pipeline.py --epochs 100 --device 0
+python scripts/training/train_pipeline.py --epochs 100 --device 0
 cp models/new_model.pt models/base_model.pt
 
-# 1) 자동 라벨링: 미라벨 이미지(datasets/unlabeled_images) → conf≥0.6 YOLO 라벨
-python scripts/1_auto_labeling.py --weights models/base_model.pt
+# 1) 자동 라벨링: 미라벨 이미지(data/datasets/unlabeled_images) → conf≥0.6 YOLO 라벨
+python scripts/labeling/auto_labeling.py --weights models/base_model.pt
 
 # 2) 재학습 + ONNX 변환: 누적 라벨로 학습 → best.pt/onnx  (1↔2 반복 = 오토러닝 루프)
 #    매 실행마다 models/releases/v<타임스탬프>/ 에 버전 보관(모델·지표·학습로그).
 #    배포 게이트: 직전 채택본보다 mAP50 낮으면 보관만 하고 서빙 모델은 유지 (--force-promote 로 무시)
-python scripts/2_train_pipeline.py --epochs 100 --device 0
+python scripts/training/train_pipeline.py --epochs 100 --device 0
 
 # 3) 추론 API 서버
-python scripts/3_api_server.py       # http://0.0.0.0:8000
+python scripts/serving/api_server.py       # http://0.0.0.0:8000
 curl -X POST -F "file=@sample.jpg" "http://localhost:8000/predict?conf=0.3"
 
 # (운영) 릴리스 조회 / 문제 시 이전 버전으로 롤백
-python scripts/6_model_registry.py list
-python scripts/6_model_registry.py rollback            # 직전 채택본으로 복원
-python scripts/6_model_registry.py rollback v20260716_093012   # 특정 버전으로 복원
+python scripts/training/model_registry.py list
+python scripts/training/model_registry.py rollback            # 직전 채택본으로 복원
+python scripts/training/model_registry.py rollback v20260716_093012   # 특정 버전으로 복원
 ```
 
 ### 6.4 자동화 효과 재현 실험
 
 ```bash
 # 정답을 숨기고 자동 채점: 라운드0 vs 라운드1 mAP + 자동라벨 P/R
-python scripts/4_experiment_autolearn.py --src ./mechanical-parts-yolo --classes bolt nut --epochs 60
+python scripts/experiments/experiment_autolearn.py --src ./data/mechanical-parts-yolo --classes bolt nut --epochs 60
 # 결과: exp_autolearn/report.json (exp_results/ 에 조건별 리포트 보관)
 ```
 
@@ -439,7 +457,7 @@ python scripts/4_experiment_autolearn.py --src ./mechanical-parts-yolo --classes
 ```bash
 # 모델 x 입력크기 매트릭스: 정확도(mAP)·단건 지연(ms)·FPS·파라미터 비교
 # --src 만 바꾸면 다른 데이터셋으로 즉시 재실행 가능
-python scripts/5_benchmark.py --src ./mechanical-parts-yolo \
+python scripts/experiments/benchmark.py --src ./data/mechanical-parts-yolo \
     --models yolov8n.pt yolov8s.pt yolov8m.pt yolo11n.pt yolo26n.pt yolo26s.pt yolo26m.pt \
     --imgsz 640 1280 --epochs 100 --device 0
 # 결과: bench_results/benchmark.json + benchmark.md (조합마다 누적 저장)
@@ -451,10 +469,10 @@ python scripts/5_benchmark.py --src ./mechanical-parts-yolo \
 ```bash
 # 검증 대시보드 (React + FastAPI): 방법 7종의 데이터·증거이미지·지표 + 평가셋 전체 탐색 비교
 cd dashboard && npm install && npm run build && cd ..   # 프론트 변경 시에만 1회
-python scripts/10_dashboard_api.py       # http://127.0.0.1:7862
+python scripts/verify/dashboard_api.py       # http://127.0.0.1:7862
 
 # 공유·보고용 정적 리포트는 대시보드의 'HTML 리포트 내보내기' 버튼 또는:
-python scripts/9_build_report.py         # -> docs/report.html (브라우저로 열면 끝, 서버 불필요)
+python scripts/verify/build_report.py         # -> docs/report.html (브라우저로 열면 끝, 서버 불필요)
 # 수치가 좋아도 라벨이 엉뚱할 수 있으므로(8장 상호 일관성 사례) 등록·재학습 후 육안 확인 권장
 ```
 
@@ -463,7 +481,7 @@ python scripts/9_build_report.py         # -> docs/report.html (브라우저로 
 ```bash
 # 기존 모델을 신규 라벨 데이터 50~100장으로 2단계 파인튜닝 (동결 -> 저학습률 해제)
 # catastrophic forgetting 방지 레시피 [1]. val 전/후 비교 게이트 + 릴리스 보관
-python scripts/7_finetune_real.py --src ./new_photos --device 0
+python scripts/training/finetune_real.py --src ./new_photos --device 0
 # new_photos/images/*.jpg + labels/*.txt (클래스 번호는 data.yaml 체계와 동일)
 ```
 

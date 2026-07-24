@@ -17,11 +17,15 @@ from pathlib import Path
 
 from ultralytics import YOLO
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용(config 등)
 import config
-from pseudo_utils import free_cuda
+from gpu_utils import free_cuda
 
 BENCH = config.BASE_DIR / "bench_results"
-DATA = BENCH / "bench_data.yaml"  # 5_benchmark 가 생성해 둔 것을 재사용(동일 분할 보장)
+DATA = BENCH / "bench_data.yaml"  # experiments/benchmark 가 생성해 둔 것을 재사용(동일 분할 보장)
 
 # 부하 균형: 긴 작업을 앞에, 총 소요 30~50분/GPU
 GROUPS = {

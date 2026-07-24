@@ -1,4 +1,4 @@
-"""7_finetune_real.py - 실사 소량 파인튜닝 (하이브리드 학습).
+"""scripts/training/finetune_real.py - 실사 소량 파인튜닝 (하이브리드 학습).
 
 배경: 합성(렌더) 데이터로 학습한 모델은 실사에서 도메인 갭으로 성능이 떨어진다.
 문헌 실측(README 참고자료 [1]) 기준, 합성 사전학습 모델을 실사 50~100장으로만
@@ -14,7 +14,7 @@
   5) 결과를 models/releases/ 에 버전 보관 (2_train_pipeline 과 동일 규약)
 
 실행:
-  python scripts/7_finetune_real.py --src ./real_photos --device 0
+  python scripts/training/finetune_real.py --src ./real_photos --device 0
   # real_photos/images/*.jpg + real_photos/labels/*.txt (클래스 번호는 data.yaml 과 동일 체계)
 """
 import argparse
@@ -27,9 +27,13 @@ from pathlib import Path
 import yaml
 from ultralytics import YOLO
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용(config 등)
 import config
-from dataset_utils import normalize_names, write_yaml
-from pseudo_utils import free_cuda
+from data_import.dataset_utils import normalize_names, write_yaml
+from gpu_utils import free_cuda
 from release_utils import finalize_metrics
 
 WORK_DIR = config.BASE_DIR / "finetune_real"
@@ -127,7 +131,7 @@ def finetune(args):
 
     if improved or args.force_promote:
         shutil.copy2(best2, config.NEW_MODEL_PT)
-        print(f"[배포] {version} -> {config.NEW_MODEL_PT} (롤백: 6_model_registry.py)")
+        print(f"[배포] {version} -> {config.NEW_MODEL_PT} (롤백: scripts/training/model_registry.py)")
     else:
         print(f"[보류] {version} 은 보관만. 강제 배포는 --force-promote")
 

@@ -1,4 +1,4 @@
-"""1_auto_labeling.py - base_model 로 미라벨 이미지를 자동 라벨링(pseudo-labeling).
+"""scripts/labeling/auto_labeling.py - base_model 로 미라벨 이미지를 자동 라벨링(pseudo-labeling).
 
 흐름:
   unlabeled_images/*.jpg ──(base_model.pt 추론, conf>=0.6 만 채택)──┐
@@ -18,9 +18,9 @@ YOLO 라벨 포맷(한 줄당 한 객체):
                         쉬운 클래스만 라벨이 양산되는 '클래스 소외'를 완화.
 
 실행:
-  python 1_auto_labeling.py
-  python 1_auto_labeling.py --conf 0.7 --no-copy-images
-  python 1_auto_labeling.py --tta --conf-per-class "gear=0.45"
+  python scripts/labeling/auto_labeling.py
+  python scripts/labeling/auto_labeling.py --conf 0.7 --no-copy-images
+  python scripts/labeling/auto_labeling.py --tta --conf-per-class "gear=0.45"
 """
 import argparse
 import shutil
@@ -28,6 +28,10 @@ from pathlib import Path
 
 from ultralytics import YOLO
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용(config 등)
 import config
 from pseudo_utils import parse_conf_per_class, predict_boxes
 
