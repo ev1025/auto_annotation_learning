@@ -374,16 +374,16 @@ def compare(idx=0, conf=0.6):
     p = imgs[idx]
     src = cv2.imread(str(p))
     h, w = src.shape[:2]
+    from collections import Counter
     pred = src.copy()
     r = m.predict(source=str(p), conf=conf, verbose=False)[0]
-    seen = set()
+    pred_names, gt_names = [], []
     pred_dets = []
     for b, c, cf in zip(r.boxes.xyxy, r.boxes.cls, r.boxes.conf):
         x1, y1, x2, y2 = map(int, b)
         name = m.names[int(c)]
         pred_dets.append((x1, y1, x2, y2, f"{name} ({float(cf):.2f})", color_for(name)))
-        seen.add(name)
-    n = len(pred_dets)
+        pred_names.append(name)
     render_detections(pred, pred_dets)
 
     gt = src.copy()
@@ -399,11 +399,14 @@ def compare(idx=0, conf=0.6):
             x2, y2 = round((cx + bw / 2) * w), round((cy + bh / 2) * h)
             name = GT_CLASSES[c] if c < len(GT_CLASSES) else str(c)
             gt_dets.append((x1, y1, x2, y2, name, color_for(name)))
-            seen.add(name)
+            gt_names.append(name)
     render_detections(gt, gt_dets)
-    legend = [{"name": nm, "color": "#%02x%02x%02x" % color_for(nm)[::-1]}
-              for nm in sorted(seen)]
-    return {"pred": _b64(pred), "gt": _b64(gt), "file": p.name, "n": n,
+
+    pc, gc = Counter(pred_names), Counter(gt_names)
+    cats = sorted(set(pc) | set(gc))
+    counts = [{"name": nm, "pred": pc.get(nm, 0), "gt": gc.get(nm, 0)} for nm in cats]
+    legend = [{"name": nm, "color": "#%02x%02x%02x" % color_for(nm)[::-1]} for nm in cats]
+    return {"pred": _b64(pred), "gt": _b64(gt), "file": p.name, "counts": counts,
             "legend": legend, "idx": idx, "total": len(imgs)}
 
 

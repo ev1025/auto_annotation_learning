@@ -165,14 +165,25 @@ td { padding: 7px 10px; border-bottom: 1px solid var(--line); }
 .cmp-info li b { color: var(--ink); }
 
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.pair figure, .gallery figure { margin: 0; }
-.pair img, .gallery img {
+.gallery figure { margin: 0; }
+.pane {
+  margin: 0; border: 1px solid var(--line); border-radius: 12px;
+  background: #f8fafc; padding: 10px 10px 12px; overflow: hidden;
+}
+.pane figcaption { padding: 2px 4px 8px; }
+.pane img { width: 100%; border-radius: 8px; display: block; }
+.gallery img {
   width: 100%; border: 1px solid var(--line); border-radius: 10px; display: block;
   transition: opacity 0.15s;
 }
 figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 600; }
 .cap-sub { font-size: 12.5px; color: var(--muted); font-weight: 400; margin-left: 6px; }
 .gallery figcaption { margin: 5px 0 0; text-align: center; font-weight: 400; font-size: 13px; color: var(--muted); }
+.count-list { list-style: none; padding: 4px 0 0 2px; margin: 0; }
+.count-list li {
+  font-size: 13.5px; color: var(--ink); margin: 3px 0;
+  font-variant-numeric: tabular-nums;
+}
 .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 8px; }
 
 /* ---------- 기타 실험 ---------- */
