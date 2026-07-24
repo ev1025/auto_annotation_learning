@@ -22,6 +22,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용(config 등)
 import config
+import dashboard_core as core
+import html as _html
 
 OUT = config.BASE_DIR / "docs" / "report.html"
 PREV = config.BASE_DIR / "docs" / "method_previews"
@@ -51,12 +53,16 @@ def b64_file(path, max_w=880):
 
 # ---------------- 방법 1 비교쌍 자동 생성 (모델 박스 | 정답) ----------------
 def draw_boxes(im, items):
-    """items = [(cls_id, label, xyxy)]"""
+    """items = [(cls_id, label, xyxy)] - 박스 + 색 채운 라벨 배경 + 흰 글씨."""
+    font, scale, ft = cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
     for c, label, (x1, y1, x2, y2) in items:
+        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
         color = BOX_COLORS[c % len(BOX_COLORS)]
-        cv2.rectangle(im, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-        cv2.putText(im, label, (int(x1), max(int(y1) - 6, 18)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+        cv2.rectangle(im, (x1, y1), (x2, y2), color, 3)
+        (tw, th), bl = cv2.getTextSize(label, font, scale, ft)
+        ly1 = max(0, y1 - th - bl - 4)
+        cv2.rectangle(im, (x1, ly1), (x1 + tw + 6, y1), color, -1)
+        cv2.putText(im, label, (x1 + 3, y1 - bl), font, scale, (255, 255, 255), ft, cv2.LINE_AA)
     return im
 
 
@@ -79,8 +85,8 @@ def gen_selftrain_pairs(n=4, conf=0.6, seed=7):
         src = cv2.imread(str(p))
         h, w = src.shape[:2]
         pred = draw_boxes(src.copy(), [
-            (int(c), f"#{i} {model.names[int(c)]} {float(cf):.2f}", tuple(map(int, b)))
-            for i, (b, c, cf) in enumerate(zip(r.boxes.xyxy, r.boxes.cls, r.boxes.conf), 1)])
+            (int(c), f"{model.names[int(c)]} {float(cf):.2f}", tuple(map(int, b)))
+            for b, c, cf in zip(r.boxes.xyxy, r.boxes.cls, r.boxes.conf)])
         gt_items = []
         lf = TEST_LBL / f"{p.stem}.txt"
         if lf.exists():
@@ -89,7 +95,7 @@ def gen_selftrain_pairs(n=4, conf=0.6, seed=7):
                 if len(f) < 5:
                     continue
                 c, cx, cy, bw, bh = int(f[0]), *map(float, f[1:5])
-                gt_items.append((c, f"#{i} {GT_CLASSES[c]}",
+                gt_items.append((c, GT_CLASSES[c],
                                  (round((cx - bw / 2) * w), round((cy - bh / 2) * h),
                                   round((cx + bw / 2) * w), round((cy + bh / 2) * h))))
         gt = draw_boxes(src.copy(), gt_items)
@@ -165,7 +171,23 @@ def section(anchor, title, badge_html, body):
 
 
 def sub(t):
-    return f"<h3>{t}</h3>"
+    return f'<h3 class="section-h">{t}</h3>'
+
+
+def verdict(text):
+    return f'<p class="verdict">{text}</p>'
+
+
+def code_html(mid):
+    m = core.method_by_id(mid)
+    blocks = []
+    for sn in (m.get("code") or []):
+        blocks.append(
+            f'<div class="snippet"><div class="snip-head">'
+            f'<code class="snip-file">{sn["file"]}</code>'
+            f'<span class="snip-note">{sn["note"]}</span></div>'
+            f'<pre><code>{_html.escape(sn["src"])}</code></pre></div>')
+    return (sub("실제 코드") + "".join(blocks)) if blocks else ""
 
 
 def ordered(items):
@@ -224,83 +246,90 @@ def build():
     m1 = section("m1", "Pseudo-labeling", badge("adopt"),
         '<p class="method-desc">의사 라벨링(Pseudo-labeling)은 라벨이 없는 데이터에 모델이 예측한 값을 '
         '임시 라벨로 지정해 학습에 재활용하는 준지도학습 기법입니다.</p>' +
-        ordered([
+        sub("실험 순서") + ordered([
             "<b>1차 모델</b>: 순수 YOLO 모델에 기계부품 데이터(bolt·nut·gear·bearing) 10~15%(149장)를 학습시킨다.",
             "<b>임시 학습 데이터 생성</b>: 1차 모델에게 라벨이 없는 데이터 65~70%(647장)를 예측시키고, 신뢰도(confidence)가 0.6 이상인 라벨만 채택.",
             "<b>2차 모델</b>: 순수 YOLO 모델에 1의 학습데이터와 2의 결과(0.6 이상 데이터)를 학습시킨다.",
             "<b>임시 학습 데이터 효과 검증</b>: 1차 모델과 2차 모델의 평가지표를 비교한다."]) +
-        pair_html +
-        callout(f"자동 라벨로 재학습하자 mAP50 {al['round0']['map50']} → {al['round1']['map50']}. "
+        code_html("m1") +
+        sub("실제 입출력 결과") + pair_html +
+        sub("실험 결과") +
+        verdict(f"자동 라벨로 재학습하자 mAP50 {al['round0']['map50']} → {al['round1']['map50']}. "
                 "4개 조건(2·3·4클래스) 전부 상승 = 오토러닝 효과 입증 (조건별 상세는 부록)") +
         table(["항목", "값"], autolearn_rows("exp_results/report_2cls_seed15.json")))
 
     # ---- 방법 2 ----
     m2 = section("m2", "텍스트 제로샷 (Grounding DINO)", badge("drop"),
-        sub("① 어떤 데이터를 어떻게 사용했나") + bullets([
+        sub("실험 순서") + bullets([
             "<b>방식</b>: 학습 없이 영어 프롬프트 4종('metal hex bolt screw' 등)만으로 박스 생성",
             "<b>데이터</b>: 정답을 숨긴 평가셋 204장, 숨긴 정답과 IoU 0.5 기준 채점",
             "<b>탈락 사유</b>: 유사 금속 부품 간 클래스 혼동 (둥근 접시를 gear 로 오인)"]) +
-        sub("② 모델이 만든 바운딩박스 vs 정답 라벨") + gallery_html("dino_text") +
+        sub("실제 입출력 결과") + gallery_html("dino_text") +
         '<p class="fn">초록 = 모델 박스, 빨강 = 정답 라벨 (한 이미지에 겹쳐 표시)</p>' +
-        sub("③ 실험 지표") +
-        callout(f"정밀도 {zs_p} → 무검수 라벨 기준(0.87) 미달로 탈락") +
+        sub("실험 결과") +
+        verdict(f"정밀도 {zs_p} → 무검수 라벨 기준(0.87) 미달로 탈락") +
         table(["클래스", "정밀도", "재현율", "맞음", "오탐", "누락"], zs_rows))
 
     # ---- 방법 3 ----
     m3 = section("m3", "Grounded-SAM 타이트박스", badge("drop"),
-        sub("① 어떤 데이터를 어떻게 사용했나") + bullets([
+        sub("실험 순서") + bullets([
             "<b>방식</b>: 방법 2와 동일 + SAM 마스크로 박스를 픽셀 경계까지 타이트하게 교정",
             "<b>결과</b>: 정밀도 개선 없음. '박스 여백이 문제'라는 가설이 실측으로 기각됨 (맞은 박스 평균 IoU: DINO 원본 0.908 > SAM 0.876)",
             "<b>비고</b>: 증거 이미지는 서버 유실로 미보존"]) +
-        sub("③ 실험 지표") +
-        callout(f"정밀도 {gs_p} (방법 2와 동일 수준) → 병목은 박스 여백이 아니라 클래스 혼동으로 판명") +
+        sub("실제 입출력 결과") + '<p class="fn">증거 이미지 미보존 - 아래 지표로 확인</p>' +
+        sub("실험 결과") +
+        verdict(f"정밀도 {gs_p} (방법 2와 동일 수준) → 병목은 박스 여백이 아니라 클래스 혼동으로 판명") +
         table(["클래스", "정밀도", "재현율", "맞음", "오탐", "누락"], gs_rows))
 
     # ---- 방법 4 ----
     m4 = section("m4", "SAM + CLIP 갤러리", badge("drop"),
-        sub("① 어떤 데이터를 어떻게 사용했나") + bullets([
+        sub("실험 순서") + bullets([
             "<b>방식</b>: SAM 이 물체 후보를 전부 분할 → 각 후보를 참조 갤러리(정답에서 오린 크롭, 클래스당 10장)와 CLIP 임베딩 유사도로 분류",
             "<b>의의</b>: 텍스트 → 시각 매칭 전환으로 정밀도 2.5배 도약 (0.24 → 0.60)",
             "<b>비고</b>: 증거 이미지 미보존"]) +
-        sub("③ 실험 지표 (유사도 임계값별)") +
-        callout("최고 정밀도 0.60 → 기준(0.87) 미달. 그러나 '시각 매칭이 텍스트보다 우월'을 입증해 방법 5로 이어짐") +
+        sub("실제 입출력 결과") + '<p class="fn">증거 이미지 미보존 - 아래 지표로 확인</p>' +
+        sub("실험 결과 (유사도 임계값별)") +
+        verdict("최고 정밀도 0.60 → 기준(0.87) 미달. 그러나 '시각 매칭이 텍스트보다 우월'을 입증해 방법 5로 이어짐") +
         table(["유사도 임계값", "정밀도", "재현율", "F1"], clip_rows))
 
     # ---- 방법 5 ----
     hp = dino_hp or {}
     m5 = section("m5", "SAM + DINOv2 갤러리", badge("adopt"),
-        sub("① 어떤 데이터를 어떻게 사용했나") + bullets([
+        sub("실험 순서") + bullets([
             "<b>방식</b>: 방법 4와 동일하되 임베딩을 CLIP → <b>DINOv2</b>(질감·형상 특징)로 교체",
             f"<b>성과</b>: 임계값 {hp.get('tau')}에서 정밀도 {hp.get('precision')} = 무검수 기준(0.87) 최초 충족",
             "<b>의의</b>: 방법 7(1탭 참조)의 이론적 기반이 됨",
             "<b>비고</b>: 증거 이미지 미보존"]) +
-        sub("③ 실험 지표 (유사도 임계값별)") +
-        callout(f"고정밀 운영점 달성: 정밀도 {hp.get('precision')} / 재현율 {hp.get('recall')} (임계값 {hp.get('tau')})") +
+        sub("실제 입출력 결과") + '<p class="fn">증거 이미지 미보존 - 아래 지표로 확인</p>' +
+        sub("실험 결과 (유사도 임계값별)") +
+        verdict(f"고정밀 운영점 달성: 정밀도 {hp.get('precision')} / 재현율 {hp.get('recall')} (임계값 {hp.get('tau')})") +
         table(["유사도 임계값", "정밀도", "재현율", "F1"], dino_rows))
 
     # ---- 방법 6 ----
     m6 = section("m6", "상호 일관성 매칭", badge("partial"),
-        sub("① 어떤 데이터를 어떻게 사용했나") + bullets([
+        sub("실험 순서") + bullets([
             "<b>방식</b>: 등록 폴더(부품 1종)의 SAM 후보 중 '다른 모든 사진에도 비슷한 물체가 있는 후보'를 DINOv2 로 식별해 라벨링",
             "<b>적용 ①</b>: 사진 묶음 시뮬 (부품 크롭 2종 × 15장) → 성공",
             "<b>적용 ②</b>: 실사 기어박스 영상 49프레임 → <b>실패</b> (한 장면 영상은 배경도 매 프레임 등장해 매트·드릴·사람까지 오채택)",
             "<b>교훈</b>: 채택률 98%라는 수치만 보면 합격이었으나, 육안 검증이 실패를 적발"]) +
-        sub("② 자동 라벨 vs 실제 (성공과 실패)") + gallery_html("mutual") +
-        sub("③ 판정") +
-        callout("배경이 바뀌는 사진 묶음에서만 유효. 영상 등록에는 부적합 → 방법 7(1탭 참조)로 대체") +
+        code_html("m6") +
+        sub("실제 입출력 결과") + gallery_html("mutual") +
+        sub("실험 결과") +
+        verdict("배경이 바뀌는 사진 묶음에서만 유효. 영상 등록에는 부적합 → 방법 7(1탭 참조)로 대체") +
         table(["항목", "결과"], [
             ["사진 묶음 시뮬 (볼트·너트 15장씩)", "채택률 100%, 부품만 정확히 라벨"],
             ["실사 영상 (기어박스 49프레임)", "채택률 98%였으나 배경 오채택 → 폐기"]]))
 
     # ---- 방법 7 ----
     m7 = section("m7", "1탭 참조 매칭", badge("adopt"),
-        sub("① 어떤 데이터를 어떻게 사용했나") + bullets([
+        sub("실험 순서") + bullets([
             "<b>방식</b>: 등록 화면에서 부품을 <b>한 번 클릭</b> → SAM 포인트 분할로 참조 크롭 확보 → 모든 프레임의 SAM 후보를 참조와 DINOv2 유사도(임계값 0.7)로 매칭",
             "<b>데이터</b>: 실사 기어박스 영상 (1차 33프레임 → 완결 193프레임)",
             "<b>검증</b>: 생성 라벨로 학습 후, 학습에 안 쓴 별도 영상(16프레임)에서 탐지 확인"]) +
-        sub("② 참조 확인 → 자동 라벨 → 학습 후 탐지") + gallery_html("one_tap") +
-        sub("③ 실험 지표") +
-        callout("최종 채택. 사람 개입은 탭 1회뿐이며, 라벨 수량이 성능을 직접 좌우 (20장=31% vs 114장=88%) → 등록 영상만 충분히 길면 성능 확보") +
+        code_html("m7") +
+        sub("실제 입출력 결과") + gallery_html("one_tap") +
+        sub("실험 결과") +
+        verdict("최종 채택. 사람 개입은 탭 1회뿐이며, 라벨 수량이 성능을 직접 좌우 (20장=31% vs 114장=88%) → 등록 영상만 충분히 길면 성능 확보") +
         table(["항목", "결과"], [
             ["라벨 생성 (1차, 33프레임)", "20장 채택, 배경 오채택 0"],
             ["라벨 생성 (완결, 193프레임)", "114장 채택 (59%)"],
@@ -382,9 +411,19 @@ td{border-bottom:1px solid var(--line);padding:6px 10px}
 .badge.partial{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
 .callout{border-left:4px solid var(--accent);background:var(--bg);padding:10px 14px;border-radius:0 8px 8px 0;
          font-weight:600;margin:6px 0 10px}
-.method-desc{color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:8px;
-             padding:10px 14px;margin:6px 0 12px}
+.method-desc{font-size:16px;font-weight:700;color:var(--ink);margin:6px 0 18px;line-height:1.6}
 ol{padding-left:22px}ol li{margin:5px 0}
+h3.section-h{font-size:16px;font-weight:700;color:var(--ink);border-left:4px solid var(--accent);
+             background:var(--bg);padding:9px 14px;border-radius:0 8px 8px 0;margin:30px 0 16px}
+.method-desc + h3.section-h{margin-top:10px}
+.verdict{font-size:15px;color:var(--ink);margin:4px 0 12px;line-height:1.6}
+.snippet{margin:14px 0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.snip-head{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;padding:8px 14px;
+           background:var(--bg);border-bottom:1px solid var(--line)}
+.snip-file{font-family:Consolas,monospace;font-size:12.5px;color:var(--accent);font-weight:600}
+.snip-note{font-size:13px;color:var(--muted)}
+.snippet pre{margin:0;padding:12px 16px;background:#0f172a;overflow-x:auto}
+.snippet pre code{font-family:Consolas,monospace;font-size:13px;color:#e2e8f0;line-height:1.55;white-space:pre}
 .grid{display:grid;gap:14px;margin:8px 0}
 .grid.c2{grid-template-columns:1fr 1fr}
 figure img{width:100%;border:1px solid var(--line);border-radius:8px;display:block}

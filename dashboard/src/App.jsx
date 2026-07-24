@@ -96,21 +96,26 @@ function MethodView({ id }) {
       <h2>{m.title} <Badge kind={m.badge} label={m.badge_label} /></h2>
 
       {m.subtitle && <p className="method-desc">{m.subtitle}</p>}
+
+      <h3 className="section-h">실험 순서</h3>
       {m.ordered
         ? <ol>{m.bullets.map((b, i) => <li key={i}>{md(b)}</li>)}</ol>
         : <ul>{m.bullets.map((b, i) => <li key={i}>{md(b)}</li>)}</ul>}
 
-      {m.code?.length > 0 && m.code.map((sn, i) => (
-        <div className="snippet" key={i}>
-          <div className="snip-head">
-            <code className="snip-file">{sn.file}</code>
-            <span className="snip-note">{sn.note}</span>
+      {m.code?.length > 0 && <>
+        <h3 className="section-h">실제 코드</h3>
+        {m.code.map((sn, i) => (
+          <div className="snippet" key={i}>
+            <div className="snip-head">
+              <code className="snip-file">{sn.file}</code>
+              <span className="snip-note">{sn.note}</span>
+            </div>
+            <pre><code>{sn.src}</code></pre>
           </div>
-          <pre><code>{sn.src}</code></pre>
-        </div>
-      ))}
+        ))}
+      </>}
 
-      <div className="sec-gap" />
+      <h3 className="section-h">실제 입출력 결과</h3>
       {m.live && <CompareBrowser />}
       {m.gallery.length > 0 && (
         <div className="gallery">
@@ -126,8 +131,8 @@ function MethodView({ id }) {
         <p className="fn">저장된 비교 이미지 없음 (서버 유실로 미보존) - 아래 지표로 확인</p>
       )}
 
-      <div className="sec-gap" />
-      <Callout>{m.metrics.summary}</Callout>
+      <h3 className="section-h">실험 결과</h3>
+      <p className="verdict">{m.metrics.summary}</p>
       <MetricsTable metrics={m.metrics} />
     </div>
   )

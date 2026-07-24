@@ -116,22 +116,22 @@ METHODS = [
             "**임시 학습 데이터 효과 검증**: 1차 모델과 2차 모델의 평가지표를 비교한다."],
         gallery=None, live=True,
         code=[dict(
-            file="scripts/labeling/pseudo_utils.py · auto_labeling.py",
-            note="자동 라벨 생성 - 핵심 로직을 읽기 쉽게 풀어 쓴 것 (원문은 파일 참조)",
-            src="""# 시드로 학습한 1차 모델이 미라벨 이미지 전체를 추론
-results = model.predict(source=unlabeled_images, stream=True)
-
+            file="scripts/labeling/pseudo_utils.py - predict_boxes()",
+            note="예측 + conf 필터. 1차 모델이 미라벨 이미지를 추론하고 신뢰도 0.6 이상만 통과시킴 (읽기 쉽게 풀어 쓴 것)",
+            src="""results = model.predict(source=unlabeled_images, stream=True)
 for image, result in zip(unlabeled_images, results):
-    accepted = []
-    for (cls, box, confidence) in result.boxes:
-        if confidence >= 0.6:                  # 신뢰도 0.6 미만 예측은 버림
-            accepted.append((cls, box))
-
-    # 채택 박스를 YOLO 라벨(.txt)로 저장 - 이미지와 같은 이름이 짝 규칙
+    accepted = [(cls, box) for cls, box, conf in result.boxes
+                if conf >= 0.6]           # 신뢰도 0.6 미만 예측은 버림
+    yield image, accepted"""),
+              dict(
+            file="scripts/labeling/auto_labeling.py",
+            note="저장. predict_boxes 가 통과시킨 박스를 YOLO 라벨(.txt)로 기록",
+            src="""for image, accepted in predict_boxes(model, unlabeled_images, conf=0.6):
+    # 이미지와 같은 파일명 .txt 가 YOLO 의 짝 규칙
     save_label(labels_dir / f"{image.stem}.txt", accepted)"""),
               dict(
             file="scripts/training/train_pipeline.py",
-            note="재학습 - 1차 모델 가중치가 아니라 순수 YOLO 에서 다시 시작",
+            note="재학습. 1차 모델 가중치가 아니라 순수 YOLO 에서 다시 시작",
             src="""model = YOLO("yolo26s.pt")            # 순수(COCO 사전학습) 가중치에서 시작
 model.train(data=시드_라벨 + 자동_라벨,  # 사람 라벨과 자동 라벨을 합쳐 학습
             epochs=100)
@@ -311,6 +311,16 @@ def _b64(im, max_w=900, q=85):
     return "data:image/jpeg;base64," + base64.b64encode(buf).decode()
 
 
+def draw_label_box(img, x1, y1, x2, y2, label, color, thick=3):
+    """박스 + 색 채운 라벨 배경 + 흰 글씨 (YOLO 기본 표기 스타일)."""
+    cv2.rectangle(img, (x1, y1), (x2, y2), color, thick)
+    font, scale, ft = cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
+    (tw, th), bl = cv2.getTextSize(label, font, scale, ft)
+    ly1 = max(0, y1 - th - bl - 4)          # 라벨 배경 상단(박스 위쪽에 얹음)
+    cv2.rectangle(img, (x1, ly1), (x1 + tw + 6, y1), color, -1)  # 채운 배경
+    cv2.putText(img, label, (x1 + 3, y1 - bl), font, scale, (255, 255, 255), ft, cv2.LINE_AA)
+
+
 def test_images():
     return sorted(TEST_IMG.glob("*.jpg"))
 
@@ -332,9 +342,7 @@ def compare(idx=0, conf=0.6):
     for i, (b, c, cf) in enumerate(zip(r.boxes.xyxy, r.boxes.cls, r.boxes.conf), start=1):
         x1, y1, x2, y2 = map(int, b)
         color = PALETTE[int(c) % len(PALETTE)]
-        cv2.rectangle(pred, (x1, y1), (x2, y2), color, 2)
-        cv2.putText(pred, f"#{i} {m.names[int(c)]} {float(cf):.2f}", (x1, max(y1 - 6, 16)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+        draw_label_box(pred, x1, y1, x2, y2, f"{m.names[int(c)]} {float(cf):.2f}", color)
         n += 1
     gt = src.copy()
     lbl = TEST_LBL / f"{p.stem}.txt"
@@ -347,9 +355,7 @@ def compare(idx=0, conf=0.6):
             x1, y1 = round((cx - bw / 2) * w), round((cy - bh / 2) * h)
             x2, y2 = round((cx + bw / 2) * w), round((cy + bh / 2) * h)
             color = PALETTE[c % len(PALETTE)]
-            cv2.rectangle(gt, (x1, y1), (x2, y2), color, 2)
-            cv2.putText(gt, f"#{i} {GT_CLASSES[c] if c < len(GT_CLASSES) else c}",
-                        (x1, max(y1 - 6, 16)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+            draw_label_box(gt, x1, y1, x2, y2, GT_CLASSES[c] if c < len(GT_CLASSES) else str(c), color)
     note = (f"{p.name} / 모델 탐지 {n}개 (conf {conf}) - 현재 모델은 임시 2클래스(bolt·nut)라 "
             "bearing·gear 는 원래 못 잡습니다. 서버 복구 후 5클래스 모델로 교체 예정")
     return {"pred": _b64(pred), "gt": _b64(gt), "note": note, "idx": idx, "total": len(imgs)}
