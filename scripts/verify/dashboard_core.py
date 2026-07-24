@@ -324,15 +324,39 @@ def color_for(name):
     return CLASS_COLORS.get(str(name).lower(), (128, 128, 128))
 
 
-def draw_label_box(img, x1, y1, x2, y2, label, color, thick=2):
-    """박스 + 색 채운 라벨 배경 + 흰 글씨. 라벨은 박스 왼쪽 변에 맞춤."""
-    cv2.rectangle(img, (x1, y1), (x2, y2), color, thick)
-    font, scale, ft = cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
-    (tw, th), bl = cv2.getTextSize(label, font, scale, ft)
-    lx = max(0, x1 - thick // 2)            # 박스 바깥 왼쪽 변과 정렬
-    ly1 = max(0, y1 - th - bl - 4)          # 라벨 배경 상단(박스 위쪽에 얹음)
-    cv2.rectangle(img, (lx, ly1), (lx + tw + 6, y1), color, -1)
-    cv2.putText(img, label, (lx + 3, y1 - bl), font, scale, (255, 255, 255), ft, cv2.LINE_AA)
+def render_detections(img, dets, thick=2):
+    """dets = [(x1,y1,x2,y2, label, color)]. 박스 그리고, 라벨을 겹치지 않게 배치.
+
+    - 라벨은 기본 박스 위쪽. 다른 라벨과 겹치면 위로 밀어 쌓는다.
+    - 위로 나가 잘릴 것 같으면 박스 안쪽 위(아래 방향)로 내려 배치.
+    - 글씨는 작게(scale 0.5) 해서 화면 점유를 줄인다.
+    """
+    font, scale, ft = cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
+    H = img.shape[0]
+    for x1, y1, x2, y2, _, color in dets:
+        cv2.rectangle(img, (x1, y1), (x2, y2), color, thick)
+
+    placed = []
+
+    def hit(r):
+        return any(not (r[2] <= q[0] or r[0] >= q[2] or r[3] <= q[1] or r[1] >= q[3])
+                   for q in placed)
+
+    for x1, y1, x2, y2, label, color in sorted(dets, key=lambda d: d[1]):
+        (tw, th), bl = cv2.getTextSize(label, font, scale, ft)
+        lh, lw = th + bl + 4, tw + 6
+        lx = max(0, x1 - thick // 2)
+        top = y1 - lh                       # 기본: 박스 위
+        if top < 0:                         # 위로 잘리면 박스 안쪽 위로
+            top = y1
+        guard = 0
+        while hit((lx, top, lx + lw, top + lh)) and guard < 25:
+            top = top - lh if top - lh >= 0 else top + lh
+            guard += 1
+        top = max(0, min(top, H - lh))
+        cv2.rectangle(img, (lx, top), (lx + lw, top + lh), color, -1)
+        cv2.putText(img, label, (lx + 3, top + th + 2), font, scale, (255, 255, 255), ft, cv2.LINE_AA)
+        placed.append((lx, top, lx + lw, top + lh))
 
 
 def test_images():
@@ -352,18 +376,21 @@ def compare(idx=0, conf=0.6):
     h, w = src.shape[:2]
     pred = src.copy()
     r = m.predict(source=str(p), conf=conf, verbose=False)[0]
-    n = 0
     seen = set()
-    for i, (b, c, cf) in enumerate(zip(r.boxes.xyxy, r.boxes.cls, r.boxes.conf), start=1):
+    pred_dets = []
+    for b, c, cf in zip(r.boxes.xyxy, r.boxes.cls, r.boxes.conf):
         x1, y1, x2, y2 = map(int, b)
         name = m.names[int(c)]
-        draw_label_box(pred, x1, y1, x2, y2, f"{name} ({float(cf):.2f})", color_for(name))
+        pred_dets.append((x1, y1, x2, y2, f"{name} ({float(cf):.2f})", color_for(name)))
         seen.add(name)
-        n += 1
+    n = len(pred_dets)
+    render_detections(pred, pred_dets)
+
     gt = src.copy()
+    gt_dets = []
     lbl = TEST_LBL / f"{p.stem}.txt"
     if lbl.exists():
-        for i, line in enumerate(lbl.read_text().splitlines(), start=1):
+        for line in lbl.read_text().splitlines():
             f = line.split()
             if len(f) < 5:
                 continue
@@ -371,8 +398,9 @@ def compare(idx=0, conf=0.6):
             x1, y1 = round((cx - bw / 2) * w), round((cy - bh / 2) * h)
             x2, y2 = round((cx + bw / 2) * w), round((cy + bh / 2) * h)
             name = GT_CLASSES[c] if c < len(GT_CLASSES) else str(c)
-            draw_label_box(gt, x1, y1, x2, y2, name, color_for(name))
+            gt_dets.append((x1, y1, x2, y2, name, color_for(name)))
             seen.add(name)
+    render_detections(gt, gt_dets)
     legend = [{"name": nm, "color": "#%02x%02x%02x" % color_for(nm)[::-1]}
               for nm in sorted(seen)]
     return {"pred": _b64(pred), "gt": _b64(gt), "file": p.name, "n": n,

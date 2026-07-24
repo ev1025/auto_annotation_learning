@@ -53,16 +53,10 @@ def b64_file(path, max_w=880):
 
 # ---------------- 방법 1 비교쌍 자동 생성 (모델 박스 | 정답) ----------------
 def draw_boxes(im, items):
-    """items = [(cls_id, label, xyxy)] - 박스 + 색 채운 라벨 배경 + 흰 글씨."""
-    font, scale, ft = cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
-    for c, label, (x1, y1, x2, y2) in items:
-        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-        color = BOX_COLORS[c % len(BOX_COLORS)]
-        cv2.rectangle(im, (x1, y1), (x2, y2), color, 3)
-        (tw, th), bl = cv2.getTextSize(label, font, scale, ft)
-        ly1 = max(0, y1 - th - bl - 4)
-        cv2.rectangle(im, (x1, ly1), (x1 + tw + 6, y1), color, -1)
-        cv2.putText(im, label, (x1 + 3, y1 - bl), font, scale, (255, 255, 255), ft, cv2.LINE_AA)
+    """items = [(class_name, label, xyxy)] - 박스 + 겹침 회피 라벨(클래스별 고정 색)."""
+    dets = [(int(x1), int(y1), int(x2), int(y2), label, core.color_for(name))
+            for name, label, (x1, y1, x2, y2) in items]
+    core.render_detections(im, dets)
     return im
 
 
@@ -85,7 +79,7 @@ def gen_selftrain_pairs(n=4, conf=0.6, seed=7):
         src = cv2.imread(str(p))
         h, w = src.shape[:2]
         pred = draw_boxes(src.copy(), [
-            (int(c), f"{model.names[int(c)]} {float(cf):.2f}", tuple(map(int, b)))
+            (model.names[int(c)], f"{model.names[int(c)]} {float(cf):.2f}", tuple(map(int, b)))
             for b, c, cf in zip(r.boxes.xyxy, r.boxes.cls, r.boxes.conf)])
         gt_items = []
         lf = TEST_LBL / f"{p.stem}.txt"
@@ -183,9 +177,9 @@ def code_html(mid):
     blocks = []
     for sn in (m.get("code") or []):
         blocks.append(
+            f'<p class="snip-note">{sn["note"]}</p>'
             f'<div class="snippet"><div class="snip-head">'
-            f'<code class="snip-file">{sn["file"]}</code>'
-            f'<span class="snip-note">{sn["note"]}</span></div>'
+            f'<code class="snip-file">{sn["file"]}</code></div>'
             f'<pre><code>{_html.escape(sn["src"])}</code></pre></div>')
     return (sub("실제 코드") + "".join(blocks)) if blocks else ""
 
@@ -421,7 +415,7 @@ h3.section-h{font-size:16px;font-weight:700;color:var(--ink);border-left:4px sol
 .snip-head{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;padding:8px 14px;
            background:var(--bg);border-bottom:1px solid var(--line)}
 .snip-file{font-family:Consolas,monospace;font-size:12.5px;color:var(--accent);font-weight:600}
-.snip-note{font-size:13px;color:var(--muted)}
+.snip-note{display:block;font-size:13.5px;color:var(--muted);margin:16px 0 6px}
 .snippet pre{margin:0;padding:12px 16px;background:#0f172a;overflow-x:auto}
 .snippet pre code{font-family:Consolas,monospace;font-size:13px;color:#e2e8f0;line-height:1.55;white-space:pre}
 .grid{display:grid;gap:14px;margin:8px 0}
