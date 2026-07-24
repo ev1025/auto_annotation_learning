@@ -124,6 +124,8 @@ th {
   border-bottom: 2px solid var(--line); background: #f8fafc;
 }
 td { padding: 7px 10px; border-bottom: 1px solid var(--line); }
+.subtable { margin-top: 18px; }
+.subtable-title { font-size: 14px; font-weight: 600; color: var(--ink); margin: 0 0 6px; }
 
 /* ---------- 비교 탐색 (실제 입출력 결과) ---------- */
 .cmp-bar {

@@ -30,6 +30,16 @@ function MetricsTable({ metrics }) {
   )
 }
 
+function SubTables({ tables }) {
+  if (!tables?.length) return null
+  return tables.map((t, i) => (
+    <div className="subtable" key={i}>
+      <h4 className="subtable-title">{t.title}</h4>
+      <MetricsTable metrics={{ headers: t.headers, rows: t.rows }} />
+    </div>
+  ))
+}
+
 // 평가셋 전체 탐색 비교 (방법 1)
 function CompareBrowser() {
   const [data, setData] = useState(null)
@@ -87,7 +97,7 @@ function CompareBrowser() {
               </span>
             )
           })}
-          <span className="legend-note">탐지 / 정답 개수</span>
+          <span className="legend-note">(탐지 / 정답 개수)</span>
         </div>
       )}
 
@@ -152,6 +162,7 @@ function MethodView({ id }) {
       <h3 className="section-h">실험 결과</h3>
       {m.metrics.summary && <p className="verdict">{m.metrics.summary}</p>}
       <MetricsTable metrics={m.metrics} />
+      <SubTables tables={m.metrics.subtables} />
     </div>
   )
 }
@@ -195,6 +206,7 @@ function ExtraView() {
       {metrics && <>
         {metrics.summary && <Callout>{metrics.summary}</Callout>}
         <MetricsTable metrics={metrics} />
+        <SubTables tables={metrics.subtables} />
       </>}
     </div>
   )

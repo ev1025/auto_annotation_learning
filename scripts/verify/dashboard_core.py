@@ -38,14 +38,18 @@ def load_autolearn(rel):
         ["자동 라벨 정밀도 / 재현율", f"{ps.get('precision')} / {ps.get('recall')}"],
         ["1차 모델 mAP50 (초기 라벨만 학습)", r0.get("map50")],
         ["2차 모델 mAP50 (자동 라벨 추가 학습)", r1.get("map50")],
+        ["효과", f"mAP50 +{round(d.get('delta_map50', 0) * 100, 1)}%p / mAP50-95 +{round(d.get('delta_map50_95', 0) * 100, 1)}%p"],
     ]
     pc0, pc1 = r0.get("per_class_map50_95", {}), r1.get("per_class_map50_95", {})
+    cls_rows = []
     for cls in pc1:
         v0, v1 = pc0.get(cls), pc1.get(cls)
         dv = f" (+{round((v1 - v0) * 100, 1)}%p)" if v0 is not None and v1 is not None else ""
-        rows.append([f"└ {cls} 정확도 mAP50-95 (1차 → 2차)", f"{v0} → {v1}{dv}"])
-    rows.append(["효과", f"mAP50 +{round(d.get('delta_map50', 0) * 100, 1)}%p / mAP50-95 +{round(d.get('delta_map50_95', 0) * 100, 1)}%p"])
-    return (["항목", "값"], rows, "")
+        cls_rows.append([cls, v0, v1, dv.strip(" ()")])
+    subtables = ([{"title": "클래스별 정확도 (mAP50-95)",
+                   "headers": ["클래스", "1차 모델", "2차 모델", "변화"], "rows": cls_rows}]
+                 if cls_rows else [])
+    return (["항목", "값"], rows, "", subtables)
 
 
 def load_zeroshot(rel):
@@ -281,9 +285,10 @@ def method_metrics(m):
     rel_loader = m["metrics"]
     res = rel_loader(None) if callable(rel_loader) else rel_loader[1](rel_loader[0])
     if res is None:
-        return {"headers": ["항목"], "rows": [], "summary": "결과 파일 없음"}
-    headers, rows, summary = res
-    return {"headers": headers, "rows": rows, "summary": summary}
+        return {"headers": ["항목"], "rows": [], "summary": "결과 파일 없음", "subtables": []}
+    headers, rows, summary = res[:3]
+    subtables = res[3] if len(res) > 3 else []
+    return {"headers": headers, "rows": rows, "summary": summary, "subtables": subtables}
 
 
 def method_gallery(m):
@@ -429,9 +434,10 @@ def experiment_metrics(cat, topic):
     rel, loader = entry
     res = loader(rel)
     if res is None:
-        return {"headers": [], "rows": [], "summary": f"결과 파일 없음: {rel}"}
-    headers, rows, summary = res
-    return {"headers": headers, "rows": rows, "summary": summary}
+        return {"headers": [], "rows": [], "summary": f"결과 파일 없음: {rel}", "subtables": []}
+    headers, rows, summary = res[:3]
+    subtables = res[3] if len(res) > 3 else []
+    return {"headers": headers, "rows": rows, "summary": summary, "subtables": subtables}
 
 
 def export_report():

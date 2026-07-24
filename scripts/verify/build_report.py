@@ -116,11 +116,18 @@ def autolearn_rows(rel):
         ["1차 모델 mAP50 (초기 라벨만)", r0['map50']],
         ["2차 모델 mAP50 (자동 라벨 추가)", f"{r1['map50']} (+{round(d['delta_map50']*100,1)}%p)"],
     ]
-    pc0, pc1 = r0.get("per_class_map50_95", {}), r1.get("per_class_map50_95", {})
+    return rows
+
+
+def per_class_rows(rel):
+    d = jload(rel)
+    pc0 = d["round0"].get("per_class_map50_95", {})
+    pc1 = d["round1"].get("per_class_map50_95", {})
+    rows = []
     for cls in pc1:
         v0, v1 = pc0.get(cls), pc1.get(cls)
-        dv = f" (+{round((v1 - v0) * 100, 1)}%p)" if v0 is not None and v1 is not None else ""
-        rows.append([f"└ {cls} 정확도 mAP50-95 (1차 → 2차)", f"{v0} → {v1}{dv}"])
+        dv = f"+{round((v1 - v0) * 100, 1)}%p" if v0 is not None and v1 is not None else ""
+        rows.append([cls, v0, v1, dv])
     return rows
 
 
@@ -254,7 +261,9 @@ def build():
         code_html("m1") +
         sub("실제 입출력 결과") + pair_html +
         sub("실험 결과") +
-        table(["항목", "값"], autolearn_rows("exp_results/report_2cls_seed15.json")))
+        table(["항목", "값"], autolearn_rows("exp_results/report_2cls_seed15.json")) +
+        '<p class="subtable-title">클래스별 정확도 (mAP50-95)</p>' +
+        table(["클래스", "1차 모델", "2차 모델", "변화"], per_class_rows("exp_results/report_2cls_seed15.json")))
 
     # ---- 방법 2 ----
     m2 = section("m2", "텍스트 제로샷 (Grounding DINO)", badge("drop"),
@@ -411,6 +420,7 @@ td{border-bottom:1px solid var(--line);padding:6px 10px}
          font-weight:600;margin:6px 0 10px}
 .method-desc{font-size:16px;font-weight:700;color:var(--ink);margin:6px 0 18px;line-height:1.6}
 ol{padding-left:22px}ol li{margin:5px 0}
+.subtable-title{font-size:14px;font-weight:600;color:var(--ink);margin:18px 0 6px}
 h3.section-h{font-size:16px;font-weight:700;color:var(--ink);border-left:4px solid var(--accent);
              background:var(--bg);padding:9px 14px;border-radius:0 8px 8px 0;margin:30px 0 16px}
 .method-desc + h3.section-h{margin-top:10px}
