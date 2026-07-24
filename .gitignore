@@ -42,3 +42,7 @@ Thumbs.db
 _regtest*/
 uploads/
 *.mp4
+
+# dashboard frontend
+dashboard/node_modules/
+dashboard/dist/
