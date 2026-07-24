@@ -25,8 +25,8 @@ import config
 
 OUT = config.BASE_DIR / "docs" / "report.html"
 PREV = config.BASE_DIR / "docs" / "method_previews"
-TEST_IMG = config.DATA_DIR / "mechanical-parts-yolo" / "test" / "images"
-TEST_LBL = config.DATA_DIR / "mechanical-parts-yolo" / "test" / "labels"
+TEST_IMG = config.DATA_DIR / "mechanical_parts_yolo" / "test" / "images"
+TEST_LBL = config.DATA_DIR / "mechanical_parts_yolo" / "test" / "labels"
 GT_CLASSES = ["bearing", "bolt", "gear", "nut"]
 BOX_COLORS = [(0, 200, 90), (255, 160, 0), (0, 160, 255), (255, 0, 200)]
 

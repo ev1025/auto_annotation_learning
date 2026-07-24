@@ -13,8 +13,8 @@ import cv2
 import config
 
 PREV_DIR = config.BASE_DIR / "docs" / "method_previews"
-TEST_IMG = config.DATA_DIR / "mechanical-parts-yolo" / "test" / "images"
-TEST_LBL = config.DATA_DIR / "mechanical-parts-yolo" / "test" / "labels"
+TEST_IMG = config.DATA_DIR / "mechanical_parts_yolo" / "test" / "images"
+TEST_LBL = config.DATA_DIR / "mechanical_parts_yolo" / "test" / "labels"
 GT_CLASSES = ["bearing", "bolt", "gear", "nut"]
 PALETTE = [(0, 255, 0), (255, 160, 0), (0, 160, 255), (255, 0, 200), (160, 255, 0),
            (0, 255, 255), (255, 80, 80), (180, 120, 255)]
@@ -260,7 +260,7 @@ def compare(idx=0, conf=0.6):
         return {"error": "서빙 모델 없음 (models/new_model.pt)"}
     imgs = test_images()
     if not imgs:
-        return {"error": "테스트 이미지 없음 (data/mechanical-parts-yolo/test)"}
+        return {"error": "테스트 이미지 없음 (data/mechanical_parts_yolo/test)"}
     idx = int(idx) % len(imgs)
     p = imgs[idx]
     src = cv2.imread(str(p))

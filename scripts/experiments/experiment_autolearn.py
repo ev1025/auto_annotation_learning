@@ -14,7 +14,7 @@
   추가로 pseudo 라벨 자체를 숨겨둔 정답과 IoU 매칭해 정밀도/재현율 채점.
 
 실행:
-  python scripts/experiments/experiment_autolearn.py --src ./data/mechanical-parts.v1 --classes bolt nut
+  python scripts/experiments/experiment_autolearn.py --src ./data/mechanical_parts.v1 --classes bolt nut
   python scripts/experiments/experiment_autolearn.py --src ./mp.v1 --classes bolt nut gear --epochs 80 --conf 0.6
 """
 import argparse

@@ -97,12 +97,13 @@ xr_autolearning/
 │     ├─ dashboard_core.py       #   대시보드·리포트 공용 데이터 계층
 │     └─ build_report.py         #   검증 리포트(단일 HTML) 생성 -> docs/report.html
 ├─ dashboard/                    # 검증 대시보드 프론트 (React + Vite, 빌드 산출물 dist/ 는 미커밋)
-├─ data/                         # 모든 데이터의 단일 루트 (전체 git 제외)
+├─ data/                         # 모든 데이터의 단일 루트 (전체 git 제외, 폴더명 = snake_case 영문)
 │  ├─ datasets/                  #   운영 학습 데이터 (images/ labels/ unlabeled_images/)
-│  ├─ mechanical-parts-coco/     #   실험용 공개 데이터 원본 (COCO 포맷)
-│  ├─ mechanical-parts-yolo/     #   실험용 공개 데이터 (YOLO 변환본, 대시보드 즉석 비교가 사용)
+│  ├─ mechanical_parts_coco/     #   실험용 공개 데이터 원본 (COCO 포맷)
+│  ├─ mechanical_parts_yolo/     #   실험용 공개 데이터 (YOLO 변환본, 대시보드 즉석 비교가 사용)
 │  ├─ uploads/                   #   부품 등록 입력 (uploads/<부품명>/ 사진·영상)
-│  └─ 기어박스*.mp4              #   실사 검증 영상
+│  ├─ videos/                    #   실사 검증 영상 (gearbox*.mp4)
+│  └─ regtest_*/                 #   등록 회귀테스트 산출물
 ├─ docs/                         # 문서 자산 (코드 아님: 이미지·리포트)
 │  ├─ method_previews/           #   오토라벨링 방법별 증거 이미지 (대시보드·리포트가 표시, git 추적)
 │  ├─ report.html                #   '내보내기' 산출물 (verify/build_report.py 가 생성)
@@ -408,7 +409,7 @@ pip install -r requirements.txt
 
 ```bash
 # (검증용) Roboflow COCO 데이터를 YOLO 구조로 변환
-python scripts/data_import/coco_to_yolo.py --src ./data/mechanical-parts-coco --dst ./data/mechanical-parts-yolo
+python scripts/data_import/coco_to_yolo.py --src ./data/mechanical_parts_coco --dst ./data/mechanical_parts_yolo
 
 # (운영용) 부품 등록: data/uploads/<부품명>/ 에 사진을 쌓고 배치 실행 (폴더명 = 클래스)
 python scripts/labeling/register_part.py --batch ./data/uploads --dry-run   # 라벨 품질 검증만(미리보기 저장)
@@ -447,7 +448,7 @@ python scripts/training/model_registry.py rollback v20260716_093012   # 특정 �
 
 ```bash
 # 정답을 숨기고 자동 채점: 라운드0 vs 라운드1 mAP + 자동라벨 P/R
-python scripts/experiments/experiment_autolearn.py --src ./data/mechanical-parts-yolo --classes bolt nut --epochs 60
+python scripts/experiments/experiment_autolearn.py --src ./data/mechanical_parts_yolo --classes bolt nut --epochs 60
 # 결과: exp_autolearn/report.json (exp_results/ 에 조건별 리포트 보관)
 ```
 
@@ -456,7 +457,7 @@ python scripts/experiments/experiment_autolearn.py --src ./data/mechanical-parts
 ```bash
 # 모델 x 입력크기 매트릭스: 정확도(mAP)·단건 지연(ms)·FPS·파라미터 비교
 # --src 만 바꾸면 다른 데이터셋으로 즉시 재실행 가능
-python scripts/experiments/benchmark.py --src ./data/mechanical-parts-yolo \
+python scripts/experiments/benchmark.py --src ./data/mechanical_parts_yolo \
     --models yolov8n.pt yolov8s.pt yolov8m.pt yolo11n.pt yolo26n.pt yolo26s.pt yolo26m.pt \
     --imgsz 640 1280 --epochs 100 --device 0
 # 결과: bench_results/benchmark.json + benchmark.md (조합마다 누적 저장)
