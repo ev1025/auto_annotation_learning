@@ -113,7 +113,8 @@ def autolearn_rows(rel):
         ["데이터 구성", f"초기 라벨셋 {sp['seed']}장 / 미라벨 풀 {sp['pool']}장 / 평가셋 {sp['test']}장"],
         ["자동 라벨 생성", f"{ps['labeled_images']}장 (박스 {ps['boxes']}개)"],
         ["자동 라벨 정밀도 / 재현율", f"{ps['precision']} / {ps['recall']}"],
-        ["라운드0 → 라운드1 mAP50", f"{r0['map50']} → {r1['map50']} (+{round(d['delta_map50']*100,1)}%p)"],
+        ["1차 모델 mAP50 (초기 라벨만)", r0['map50']],
+        ["2차 모델 mAP50 (자동 라벨 추가)", f"{r1['map50']} (+{round(d['delta_map50']*100,1)}%p)"],
     ]
     return rows
 
@@ -248,9 +249,6 @@ def build():
         code_html("m1") +
         sub("실제 입출력 결과") + pair_html +
         sub("실험 결과") +
-        verdict(f"초기 라벨만 학습한 1차 모델의 mAP50 {al['round0']['map50']}이, 자동 라벨을 더해 "
-                f"재학습한 2차 모델에서 {al['round1']['map50']}로 올랐다. 초기 라벨 비율과 클래스 수를 "
-                "바꾼 4개 조건에서 모두 상승해, 자동 라벨이 성능을 높인다는 것을 확인했다 (조건별 수치는 부록).") +
         table(["항목", "값"], autolearn_rows("exp_results/report_2cls_seed15.json")))
 
     # ---- 방법 2 ----

@@ -153,7 +153,7 @@ function MethodView({ id }) {
       )}
 
       <h3 className="section-h">실험 결과</h3>
-      <p className="verdict">{m.metrics.summary}</p>
+      {m.metrics.summary && <p className="verdict">{m.metrics.summary}</p>}
       <MetricsTable metrics={m.metrics} />
     </div>
   )
@@ -196,7 +196,7 @@ function ExtraView() {
         ))}
       </div>
       {metrics && <>
-        <Callout>{metrics.summary}</Callout>
+        {metrics.summary && <Callout>{metrics.summary}</Callout>}
         <MetricsTable metrics={metrics} />
       </>}
     </div>

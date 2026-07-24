@@ -36,14 +36,11 @@ def load_autolearn(rel):
         ["데이터 구성", f"초기 라벨셋 {sp.get('seed')}장 / 미라벨 풀 {sp.get('pool')}장 / 평가셋 {sp.get('test')}장"],
         ["자동 라벨 생성", f"{ps.get('labeled_images')}장 (박스 {ps.get('boxes')}개)"],
         ["자동 라벨 정밀도 / 재현율", f"{ps.get('precision')} / {ps.get('recall')}"],
-        ["라운드0 mAP50 (초기 라벨만)", r0.get("map50")],
-        ["라운드1 mAP50 (자동 라벨 추가)", r1.get("map50")],
+        ["1차 모델 mAP50 (초기 라벨만 학습)", r0.get("map50")],
+        ["2차 모델 mAP50 (자동 라벨 추가 학습)", r1.get("map50")],
         ["효과", f"mAP50 +{round(d.get('delta_map50', 0) * 100, 1)}%p / mAP50-95 +{round(d.get('delta_map50_95', 0) * 100, 1)}%p"],
     ]
-    return (["항목", "값"], rows,
-            f"초기 라벨만 학습한 1차 모델의 mAP50 {r0.get('map50')}이, 자동 라벨을 더해 재학습한 "
-            f"2차 모델에서 {r1.get('map50')}로 올랐다. 초기 라벨 비율과 클래스 수를 바꾼 4개 조건에서 "
-            "모두 상승해, 자동 라벨이 성능을 높인다는 것을 확인했다 (조건별 수치는 '기타 실험 결과').")
+    return (["항목", "값"], rows, "")
 
 
 def load_zeroshot(rel):
@@ -326,38 +323,47 @@ def color_for(name):
 
 
 def render_detections(img, dets, thick=2):
-    """dets = [(x1,y1,x2,y2, label, color)]. 박스 그리고, 라벨을 겹치지 않게 배치.
+    """dets = [(x1,y1,x2,y2, label, color)]. 박스 그리고, 라벨을 박스에 붙여서 배치.
 
-    - 라벨은 기본 박스 위쪽. 다른 라벨과 겹치면 위로 밀어 쌓는다.
-    - 위로 나가 잘릴 것 같으면 박스 안쪽 위(아래 방향)로 내려 배치.
-    - 글씨는 작게(scale 0.5) 해서 화면 점유를 줄인다.
+    라벨은 자기 박스에 붙는 4개 후보 위치(위/아래/안쪽 위/안쪽 아래)만 시도하고,
+    그중 다른 라벨과 겹침이 가장 적은 자리를 고른다. 멀리 떨어져 뜨지 않는다.
+    글씨는 작게(scale 0.5) 해서 점유를 줄인다.
     """
     font, scale, ft = cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
-    H = img.shape[0]
+    H, W = img.shape[:2]
     for x1, y1, x2, y2, _, color in dets:
         cv2.rectangle(img, (x1, y1), (x2, y2), color, thick)
 
     placed = []
 
-    def hit(r):
-        return any(not (r[2] <= q[0] or r[0] >= q[2] or r[3] <= q[1] or r[1] >= q[3])
-                   for q in placed)
+    def overlap_area(r):
+        a = 0
+        for q in placed:
+            ix = max(0, min(r[2], q[2]) - max(r[0], q[0]))
+            iy = max(0, min(r[3], q[3]) - max(r[1], q[1]))
+            a += ix * iy
+        return a
 
     for x1, y1, x2, y2, label, color in sorted(dets, key=lambda d: d[1]):
         (tw, th), bl = cv2.getTextSize(label, font, scale, ft)
         lh, lw = th + bl + 4, tw + 6
-        lx = max(0, x1 - thick // 2)
-        top = y1 - lh                       # 기본: 박스 위
-        if top < 0:                         # 위로 잘리면 박스 안쪽 위로
-            top = y1
-        guard = 0
-        while hit((lx, top, lx + lw, top + lh)) and guard < 25:
-            top = top - lh if top - lh >= 0 else top + lh
-            guard += 1
-        top = max(0, min(top, H - lh))
-        cv2.rectangle(img, (lx, top), (lx + lw, top + lh), color, -1)
-        cv2.putText(img, label, (lx + 3, top + th + 2), font, scale, (255, 255, 255), ft, cv2.LINE_AA)
-        placed.append((lx, top, lx + lw, top + lh))
+        lx = max(0, min(x1 - thick // 2, W - lw))
+        # 자기 박스에 붙는 후보: 위 / 아래 / 안쪽 위 / 안쪽 아래
+        best, best_area = None, None
+        for top in (y1 - lh, y2, y1, y2 - lh):
+            if top < 0 or top + lh > H:
+                continue
+            area = overlap_area((lx, top, lx + lw, top + lh))
+            if area == 0:
+                best = top
+                break
+            if best_area is None or area < best_area:
+                best, best_area = top, area
+        if best is None:
+            best = max(0, min(y1 - lh, H - lh))
+        cv2.rectangle(img, (lx, best), (lx + lw, best + lh), color, -1)
+        cv2.putText(img, label, (lx + 3, best + th + 2), font, scale, (255, 255, 255), ft, cv2.LINE_AA)
+        placed.append((lx, best, lx + lw, best + lh))
 
 
 def test_images():
