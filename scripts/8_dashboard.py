@@ -121,45 +121,54 @@ def load_followup(_):
 # ==================== ① 오토라벨링 방법 레지스트리 ====================
 METHODS = {
     "1. self-training 오토라벨 (운영 루프, 채택)": dict(
-        data="**어떤 데이터를 어떻게**: 학습된 모델이 미라벨 이미지에 예측을 만들고, 신뢰도(conf) 0.6 이상만 라벨로 채택해 학습 데이터에 누적한다. "
-             "실증 설정: 공개 기계부품 데이터에서 **초기 라벨셋 10~15%만** 학습에 쓰고, 나머지 미라벨 풀(647~1,463장)은 라벨을 숨겨 자동 라벨 대상으로 사용. 별도 평가셋으로 채점.",
+        data="""- **방식**: 학습된 모델이 미라벨 이미지에 예측을 만들고, 신뢰도(conf) **0.6 이상만** 라벨로 채택해 학습 데이터에 누적
+- **데이터**: 공개 기계부품 데이터. **초기 라벨셋 10~15%만** 학습에 사용, 나머지 미라벨 풀(647~1,463장)은 라벨을 숨겨 자동 라벨 대상으로 사용
+- **채점**: 별도 평가셋에서 라운드0(초기 라벨만) vs 라운드1(자동 라벨 추가) 성능 비교""",
         gallery=None,
         live=True,
         metrics=("exp_results/report_2cls_seed15.json", load_autolearn),
     ),
     "2. 텍스트 제로샷 (Grounding DINO, 탈락)": dict(
-        data="**어떤 데이터를 어떻게**: 학습 없이, 정답을 숨긴 test 204장에 영어 프롬프트 4종('metal hex bolt screw' 등)만 주고 박스를 생성 -> 숨긴 정답과 IoU 0.5로 채점. "
-             "탈락 사유: 유사 금속 부품 클래스 혼동(둥근 접시를 gear 로 오인).",
+        data="""- **방식**: 학습 없이 영어 프롬프트 4종('metal hex bolt screw' 등)만으로 박스 생성
+- **데이터**: 정답을 숨긴 평가셋 204장
+- **채점**: 숨긴 정답과 IoU 0.5 기준 대조
+- **탈락 사유**: 유사 금속 부품 간 클래스 혼동 (둥근 접시를 gear 로 오인)""",
         gallery="dino_text",
         live=False,
         metrics=("zeroshot_labeler/eval_out/zeroshot_eval_post.json", load_zeroshot),
     ),
     "3. Grounded-SAM 타이트박스 (탈락)": dict(
-        data="**어떤 데이터를 어떻게**: 2번과 동일 데이터·프롬프트에 SAM 마스크로 박스를 타이트하게 교정. "
-             "결과: 정밀도 개선 없음 -> '박스 여백이 문제'라는 가설이 실측으로 기각됨 (맞은 박스 평균 IoU 는 DINO 원본 0.908 > SAM 0.876). "
-             "비교 이미지는 서버 유실로 미보존 (지표만 확인 가능).",
+        data="""- **방식**: 2번과 동일 + SAM 마스크로 박스를 픽셀 경계까지 타이트하게 교정
+- **데이터·채점**: 2번과 동일 (평가셋 204장, IoU 0.5)
+- **결과**: 정밀도 개선 없음. '박스 여백이 문제'라는 가설이 실측으로 기각됨 (맞은 박스 평균 IoU: DINO 원본 0.908 > SAM 0.876)
+- **비고**: 비교 이미지는 서버 유실로 미보존, 지표로 확인""",
         gallery=None,
         live=False,
         metrics=("zeroshot_labeler/eval_out/zeroshot_eval_gsam_tight.json", load_zeroshot),
     ),
     "4. SAM + CLIP 갤러리 (탈락)": dict(
-        data="**어떤 데이터를 어떻게**: SAM 이 test 204장의 물체 후보를 전부 분할하고, 각 후보를 **참조 갤러리**(train 정답에서 오린 크롭, 클래스당 10장)와 CLIP 임베딩 유사도로 분류. "
-             "정답 라벨은 갤러리 구성에만 사용(라벨링 대상에는 미사용). 비교 이미지 미보존.",
+        data="""- **방식**: SAM 이 물체 후보를 전부 분할 -> 각 후보를 참조 갤러리와 CLIP 임베딩 유사도로 분류
+- **참조 갤러리**: train 정답에서 오린 크롭 클래스당 10장 (라벨링 대상에는 정답 미사용)
+- **데이터·채점**: 평가셋 204장, IoU 0.5
+- **비고**: 비교 이미지 미보존""",
         gallery=None,
         live=False,
         metrics=("zeroshot_labeler/eval_out/gallery_eval_clip.json", load_sweep),
     ),
     "5. SAM + DINOv2 갤러리 (고정밀 달성)": dict(
-        data="**어떤 데이터를 어떻게**: 4번과 동일하되 임베딩을 CLIP -> DINOv2(질감·형상 특징)로 교체. "
-             "유사도 임계값 0.85에서 정밀도 0.927 = 무검수 기준 최초 충족. 1탭 참조 방식(7번)의 이론적 기반. 비교 이미지 미보존.",
+        data="""- **방식**: 4번과 동일하되 임베딩을 CLIP -> **DINOv2**(질감·형상 특징)로 교체
+- **성과**: 유사도 임계값 0.85에서 정밀도 0.927 = 무검수 기준(0.87) 최초 충족
+- **의의**: 1탭 참조 방식(7번)의 이론적 기반
+- **비고**: 비교 이미지 미보존""",
         gallery=None,
         live=False,
         metrics=("zeroshot_labeler/eval_out/gallery_eval_dinov2.json", load_sweep),
     ),
     "6. 상호 일관성 매칭 (사진 성공 / 영상 실패)": dict(
-        data="**어떤 데이터를 어떻게**: 등록 폴더(부품 1종) 사진들에서 SAM 후보를 뽑고, '다른 모든 사진에도 비슷한 물체가 있는 후보'를 DINOv2 로 식별해 라벨링. "
-             "적용 데이터: ① 사진 묶음 시뮬(부품 크롭 2종 x 15장) -> 성공 ② 실사 기어박스 영상 49프레임 -> **실패** (한 장면 영상은 배경도 매 프레임 등장해 매트·드릴·사람까지 오채택). "
-             "교훈: 채택률 98%라는 수치만 보면 합격이었으나 육안 검증에서 실패 적발.",
+        data="""- **방식**: 등록 폴더(부품 1종)의 SAM 후보 중 '다른 모든 사진에도 비슷한 물체가 있는 후보'를 DINOv2 로 식별해 라벨링
+- **적용 ①**: 사진 묶음 시뮬 (부품 크롭 2종 x 15장) -> 성공
+- **적용 ②**: 실사 기어박스 영상 49프레임 -> **실패** (한 장면 영상은 배경도 매 프레임 등장해 매트·드릴·사람까지 오채택)
+- **교훈**: 채택률 98%라는 수치만 보면 합격이었으나, 육안 검증이 실패를 적발""",
         gallery="mutual",
         live=False,
         metrics=static_metrics(
@@ -169,15 +178,16 @@ METHODS = {
             "판정: 배경이 바뀌는 사진 묶음에서만 유효. 영상 등록에는 부적합 -> 1탭 참조(7번)로 대체"),
     ),
     "7. 1탭 참조 매칭 (최종 채택)": dict(
-        data="**어떤 데이터를 어떻게**: 사용자가 등록 화면에서 부품을 **한 번 클릭** -> SAM 포인트 분할로 참조 크롭 확보 -> 모든 프레임의 SAM 후보를 참조와 DINOv2 유사도(임계값 0.7)로 매칭해 라벨링. "
-             "적용 데이터: 기어박스 영상2 (1차 33프레임 -> 완결 193프레임). 생성된 라벨로 학습 후, 학습에 안 쓴 영상1(16프레임)로 탐지 검증.",
+        data="""- **방식**: 등록 화면에서 부품을 **한 번 클릭** -> SAM 포인트 분할로 참조 크롭 확보 -> 모든 프레임의 SAM 후보를 참조와 DINOv2 유사도(임계값 0.7)로 매칭
+- **데이터**: 기어박스 영상2 (1차 33프레임 -> 완결 193프레임)
+- **검증**: 생성 라벨로 학습 후, 학습에 안 쓴 영상1(16프레임)에서 탐지 확인""",
         gallery="one_tap",
         live=False,
         metrics=static_metrics(
             [["라벨 생성 (1차, 33프레임)", "20장 채택, 배경 오채택 0"],
              ["라벨 생성 (완결, 193프레임)", "114장 채택 (59%)"],
-             ["학습 후 검증 (미학습 영상1, 라벨 20장 학습)", "탐지 5/16장 (31%, conf 0.4)"],
-             ["학습 후 검증 (미학습 영상1, 라벨 114장 학습)", "탐지 14/16장 (88%, conf 0.4) / 15/16장 (94%, conf 0.25), 오탐 0"],
+             ["학습 후 검증 (라벨 20장 학습)", "미학습 영상 탐지 5/16장 (31%, conf 0.4)"],
+             ["학습 후 검증 (라벨 114장 학습)", "미학습 영상 탐지 14/16장 (88%, conf 0.4), 오탐 0"],
              ["결론", "라벨 수량이 성능 직접 좌우 (20장=31% vs 114장=88%)"]],
             "판정: 최종 채택. 사람 개입은 탭 1회, 영상만 충분히 길면 성능 확보"),
     ),
@@ -206,7 +216,7 @@ def show_method(key):
     else:
         headers, rows, summary = res
     gal = method_gallery(key)
-    gal_note = "" if gal else " (이 방법은 저장된 비교 이미지가 없습니다. 지표로 확인하세요)"
+    gal_note = ""
     return (info["data"] + gal_note, gr.update(value=gal, visible=bool(gal)),
             gr.update(value=rows, headers=headers), summary,
             gr.update(visible=info.get("live", False)))
@@ -342,8 +352,12 @@ with gr.Blocks(title="오토라벨링 방법 비교", theme=THEME, css=CSS) as a
             live_conf = gr.Slider(0.1, 0.9, value=0.6, step=0.05, label="conf (오토라벨 채택 기준 = 0.6)")
             live_btn = gr.Button("무작위 이미지 비교", variant="primary", elem_id="live-btn")
             with gr.Row():
-                live_pred = gr.Image(label="모델이 만든 바운딩박스")
-                live_gt = gr.Image(label="정답 라벨")
+                with gr.Column():
+                    gr.Markdown("**모델이 만든 바운딩박스**")
+                    live_pred = gr.Image(show_label=False, buttons=[])
+                with gr.Column():
+                    gr.Markdown("**정답 라벨**")
+                    live_gt = gr.Image(show_label=False, buttons=[])
             live_note = gr.Textbox(label="비고", interactive=False)
         gr.Markdown("### 3. 실험 지표 결과", elem_classes="section-h")
         met_summary = gr.Textbox(label="판정·요약", lines=2, interactive=False, elem_id="judge")
