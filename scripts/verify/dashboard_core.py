@@ -38,8 +38,13 @@ def load_autolearn(rel):
         ["자동 라벨 정밀도 / 재현율", f"{ps.get('precision')} / {ps.get('recall')}"],
         ["1차 모델 mAP50 (초기 라벨만 학습)", r0.get("map50")],
         ["2차 모델 mAP50 (자동 라벨 추가 학습)", r1.get("map50")],
-        ["효과", f"mAP50 +{round(d.get('delta_map50', 0) * 100, 1)}%p / mAP50-95 +{round(d.get('delta_map50_95', 0) * 100, 1)}%p"],
     ]
+    pc0, pc1 = r0.get("per_class_map50_95", {}), r1.get("per_class_map50_95", {})
+    for cls in pc1:
+        v0, v1 = pc0.get(cls), pc1.get(cls)
+        dv = f" (+{round((v1 - v0) * 100, 1)}%p)" if v0 is not None and v1 is not None else ""
+        rows.append([f"└ {cls} 정확도 mAP50-95 (1차 → 2차)", f"{v0} → {v1}{dv}"])
+    rows.append(["효과", f"mAP50 +{round(d.get('delta_map50', 0) * 100, 1)}%p / mAP50-95 +{round(d.get('delta_map50_95', 0) * 100, 1)}%p"])
     return (["항목", "값"], rows, "")
 
 

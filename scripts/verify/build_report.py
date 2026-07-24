@@ -116,6 +116,11 @@ def autolearn_rows(rel):
         ["1차 모델 mAP50 (초기 라벨만)", r0['map50']],
         ["2차 모델 mAP50 (자동 라벨 추가)", f"{r1['map50']} (+{round(d['delta_map50']*100,1)}%p)"],
     ]
+    pc0, pc1 = r0.get("per_class_map50_95", {}), r1.get("per_class_map50_95", {})
+    for cls in pc1:
+        v0, v1 = pc0.get(cls), pc1.get(cls)
+        dv = f" (+{round((v1 - v0) * 100, 1)}%p)" if v0 is not None and v1 is not None else ""
+        rows.append([f"└ {cls} 정확도 mAP50-95 (1차 → 2차)", f"{v0} → {v1}{dv}"])
     return rows
 
 

@@ -78,24 +78,21 @@ function CompareBrowser() {
 
       {data.legend?.length > 0 && (
         <div className="legend">
-          {data.legend.map((g, i) => (
-            <span className="legend-item" key={i}>
-              <span className="legend-chip" style={{ background: g.color }} />{g.name}
-            </span>
-          ))}
+          {data.legend.map((g, i) => {
+            const c = data.counts?.find(x => x.name === g.name)
+            return (
+              <span className="legend-item" key={i}>
+                <span className="legend-chip" style={{ background: g.color }} />
+                {g.name}{c ? <> <b>{c.pred}/{c.gt}</b></> : ''}
+              </span>
+            )
+          })}
+          <span className="legend-note">탐지 / 정답 개수</span>
         </div>
       )}
 
       <ul className="cmp-info">
         <li><b>파일명</b>: {data.file}</li>
-        <li>
-          <b>탐지 결과</b> <span className="cap-sub">(모델 탐지 / 정답 개수)</span>
-          <ul className="count-list">
-            {data.counts?.map((c, i) => (
-              <li key={i}>{c.name}: <b>{c.pred}</b> / {c.gt}</li>
-            ))}
-          </ul>
-        </li>
         <li><b>현재 모델</b>: 임시 2클래스 (bolt·nut 전용)</li>
         <li><b>알림</b>: 베어링(bearing), 기어(gear)는 탐지 불가. 서버 복구 후 5클래스 모델로 대체 예정.</li>
       </ul>
