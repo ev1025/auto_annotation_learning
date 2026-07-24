@@ -9,7 +9,7 @@
      - --classes bolt nut gear      (나열 순서 = 0,1,2 번)
      - --classes-file classes.txt   (한 줄에 부품명 하나, 줄 순서 = 번호)
   2) 라벨 검증: 클래스 번호가 정의 범위 안인지 / 좌표가 0~1 인지 / 필드 5개인지
-  3) 검증 통과분을 datasets/images + datasets/labels 로 복사(파이프라인 표준 위치)
+  3) 검증 통과분을 training_pool/images + training_pool/labels 로 복사(파이프라인 표준 위치)
   4) 클래스별 박스 분포를 출력해 "번호를 잘못 알고 반입"하는 사고를 조기 발견
 
 입력 폴더 구조(둘 다 지원):

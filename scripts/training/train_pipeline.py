@@ -1,7 +1,7 @@
 """scripts/training/train_pipeline.py - 자동 라벨링 결과로 새 모델 학습 후 ONNX 변환.
 
 흐름:
-  datasets/images + datasets/labels (flat)
+  training_pool/images + training_pool/labels (flat)
      ──(train/val 분할 복사)──> images/{train,val}, labels/{train,val}
      ──(YOLO.train, data.yaml 참조)──> runs/train/weights/best.pt
      ──(복사)──> models/new_model.pt
@@ -43,7 +43,7 @@ def build_runtime_data_yaml():
     - 사람이 직접 편집하는 data.yaml(클래스명 정의)은 그대로 보존한다(생성본만 교체).
     """
     cfg = yaml.safe_load(config.DATA_YAML.read_text(encoding="utf-8"))
-    cfg["path"] = str(config.DATASETS_DIR.resolve())  # 절대경로로 고정
+    cfg["path"] = str(config.TRAINING_POOL_DIR.resolve())  # 절대경로로 고정
     out = config.BASE_DIR / "data.generated.yaml"
     out.write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False), encoding="utf-8")
     print(f"[데이터] 절대경로 적용 -> {out} (path={cfg['path']})")

@@ -20,10 +20,10 @@ NEW_MODEL_ONNX = MODELS_DIR / "new_model.onnx"  # ONNX 변환 산출물(Unity/C#
 
 # --- 데이터셋 경로 ---
 DATA_DIR = BASE_DIR / "data"          # 모든 데이터(원본·데이터셋·등록영상)의 단일 루트
-DATASETS_DIR = DATA_DIR / "datasets"
-UNLABELED_DIR = DATASETS_DIR / "unlabeled_images"  # 자동 라벨링 입력(원본)
-IMAGES_DIR = DATASETS_DIR / "images"   # 라벨링된 이미지(ultralytics 가 labels 와 짝지음)
-LABELS_DIR = DATASETS_DIR / "labels"   # YOLO 포맷 .txt 정답
+TRAINING_POOL_DIR = DATA_DIR / "training_pool"  # 운영 학습 풀(등록 부품 누적)
+UNLABELED_DIR = TRAINING_POOL_DIR / "unlabeled_images"  # 자동 라벨링 입력(원본)
+IMAGES_DIR = TRAINING_POOL_DIR / "images"   # 라벨링된 이미지(ultralytics 가 labels 와 짝지음)
+LABELS_DIR = TRAINING_POOL_DIR / "labels"   # YOLO 포맷 .txt 정답
 DATA_YAML = BASE_DIR / "data.yaml"
 
 # --- 임계값 ---

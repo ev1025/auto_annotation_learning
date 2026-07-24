@@ -13,7 +13,7 @@
     어노테이션이 실제로 달린 카테고리만 골라 0..k-1 로 재매핑한다.
 
 실행:
-  python scripts/data_import/coco_to_yolo.py --src ./data/mechanical_parts_coco --dst ./data/mechanical_parts_yolo
+  python scripts/data_import/coco_to_yolo.py --src ./data/robo_coco --dst ./data/robo_yolo
 """
 import argparse
 import json

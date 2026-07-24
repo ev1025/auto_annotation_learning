@@ -1,9 +1,9 @@
 # data.yaml - YOLO 학습 데이터 정의 파일
 # - path 기준 상대경로로 train/val 이미지 폴더를 가리킨다.
 # - 라벨(.txt)은 ultralytics 가 경로의 'images' -> 'labels' 치환으로 자동 탐색한다.
-#   (예: data/datasets/images/train/a.jpg  ->  data/datasets/labels/train/a.txt)
+#   (예: data/training_pool/images/train/a.jpg  ->  data/training_pool/labels/train/a.txt)
 
-path: ./data/datasets        # 데이터셋 루트(이 yaml 파일 위치 기준 상대경로)
+path: ./data/training_pool        # 데이터셋 루트(이 yaml 파일 위치 기준 상대경로)
 train: images/train     # 학습 이미지 폴더
 val: images/val         # 검증 이미지 폴더
 

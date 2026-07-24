@@ -8,9 +8,9 @@ Roboflow 다운로드 zip 을 풀면 보통 이런 구조다:
       └─ data.yaml                     (names 포함)
 
 이 스크립트는 위를 우리 파이프라인 구조로 옮겨 '오토러닝 리허설'을 바로 시작하게 한다:
-  - train(+valid) 이미지/라벨  ->  datasets/images + datasets/labels (flat, '라벨 있는 풀')
-  - holdout(기본 test) 이미지  ->  datasets/unlabeled_images (자동 라벨 대상)
-  - holdout 라벨              ->  datasets/_gt_holdout (나중에 자동라벨 정확도 채점용 정답 보관)
+  - train(+valid) 이미지/라벨  ->  training_pool/images + training_pool/labels (flat, '라벨 있는 풀')
+  - holdout(기본 test) 이미지  ->  training_pool/unlabeled_images (자동 라벨 대상)
+  - holdout 라벨              ->  training_pool/_gt_holdout (나중에 자동라벨 정확도 채점용 정답 보관)
   - Roboflow data.yaml 의 names -> 우리 data.yaml 의 names 로 동기화
 
 실행:
@@ -56,8 +56,8 @@ def copy_split(split_dir, images_out, labels_out):
     """split_dir 의 이미지를 images_out 으로, 짝 라벨을 labels_out 으로 복사. 복사 장수 반환.
 
     labels_out 을 어디로 주느냐로 용도가 갈린다:
-    - 라벨풀: datasets/labels (학습이 바로 사용)
-    - holdout: datasets/_gt_holdout (이미지는 미라벨 취급, 정답은 채점용으로 숨겨 보관)
+    - 라벨풀: training_pool/labels (학습이 바로 사용)
+    - holdout: training_pool/_gt_holdout (이미지는 미라벨 취급, 정답은 채점용으로 숨겨 보관)
     """
     images_out.mkdir(parents=True, exist_ok=True)
     labels_out.mkdir(parents=True, exist_ok=True)
@@ -114,7 +114,7 @@ def main():
         print(f"[라벨풀] {sp.name}: {c}장 -> {config.IMAGES_DIR.name}/{config.LABELS_DIR.name}")
 
     # 4) holdout -> 이미지는 unlabeled 로, 정답 라벨은 채점용 보관소로
-    gt_out = config.DATASETS_DIR / "_gt_holdout"
+    gt_out = config.TRAINING_POOL_DIR / "_gt_holdout"
     c = copy_split(holdout, config.UNLABELED_DIR, gt_out)
     print(f"[미라벨] {holdout.name}: {c}장 -> {config.UNLABELED_DIR.name} (정답은 {gt_out.name} 에 보관)")
 

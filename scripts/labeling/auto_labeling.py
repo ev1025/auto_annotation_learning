@@ -2,8 +2,8 @@
 
 흐름:
   unlabeled_images/*.jpg ──(base_model.pt 추론, conf>=0.6 만 채택)──┐
-                                                                   ├─> datasets/labels/<name>.txt (YOLO 포맷)
-                                                                   └─> datasets/images/<name>.jpg (학습이 짝지을 수 있게 복사)
+                                                                   ├─> training_pool/labels/<name>.txt (YOLO 포맷)
+                                                                   └─> training_pool/images/<name>.jpg (학습이 짝지을 수 있게 복사)
 
 YOLO 라벨 포맷(한 줄당 한 객체):
   <class_id> <x_center> <y_center> <width> <height>

@@ -18,7 +18,7 @@
     같은 명령을 다시 실행하면 된다(스크립트는 장비 독립적).
 
 실행:
-  python scripts/experiments/benchmark.py --src ./data/mechanical_parts_yolo \
+  python scripts/experiments/benchmark.py --src ./data/robo_yolo \
       --models yolov8n.pt yolov8s.pt yolov8m.pt yolo11n.pt yolo26n.pt yolo26s.pt yolo26m.pt \
       --imgsz 640 1280 --epochs 100 --device 0
 

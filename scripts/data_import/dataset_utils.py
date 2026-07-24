@@ -29,7 +29,7 @@ def append_class(name):
     """클래스 1개를 data.yaml 에 추가하고 클래스 번호를 반환(이미 있으면 기존 번호).
 
     register_classes 와 달리 '추가'가 목적: 기존 번호는 절대 바꾸지 않고 끝에만
-    붙이므로 기존 datasets/ 라벨과 호환된다. 부품 등록(labeling/register_part)처럼
+    붙이므로 기존 training_pool/ 라벨과 호환된다. 부품 등록(labeling/register_part)처럼
     운영 중 클래스가 늘어나는 경로에서 쓴다.
     """
     cfg, names = {}, {}
@@ -41,7 +41,7 @@ def append_class(name):
             return k
     new_id = max(names.keys(), default=-1) + 1
     names[new_id] = name
-    cfg.setdefault("path", "./data/datasets")
+    cfg.setdefault("path", "./data/training_pool")
     cfg.setdefault("train", "images/train")
     cfg.setdefault("val", "images/val")
     cfg["names"] = {int(k): names[k] for k in sorted(names)}
@@ -53,7 +53,7 @@ def append_class(name):
 def register_classes(class_names):
     """클래스 정의({id: 이름})를 프로젝트 data.yaml 에 등록한다.
 
-    기존에 다른 클래스가 등록돼 있으면 중단한다: 기존 datasets/ 라벨은 옛 번호로
+    기존에 다른 클래스가 등록돼 있으면 중단한다: 기존 training_pool/ 라벨은 옛 번호로
     매겨져 있어서, names 만 갈아끼우면 라벨 번호가 통째로 꼬이기 때문이다.
     """
     cfg = {}
@@ -65,8 +65,8 @@ def register_classes(class_names):
                 f"[중단] data.yaml 에 이미 다른 클래스가 등록돼 있습니다.\n"
                 f"      기존: {list(old.values())}\n"
                 f"      반입: {list(class_names.values())}\n"
-                f"      기존 데이터셋과 섞이면 라벨 번호가 꼬입니다. data.yaml/datasets 를 정리 후 재실행하세요.")
-    cfg.setdefault("path", "./data/datasets")
+                f"      기존 데이터셋과 섞이면 라벨 번호가 꼬입니다. data.yaml/training_pool 을 정리 후 재실행하세요.")
+    cfg.setdefault("path", "./data/training_pool")
     cfg.setdefault("train", "images/train")
     cfg.setdefault("val", "images/val")
     cfg["names"] = class_names
