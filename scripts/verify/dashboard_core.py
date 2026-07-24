@@ -111,9 +111,9 @@ METHODS = [
         ordered=True,
         bullets=[
             "**1차 모델**: 순수 YOLO 모델에 기계부품 데이터(bolt·nut·gear·bearing) 10~15%(149장)를 학습시킨다.",
-            "1차 모델에게 라벨이 없는 데이터 65~70%(647장)를 예측시키고, 신뢰도(confidence)가 0.6 이상인 라벨만 채택.",
+            "**임시 학습 데이터 생성**: 1차 모델에게 라벨이 없는 데이터 65~70%(647장)를 예측시키고, 신뢰도(confidence)가 0.6 이상인 라벨만 채택.",
             "**2차 모델**: 순수 YOLO 모델에 1의 학습데이터와 2의 결과(0.6 이상 데이터)를 학습시킨다.",
-            "1차 모델과 2차 모델의 점수를 비교한다."],
+            "**임시 학습 데이터 효과 검증**: 1차 모델과 2차 모델의 평가지표를 비교한다."],
         gallery=None, live=True,
         code=[dict(
             file="scripts/labeling/pseudo_utils.py · auto_labeling.py",
