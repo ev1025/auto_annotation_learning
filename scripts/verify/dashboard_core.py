@@ -16,8 +16,6 @@ PREV_DIR = config.BASE_DIR / "docs" / "method_previews"
 TEST_IMG = config.DATA_DIR / "robo_yolo" / "test" / "images"
 TEST_LBL = config.DATA_DIR / "robo_yolo" / "test" / "labels"
 GT_CLASSES = ["bearing", "bolt", "gear", "nut"]
-PALETTE = [(0, 255, 0), (255, 160, 0), (0, 160, 255), (255, 0, 200), (160, 255, 0),
-           (0, 255, 255), (255, 80, 80), (180, 120, 255)]
 
 
 def jload(rel):
