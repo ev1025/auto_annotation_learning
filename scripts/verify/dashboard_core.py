@@ -311,14 +311,28 @@ def _b64(im, max_w=900, q=85):
     return "data:image/jpeg;base64," + base64.b64encode(buf).decode()
 
 
-def draw_label_box(img, x1, y1, x2, y2, label, color, thick=3):
-    """박스 + 색 채운 라벨 배경 + 흰 글씨 (YOLO 기본 표기 스타일)."""
+# 클래스 이름 기준 고정 색(BGR). 예측·정답에서 같은 부품은 항상 같은 색으로 표기.
+CLASS_COLORS = {
+    "bearing": (0, 190, 0),     # 초록
+    "bolt": (0, 150, 255),      # 주황
+    "gear": (255, 130, 0),      # 파랑
+    "nut": (200, 0, 200),       # 자홍
+}
+
+
+def color_for(name):
+    return CLASS_COLORS.get(str(name).lower(), (128, 128, 128))
+
+
+def draw_label_box(img, x1, y1, x2, y2, label, color, thick=2):
+    """박스 + 색 채운 라벨 배경 + 흰 글씨. 라벨은 박스 왼쪽 변에 맞춤."""
     cv2.rectangle(img, (x1, y1), (x2, y2), color, thick)
     font, scale, ft = cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
     (tw, th), bl = cv2.getTextSize(label, font, scale, ft)
+    lx = max(0, x1 - thick // 2)            # 박스 바깥 왼쪽 변과 정렬
     ly1 = max(0, y1 - th - bl - 4)          # 라벨 배경 상단(박스 위쪽에 얹음)
-    cv2.rectangle(img, (x1, ly1), (x1 + tw + 6, y1), color, -1)  # 채운 배경
-    cv2.putText(img, label, (x1 + 3, y1 - bl), font, scale, (255, 255, 255), ft, cv2.LINE_AA)
+    cv2.rectangle(img, (lx, ly1), (lx + tw + 6, y1), color, -1)
+    cv2.putText(img, label, (lx + 3, y1 - bl), font, scale, (255, 255, 255), ft, cv2.LINE_AA)
 
 
 def test_images():
@@ -339,10 +353,12 @@ def compare(idx=0, conf=0.6):
     pred = src.copy()
     r = m.predict(source=str(p), conf=conf, verbose=False)[0]
     n = 0
+    seen = set()
     for i, (b, c, cf) in enumerate(zip(r.boxes.xyxy, r.boxes.cls, r.boxes.conf), start=1):
         x1, y1, x2, y2 = map(int, b)
-        color = PALETTE[int(c) % len(PALETTE)]
-        draw_label_box(pred, x1, y1, x2, y2, f"{m.names[int(c)]} {float(cf):.2f}", color)
+        name = m.names[int(c)]
+        draw_label_box(pred, x1, y1, x2, y2, f"{name} ({float(cf):.2f})", color_for(name))
+        seen.add(name)
         n += 1
     gt = src.copy()
     lbl = TEST_LBL / f"{p.stem}.txt"
@@ -354,10 +370,13 @@ def compare(idx=0, conf=0.6):
             c, cx, cy, bw, bh = int(f[0]), *map(float, f[1:5])
             x1, y1 = round((cx - bw / 2) * w), round((cy - bh / 2) * h)
             x2, y2 = round((cx + bw / 2) * w), round((cy + bh / 2) * h)
-            color = PALETTE[c % len(PALETTE)]
-            draw_label_box(gt, x1, y1, x2, y2, GT_CLASSES[c] if c < len(GT_CLASSES) else str(c), color)
+            name = GT_CLASSES[c] if c < len(GT_CLASSES) else str(c)
+            draw_label_box(gt, x1, y1, x2, y2, name, color_for(name))
+            seen.add(name)
+    legend = [{"name": nm, "color": "#%02x%02x%02x" % color_for(nm)[::-1]}
+              for nm in sorted(seen)]
     return {"pred": _b64(pred), "gt": _b64(gt), "file": p.name, "n": n,
-            "idx": idx, "total": len(imgs)}
+            "legend": legend, "idx": idx, "total": len(imgs)}
 
 
 def experiment_metrics(cat, topic):

@@ -67,7 +67,7 @@ function CompareBrowser() {
 
       <div className="pair" style={loading ? { opacity: 0.5 } : {}}>
         <figure>
-          <figcaption>AI 예측 <span className="cap-sub">탐지 {data.n}개</span></figcaption>
+          <figcaption>모델 예측 <span className="cap-sub">Conf &gt; 0.6</span></figcaption>
           <img src={data.pred} alt="모델 예측" />
         </figure>
         <figure>
@@ -76,10 +76,22 @@ function CompareBrowser() {
         </figure>
       </div>
 
-      <p className="cmp-caveat">
-        신뢰도 기준은 오토라벨 채택 조건인 conf 0.6 고정.
-        지금은 임시 2클래스(bolt·nut) 모델이라 bearing·gear 는 아직 못 잡습니다 (서버 복구 후 5클래스로 교체 예정).
-      </p>
+      {data.legend?.length > 0 && (
+        <div className="legend">
+          {data.legend.map((g, i) => (
+            <span className="legend-item" key={i}>
+              <span className="legend-chip" style={{ background: g.color }} />{g.name}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <ul className="cmp-info">
+        <li><b>파일명</b>: {data.file}</li>
+        <li><b>탐지 결과</b>: {data.n}개 탐지 (Conf &gt; 0.6 고정)</li>
+        <li><b>현재 모델</b>: 임시 2클래스 (bolt·nut 전용)</li>
+        <li><b>알림</b>: 베어링(bearing), 기어(gear)는 탐지 불가. 서버 복구 후 5클래스 모델로 대체 예정.</li>
+      </ul>
     </div>
   )
 }
