@@ -95,10 +95,19 @@ function MethodView({ id }) {
     <div>
       <h2>방법 {m.no} · {m.title} <Badge kind={m.badge} label={m.badge_label} /></h2>
 
-      <h3>① 어떤 데이터를 어떻게 사용했나</h3>
       <ul>{m.bullets.map((b, i) => <li key={i}>{md(b)}</li>)}</ul>
 
-      <h3>② 모델이 만든 바운딩박스 vs 정답 라벨</h3>
+      {m.code?.length > 0 && m.code.map((sn, i) => (
+        <div className="snippet" key={i}>
+          <div className="snip-head">
+            <code className="snip-file">{sn.file}</code>
+            <span className="snip-note">{sn.note}</span>
+          </div>
+          <pre><code>{sn.src}</code></pre>
+        </div>
+      ))}
+
+      <div className="sec-gap" />
       {m.live && <CompareBrowser />}
       {m.gallery.length > 0 && (
         <div className="gallery">
@@ -111,10 +120,10 @@ function MethodView({ id }) {
         </div>
       )}
       {!m.live && m.gallery.length === 0 && (
-        <p className="fn">이 방법은 저장된 비교 이미지가 없습니다 (서버 유실로 미보존). 아래 지표로 확인하세요.</p>
+        <p className="fn">저장된 비교 이미지 없음 (서버 유실로 미보존) - 아래 지표로 확인</p>
       )}
 
-      <h3>③ 실험 지표 결과</h3>
+      <div className="sec-gap" />
       <Callout>{m.metrics.summary}</Callout>
       <MetricsTable metrics={m.metrics} />
     </div>

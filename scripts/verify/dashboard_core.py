@@ -112,6 +112,24 @@ METHODS = [
             "**데이터**: 공개 기계부품 데이터. **초기 라벨셋 10~15%만** 학습에 사용, 나머지 미라벨 풀(647~1,463장)은 라벨을 숨겨 자동 라벨 대상으로 사용",
             "**채점**: 별도 평가셋에서 라운드0(초기 라벨만) vs 라운드1(자동 라벨 추가) 성능 비교"],
         gallery=None, live=True,
+        code=[dict(
+            file="scripts/labeling/pseudo_utils.py",
+            note="박스 채택 규칙의 단일 구현. 실험(experiment_autolearn.py)과 운영이 같은 함수를 써서 규칙이 어긋날 수 없다",
+            src="""def ok(b):                              # b = (클래스, 박스, conf)
+    return b[2] >= cpc.get(b[0], conf)  # 신뢰도 0.6 이상만 채택
+
+results = model.predict(source=[str(p) for p in imgs], conf=min_conf,
+                        stream=True, verbose=False)
+for img_path, r in zip(imgs, results):
+    yield img_path, [b for b in boxes_of(r) if ok(b)], 0"""),
+              dict(
+            file="scripts/labeling/auto_labeling.py",
+            note="채택된 박스를 YOLO 라벨(.txt)로 저장. 이미지와 같은 이름이 YOLO 가 짝을 찾는 규칙",
+            src="""lines = [f"{c} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}"
+         for c, (cx, cy, w, h), _cf in boxes]
+txt_path = labels_out / f"{img_path.stem}.txt"
+txt_path.write_text("
+".join(lines), encoding="utf-8")""")],
         metrics=("exp_results/report_2cls_seed15.json", load_autolearn),
     ),
     dict(
@@ -159,6 +177,16 @@ METHODS = [
             "**적용 ②**: 실사 기어박스 영상 49프레임 -> **실패** (한 장면 영상은 배경도 매 프레임 등장해 매트·드릴·사람까지 오채택)",
             "**교훈**: 채택률 98%라는 수치만 보면 합격이었으나, 육안 검증이 실패를 적발"],
         gallery="mutual", live=False,
+        code=[dict(
+            file="scripts/labeling/register_part.py",
+            note="후보 점수 = '다른 사진들의 후보 중 최고 유사도'의 평균. 배경 고정 영상에선 배경도 매 프레임 등장해 이 조건을 만족 -> 오채택 (실패 원인이 이 수식 자체에 있음)",
+            src="""scores = torch.zeros(len(boxes), device=DEV)
+for j, (_, _, _, emb_j) in enumerate(per_img):
+    if j == i or emb_j is None:
+        continue
+    scores += (emb_i @ emb_j.T).max(dim=1).values   # 다른 사진과의 최고 유사도
+scores = (scores / max(n_other, 1)).cpu().numpy()   # 평균
+tau = CONSIST_TAU                                    # 0.55 이상만 채택""")],
         metrics=static_metrics(
             [["사진 묶음 시뮬 (볼트·너트 15장씩)", "채택률 100%, 부품만 정확히 라벨"],
              ["실사 영상 (기어박스 49프레임)", "채택률 98%였으나 배경(매트·드릴·사람) 오채택 -> 폐기"],
@@ -172,6 +200,22 @@ METHODS = [
             "**데이터**: 실사 기어박스 영상 (1차 33프레임 -> 완결 193프레임)",
             "**검증**: 생성 라벨로 학습 후, 학습에 안 쓴 별도 영상(16프레임)에서 탐지 확인"],
         gallery="one_tap", live=False,
+        code=[dict(
+            file="scripts/labeling/register_part.py - build_ref_embedding()",
+            note="'1탭'의 실체: 클릭 좌표 하나를 SAM 에 주면 그 점이 속한 물체 마스크를 돌려줌 -> 참조 크롭 확보",
+            src="""fname, rx, ry = (src / "ref.txt").read_text().split()[:3]  # 탭 좌표
+masks, scores, _ = predictor.predict(
+    point_coords=np.array([[int(rx), int(ry)]]),
+    point_labels=np.array([1]), multimask_output=True)
+m = masks[int(np.argmax(scores))]     # 탭 지점이 속한 물체 마스크
+crop_ = im[y1:y2, x1:x2]              # 참조 크롭"""),
+              dict(
+            file="scripts/labeling/register_part.py - label_one_part()",
+            note="전 프레임의 SAM 후보를 참조 크롭과 DINOv2 유사도로 비교, 0.70 이상 전부 채택(다중 인스턴스) 후 중복 제거",
+            src="""scores = (emb_i @ ref_emb.T).squeeze(1).cpu().numpy()  # 참조와의 유사도
+tau = ref_tau                                          # 0.70
+keep = _nms([(boxes[k], float(scores[k])) for k in range(len(boxes))
+             if scores[k] >= tau])   # NMS + 포함 억제(부분-전체 중복 제거)""")],
         metrics=static_metrics(
             [["라벨 생성 (1차, 33프레임)", "20장 채택, 배경 오채택 0"],
              ["라벨 생성 (완결, 193프레임)", "114장 채택 (59%)"],

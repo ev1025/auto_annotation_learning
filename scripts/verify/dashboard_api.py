@@ -42,7 +42,8 @@ def api_method(mid: str):
         return JSONResponse({"error": "unknown method"}, status_code=404)
     return {"id": m["id"], "no": m["no"], "title": m["title"],
             "badge": m["badge"], "badge_label": m["badge_label"], "live": m["live"],
-            "bullets": m["bullets"], "gallery": core.method_gallery(m),
+            "bullets": m["bullets"], "code": m.get("code", []),
+            "gallery": core.method_gallery(m),
             "metrics": core.method_metrics(m)}
 
 
