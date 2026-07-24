@@ -106,29 +106,34 @@ def table(headers, rows):
     return f"<table><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table>"
 
 
+def _delta(a, b):
+    return f"+{round((b - a) * 100, 1)}%p" if a is not None and b is not None else ""
+
+
 def autolearn_rows(rel):
     d = jload(rel)
-    sp, ps, r0, r1 = d["split"], d["pseudo"], d["round0"], d["round1"]
-    rows = [
+    sp, ps = d["split"], d["pseudo"]
+    return [
         ["데이터 구성", f"초기 라벨셋 {sp['seed']}장 / 미라벨 풀 {sp['pool']}장 / 평가셋 {sp['test']}장"],
         ["자동 라벨 생성", f"{ps['labeled_images']}장 (박스 {ps['boxes']}개)"],
         ["자동 라벨 정밀도 / 재현율", f"{ps['precision']} / {ps['recall']}"],
-        ["1차 모델 mAP50 (초기 라벨만)", r0['map50']],
-        ["2차 모델 mAP50 (자동 라벨 추가)", f"{r1['map50']} (+{round(d['delta_map50']*100,1)}%p)"],
     ]
-    return rows
+
+
+def perf_rows(rel):
+    d = jload(rel)
+    r0, r1 = d["round0"], d["round1"]
+    return [
+        ["mAP50", r0["map50"], r1["map50"], _delta(r0["map50"], r1["map50"])],
+        ["mAP50-95", r0["map50_95"], r1["map50_95"], _delta(r0["map50_95"], r1["map50_95"])],
+    ]
 
 
 def per_class_rows(rel):
     d = jload(rel)
     pc0 = d["round0"].get("per_class_map50_95", {})
     pc1 = d["round1"].get("per_class_map50_95", {})
-    rows = []
-    for cls in pc1:
-        v0, v1 = pc0.get(cls), pc1.get(cls)
-        dv = f"+{round((v1 - v0) * 100, 1)}%p" if v0 is not None and v1 is not None else ""
-        rows.append([cls, v0, v1, dv])
-    return rows
+    return [[cls, pc0.get(cls), pc1.get(cls), _delta(pc0.get(cls), pc1.get(cls))] for cls in pc1]
 
 
 def zeroshot_rows(rel):
@@ -262,8 +267,10 @@ def build():
         sub("실제 입출력 결과") + pair_html +
         sub("실험 결과") +
         table(["항목", "값"], autolearn_rows("exp_results/report_2cls_seed15.json")) +
+        '<p class="subtable-title">모델 성능 (1차 → 2차)</p>' +
+        table(["지표", "1차 모델", "2차 모델", "변화율"], perf_rows("exp_results/report_2cls_seed15.json")) +
         '<p class="subtable-title">클래스별 정확도 (mAP50-95)</p>' +
-        table(["클래스", "1차 모델", "2차 모델", "변화"], per_class_rows("exp_results/report_2cls_seed15.json")))
+        table(["클래스", "1차 모델", "2차 모델", "변화율"], per_class_rows("exp_results/report_2cls_seed15.json")))
 
     # ---- 방법 2 ----
     m2 = section("m2", "텍스트 제로샷 (Grounding DINO)", badge("drop"),

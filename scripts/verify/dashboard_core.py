@@ -32,24 +32,31 @@ def load_autolearn(rel):
         return None
     sp, ps = d.get("split", {}), d.get("pseudo", {})
     r0, r1 = d.get("round0", {}), d.get("round1", {})
-    rows = [
+
+    def delta(a, b):
+        return f"+{round((b - a) * 100, 1)}%p" if a is not None and b is not None else ""
+
+    # 표 1: 데이터·자동 라벨 (설정과 자동 라벨 품질)
+    data_rows = [
         ["데이터 구성", f"초기 라벨셋 {sp.get('seed')}장 / 미라벨 풀 {sp.get('pool')}장 / 평가셋 {sp.get('test')}장"],
         ["자동 라벨 생성", f"{ps.get('labeled_images')}장 (박스 {ps.get('boxes')}개)"],
         ["자동 라벨 정밀도 / 재현율", f"{ps.get('precision')} / {ps.get('recall')}"],
-        ["1차 모델 mAP50 (초기 라벨만 학습)", r0.get("map50")],
-        ["2차 모델 mAP50 (자동 라벨 추가 학습)", r1.get("map50")],
-        ["효과", f"mAP50 +{round(d.get('delta_map50', 0) * 100, 1)}%p / mAP50-95 +{round(d.get('delta_map50_95', 0) * 100, 1)}%p"],
     ]
+    # 표 2: 모델 성능 (1차 vs 2차)
+    perf_rows = [
+        ["mAP50", r0.get("map50"), r1.get("map50"), delta(r0.get("map50"), r1.get("map50"))],
+        ["mAP50-95", r0.get("map50_95"), r1.get("map50_95"), delta(r0.get("map50_95"), r1.get("map50_95"))],
+    ]
+    # 표 3: 클래스별 정확도(mAP50-95)
     pc0, pc1 = r0.get("per_class_map50_95", {}), r1.get("per_class_map50_95", {})
-    cls_rows = []
-    for cls in pc1:
-        v0, v1 = pc0.get(cls), pc1.get(cls)
-        dv = f" (+{round((v1 - v0) * 100, 1)}%p)" if v0 is not None and v1 is not None else ""
-        cls_rows.append([cls, v0, v1, dv.strip(" ()")])
-    subtables = ([{"title": "클래스별 정확도 (mAP50-95)",
-                   "headers": ["클래스", "1차 모델", "2차 모델", "변화"], "rows": cls_rows}]
-                 if cls_rows else [])
-    return (["항목", "값"], rows, "", subtables)
+    cls_rows = [[cls, pc0.get(cls), pc1.get(cls), delta(pc0.get(cls), pc1.get(cls))] for cls in pc1]
+
+    subtables = [{"title": "모델 성능 (1차 → 2차)",
+                  "headers": ["지표", "1차 모델", "2차 모델", "변화율"], "rows": perf_rows}]
+    if cls_rows:
+        subtables.append({"title": "클래스별 정확도 (mAP50-95)",
+                          "headers": ["클래스", "1차 모델", "2차 모델", "변화율"], "rows": cls_rows})
+    return (["항목", "값"], data_rows, "", subtables)
 
 
 def load_zeroshot(rel):
