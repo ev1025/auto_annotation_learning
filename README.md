@@ -81,7 +81,8 @@ xr_autolearning/
 │  ├─ 5_benchmark.py             # 모델 x 입력크기 매트릭스 벤치마크 (배포 모델 선정 근거)
 │  ├─ 6_model_registry.py        # 릴리스 조회/롤백 (이전 버전 복원)
 │  ├─ 7_finetune_real.py         # 실사 소량 파인튜닝 (2단계: 동결 → 저lr 해제, 전/후 게이트)
-│  ├─ 8_dashboard.py             # 육안 검증 대시보드 (라벨·등록·추론·이력을 웹에서 열람)
+│  ├─ 8_dashboard.py             # 육안 검증 대시보드 (즉석 추론·라벨 열람용 웹 UI)
+│  ├─ 9_build_report.py          # 오토라벨링 검증 리포트(단일 HTML) 생성 -> docs/report.html
 │  ├─ dataset_utils.py           # 데이터셋 등록 공용 (names 정규화·data.yaml 등록 가드)
 │  ├─ pseudo_utils.py            # 자동 라벨링 공용 (박스 선택 단일 구현: 추론·TTA·conf 필터)
 │  └─ data_viewer.ipynb          # COCO 어노테이션 점검 노트북 (클래스 분포·라벨 시각화)
@@ -443,12 +444,14 @@ python scripts/5_benchmark.py --src ./mechanical-parts-yolo \
 # 지연/FPS 는 실행 장비 기준. Jetson Thor 실측은 Thor 에서 같은 명령 재실행
 ```
 
-### 6.6 육안 검증 대시보드
+### 6.6 육안 검증 (리포트 + 대시보드)
 
 ```bash
-# 파이프라인 전 단계를 눈으로 확인: ① 데이터셋 라벨 박스 ② 등록 미리보기
-# ③ 이미지/영상 업로드 추론(박스 입힌 mp4 생성) ④ 학습 이력 타임라인
-python scripts/8_dashboard.py            # http://127.0.0.1:7862 (원격이면 SSH 터널)
+# 오토라벨링 검증 리포트: 방법 7종의 데이터·증거이미지·지표를 스토리형 단일 HTML 로
+python scripts/9_build_report.py         # -> docs/report.html (브라우저로 열면 끝, 서버 불필요)
+
+# (보조) 즉석 추론·영상 어노테이션이 필요할 때만 웹 대시보드
+python scripts/8_dashboard.py            # http://127.0.0.1:7862
 # 수치가 좋아도 라벨이 엉뚱할 수 있으므로(8장 상호 일관성 사례) 등록·재학습 후 육안 확인 권장
 ```
 
