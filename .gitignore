@@ -37,7 +37,7 @@ Thumbs.db
 논문/
 
 # 등록 테스트 산출물·영상 (data/ 밖에 생겨도 제외)
-register_test_*/
+gearbox_register_*/
 uploads/
 *.mp4
 
