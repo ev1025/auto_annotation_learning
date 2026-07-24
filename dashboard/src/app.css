@@ -125,21 +125,33 @@ th {
 }
 td { padding: 7px 10px; border-bottom: 1px solid var(--line); }
 
-/* ---------- 비교 탐색 ---------- */
-.nav-row {
-  display: flex; align-items: center; gap: 8px; margin: 10px 0 14px; flex-wrap: wrap;
+/* ---------- 비교 탐색 (실제 입출력 결과) ---------- */
+.cmp-bar {
+  display: flex; align-items: center; gap: 14px; margin: 0 0 14px;
+  padding: 8px 10px; background: #f8fafc; border: 1px solid var(--line); border-radius: 10px;
 }
-.nav-row button {
-  padding: 7px 14px; border: 1px solid var(--line); border-radius: 8px;
-  background: #fff; color: var(--ink); font-family: inherit; font-size: 13.5px;
-  font-weight: 600; cursor: pointer;
+.cmp-nav { display: flex; align-items: center; gap: 4px; }
+.cmp-nav button {
+  width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 8px;
+  background: #fff; color: var(--ink); font-size: 20px; line-height: 1; cursor: pointer;
 }
-.nav-row button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.nav-row button:disabled { opacity: 0.5; cursor: default; }
-.nav-row input[type="range"] { flex: 1; min-width: 140px; accent-color: var(--accent); }
-.idx-label {
-  font-size: 13.5px; font-weight: 600; color: var(--muted);
-  font-variant-numeric: tabular-nums; white-space: nowrap;
+.cmp-nav button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.cmp-nav button:disabled { opacity: 0.4; cursor: default; }
+.cmp-count { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 64px; text-align: center; }
+.cmp-total { color: var(--muted); font-weight: 400; font-size: 13px; }
+.cmp-random {
+  padding: 7px 14px; border: 0; border-radius: 8px; background: var(--accent);
+  color: #fff; font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+.cmp-random:hover:not(:disabled) { filter: brightness(1.08); }
+.cmp-random:disabled { opacity: 0.5; cursor: default; }
+.cmp-file {
+  margin-left: auto; font-family: Consolas, monospace; font-size: 12px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%;
+}
+.cmp-caveat {
+  font-size: 13px; color: var(--muted); margin: 10px 0 0; line-height: 1.55;
+  padding: 8px 12px; background: #f8fafc; border-radius: 8px;
 }
 
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -148,8 +160,9 @@ td { padding: 7px 10px; border-bottom: 1px solid var(--line); }
   width: 100%; border: 1px solid var(--line); border-radius: 10px; display: block;
   transition: opacity 0.15s;
 }
-figcaption { font-size: 13px; color: var(--muted); margin: 0 0 5px; font-weight: 600; }
-.gallery figcaption { margin: 5px 0 0; text-align: center; font-weight: 400; }
+figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 600; }
+.cap-sub { font-size: 12.5px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+.gallery figcaption { margin: 5px 0 0; text-align: center; font-weight: 400; font-size: 13px; color: var(--muted); }
 .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 8px; }
 
 /* ---------- 기타 실험 ---------- */
@@ -180,7 +193,7 @@ figcaption { font-size: 13px; color: var(--muted); margin: 0 0 5px; font-weight:
   font-family: Consolas, 'Courier New', monospace; font-size: 12.5px;
   color: var(--accent); font-weight: 600;
 }
-.snip-note { font-size: 13px; color: var(--muted); }
+.snip-note { display: block; font-size: 13.5px; color: var(--muted); margin: 16px 0 6px; }
 .snippet pre {
   margin: 0; padding: 12px 16px; background: #0f172a; overflow-x: auto;
 }

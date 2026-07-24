@@ -49,35 +49,37 @@ function CompareBrowser() {
   useEffect(() => { load(0) }, [load])
 
   if (data?.error) return <p className="fn">{data.error}</p>
+  if (!data) return <p className="fn">불러오는 중...</p>
 
   return (
-    <div>
-      <p className="fn">평가셋 전체를 순서대로 탐색합니다. 신뢰도 기준 = 오토라벨 채택 조건(conf 0.6) 고정.</p>
-      <div className="nav-row">
-        <button onClick={() => load(idx - 1)} disabled={loading}>← 이전</button>
-        <button onClick={() => load(idx + 1)} disabled={loading}>다음 →</button>
-        <button onClick={() => load(Math.floor(Math.random() * total))} disabled={loading}>랜덤</button>
-        <input type="range" min="0" max={total - 1} value={idx}
-               onChange={e => setIdx(Number(e.target.value))}
-               onMouseUp={e => load(Number(e.target.value))}
-               onTouchEnd={e => load(Number(e.target.value))} />
-        <span className="idx-label">{idx + 1} / {total}</span>
+    <div className="cmp">
+      <div className="cmp-bar">
+        <div className="cmp-nav">
+          <button onClick={() => load(idx - 1)} disabled={loading} aria-label="이전">‹</button>
+          <span className="cmp-count">{idx + 1} <span className="cmp-total">/ {total}</span></span>
+          <button onClick={() => load(idx + 1)} disabled={loading} aria-label="다음">›</button>
+        </div>
+        <button className="cmp-random" onClick={() => load(Math.floor(Math.random() * total))} disabled={loading}>
+          무작위 이미지
+        </button>
+        <span className="cmp-file">{data.file}</span>
       </div>
-      {data && (
-        <>
-          <div className="pair">
-            <figure>
-              <figcaption>모델이 만든 바운딩박스</figcaption>
-              <img src={data.pred} alt="모델 예측" style={loading ? { opacity: 0.5 } : {}} />
-            </figure>
-            <figure>
-              <figcaption>정답 라벨</figcaption>
-              <img src={data.gt} alt="정답 라벨" style={loading ? { opacity: 0.5 } : {}} />
-            </figure>
-          </div>
-          <p className="fn">{data.note}</p>
-        </>
-      )}
+
+      <div className="pair" style={loading ? { opacity: 0.5 } : {}}>
+        <figure>
+          <figcaption>AI 예측 <span className="cap-sub">탐지 {data.n}개</span></figcaption>
+          <img src={data.pred} alt="모델 예측" />
+        </figure>
+        <figure>
+          <figcaption>정답 라벨 <span className="cap-sub">사람 라벨</span></figcaption>
+          <img src={data.gt} alt="정답 라벨" />
+        </figure>
+      </div>
+
+      <p className="cmp-caveat">
+        신뢰도 기준은 오토라벨 채택 조건인 conf 0.6 고정.
+        지금은 임시 2클래스(bolt·nut) 모델이라 bearing·gear 는 아직 못 잡습니다 (서버 복구 후 5클래스로 교체 예정).
+      </p>
     </div>
   )
 }
@@ -105,12 +107,12 @@ function MethodView({ id }) {
       {m.code?.length > 0 && <>
         <h3 className="section-h">실제 코드</h3>
         {m.code.map((sn, i) => (
-          <div className="snippet" key={i}>
-            <div className="snip-head">
-              <code className="snip-file">{sn.file}</code>
-              <span className="snip-note">{sn.note}</span>
+          <div key={i}>
+            <p className="snip-note">{sn.note}</p>
+            <div className="snippet">
+              <div className="snip-head"><code className="snip-file">{sn.file}</code></div>
+              <pre><code>{sn.src}</code></pre>
             </div>
-            <pre><code>{sn.src}</code></pre>
           </div>
         ))}
       </>}

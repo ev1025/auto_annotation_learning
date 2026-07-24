@@ -356,9 +356,8 @@ def compare(idx=0, conf=0.6):
             x2, y2 = round((cx + bw / 2) * w), round((cy + bh / 2) * h)
             color = PALETTE[c % len(PALETTE)]
             draw_label_box(gt, x1, y1, x2, y2, GT_CLASSES[c] if c < len(GT_CLASSES) else str(c), color)
-    note = (f"{p.name} / 모델 탐지 {n}개 (conf {conf}) - 현재 모델은 임시 2클래스(bolt·nut)라 "
-            "bearing·gear 는 원래 못 잡습니다. 서버 복구 후 5클래스 모델로 교체 예정")
-    return {"pred": _b64(pred), "gt": _b64(gt), "note": note, "idx": idx, "total": len(imgs)}
+    return {"pred": _b64(pred), "gt": _b64(gt), "file": p.name, "n": n,
+            "idx": idx, "total": len(imgs)}
 
 
 def experiment_metrics(cat, topic):
