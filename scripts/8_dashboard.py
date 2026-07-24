@@ -327,8 +327,10 @@ CSS = """
 .gradio-container thead th {font-weight: 600;}
 #page-title h2 {font-weight: 700; letter-spacing: -0.01em; margin-bottom: 0;}
 #page-sub {color: var(--body-text-color-subdued); margin-top: 2px;}
-.section-h h3 {font-weight: 600; margin: 6px 0 2px 0;}
-#live-btn {max-width: 240px;}
+.section-h h3 {font-weight: 600; margin: 0 0 2px 0;}
+.section-h {border-top: 1px solid var(--border-color-primary); padding-top: 18px; margin-top: 14px;}
+#intro-acc {margin-top: 4px;}
+#live-btn {max-width: 200px; align-self: center;}
 #judge textarea, #judge2 textarea {
   border-left: 4px solid var(--primary-500);
   font-weight: 600;
@@ -338,7 +340,18 @@ CSS = """
 
 with gr.Blocks(title="오토라벨링 방법 비교", theme=THEME, css=CSS) as app:
     gr.Markdown("## 오토라벨링 방법 비교", elem_id="page-title")
-    gr.Markdown("시도 방법별 데이터 사용 방식 · 박스 비교 · 지표를 한 화면에서 확인", elem_id="page-sub")
+    gr.Markdown("헬기 정비 부품을 자동 인식하는 AI 를 만들기 위해, 학습용 정답 박스(라벨)를 사람 대신 "
+                "**자동으로 만드는 방법 7가지**를 실험했습니다. 방법을 선택하면 ①어떤 데이터로 "
+                "②라벨이 실제로 어떻게 생겼고 ③성적이 어땠는지를 보여줍니다.", elem_id="page-sub")
+    with gr.Accordion("이 화면이 처음이라면 - 용어 안내", open=False, elem_id="intro-acc"):
+        gr.Markdown("""| 용어 | 뜻 |
+|---|---|
+| 라벨 / 바운딩박스 | 이미지 속 부품 위치를 표시한 네모 상자. AI 학습의 '정답지' |
+| 정밀도 (P) | 만든 라벨 중 맞은 비율. 오답 라벨이 적을수록 높음 |
+| 재현율 (R) | 실제 부품 중 찾아낸 비율. 놓친 것이 적을수록 높음 |
+| mAP50 | 탐지 성능 종합 점수 (0~1, 높을수록 좋음) |
+| conf (신뢰도) | 모델이 스스로 확신하는 정도. 0.6 이상만 라벨로 채택 |
+| 평가셋 | 학습에 쓰지 않고 채점에만 쓰는 별도 문제지 |""")
 
     with gr.Tab("① 오토라벨링 방법 비교"):
         method = gr.Dropdown(list(METHODS.keys()), value=FIRST,
@@ -346,18 +359,20 @@ with gr.Blocks(title="오토라벨링 방법 비교", theme=THEME, css=CSS) as a
         gr.Markdown("### 1. 어떤 데이터를 어떻게 사용했나", elem_classes="section-h")
         desc_md = gr.Markdown()
         gr.Markdown("### 2. 모델이 만든 바운딩박스 vs 정답 라벨", elem_classes="section-h")
-        gal = gr.Gallery(label="비교 이미지 (초록/색 박스 = 모델·자동 라벨, 빨강 = 정답)", columns=2, height=480)
-        with gr.Group(visible=False) as live_grp:
-            gr.Markdown("**즉석 비교**: 평가셋에서 무작위 이미지를 뽑아 왼쪽 = 모델 박스, 오른쪽 = 정답 라벨 "
-                        "(신뢰도 기준은 오토라벨 채택 조건인 conf 0.6 고정)")
-            live_btn = gr.Button("무작위 이미지 비교", variant="primary", elem_id="live-btn")
+        gal = gr.Gallery(label="비교 이미지 (초록/색 박스 = 모델·자동 라벨, 빨강 = 정답)", columns=2, height=400)
+        with gr.Column(visible=False) as live_grp:
+            with gr.Row(equal_height=True):
+                gr.Markdown("평가셋에서 무작위 이미지를 뽑아 나란히 비교합니다. 신뢰도 기준 = 오토라벨 채택 조건(conf 0.6) 고정.",
+                            scale=4)
+                live_btn = gr.Button("다른 이미지 보기", variant="primary", size="sm",
+                                     elem_id="live-btn", scale=1)
             with gr.Row():
                 with gr.Column():
                     gr.Markdown("**모델이 만든 바운딩박스**")
-                    live_pred = gr.Image(show_label=False, buttons=[])
+                    live_pred = gr.Image(show_label=False, buttons=[], height=420)
                 with gr.Column():
                     gr.Markdown("**정답 라벨**")
-                    live_gt = gr.Image(show_label=False, buttons=[])
+                    live_gt = gr.Image(show_label=False, buttons=[], height=420)
             live_note = gr.Textbox(label="비고", interactive=False)
         gr.Markdown("### 3. 실험 지표 결과", elem_classes="section-h")
         met_summary = gr.Textbox(label="판정·요약", lines=2, interactive=False, elem_id="judge")
