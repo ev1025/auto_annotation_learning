@@ -248,15 +248,19 @@ def draw_gt(im, lbl_path, w, h):
     return im
 
 
-def live_compare(conf=0.6):
-    import random as _r
+def _test_images():
+    return sorted(TEST_IMG.glob("*.jpg"))
+
+
+def live_compare(idx=0, conf=0.6):
     m = get_model()
     if m is None:
-        return None, None, "서빙 모델 없음 (models/new_model.pt)"
-    imgs = sorted(TEST_IMG.glob("*.jpg"))
+        return None, None, "서빙 모델 없음 (models/new_model.pt)", gr.update()
+    imgs = _test_images()
     if not imgs:
-        return None, None, "테스트 이미지 없음 (mechanical-parts-yolo/test)"
-    p = _r.choice(imgs)
+        return None, None, "테스트 이미지 없음 (mechanical-parts-yolo/test)", gr.update()
+    idx = int(idx) % len(imgs)
+    p = imgs[idx]
     src = cv2.imread(str(p))
     h, w = src.shape[:2]
     # 왼쪽: 모델 예측
@@ -272,9 +276,30 @@ def live_compare(conf=0.6):
         n += 1
     # 오른쪽: 정답 라벨
     gt = draw_gt(src.copy(), TEST_LBL / f"{p.stem}.txt", w, h)
-    note = (f"{p.name} / 모델 탐지 {n}개 (conf {conf}) - 현재 모델은 임시 2클래스(bolt·nut)라 "
-            "bearing·gear 는 원래 못 잡습니다. 서버 복구 후 5클래스 모델로 교체 예정")
-    return cv2.cvtColor(pred, cv2.COLOR_BGR2RGB), cv2.cvtColor(gt, cv2.COLOR_BGR2RGB), note
+    note = (f"[{idx + 1}/{len(imgs)}] {p.name} / 모델 탐지 {n}개 (conf {conf}) - 현재 모델은 임시 "
+            "2클래스(bolt·nut)라 bearing·gear 는 원래 못 잡습니다. 서버 복구 후 5클래스 모델로 교체 예정")
+    return (cv2.cvtColor(pred, cv2.COLOR_BGR2RGB), cv2.cvtColor(gt, cv2.COLOR_BGR2RGB), note,
+            gr.update(value=idx, maximum=len(imgs) - 1))
+
+
+def nav_compare(idx, step):
+    return live_compare(int(idx) + step)
+
+
+def rand_compare():
+    import random as _r
+    return live_compare(_r.randrange(max(len(_test_images()), 1)))
+
+
+def export_report():
+    """9_build_report 를 불러 HTML 리포트 생성 (내보내기)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "report_builder", Path(__file__).resolve().parent / "9_build_report.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.build()
+    return f"내보내기 완료: {mod.OUT} (브라우저로 열면 됩니다)"
 
 
 # ==================== ② 기타 실험 결과 ====================
@@ -340,9 +365,13 @@ CSS = """
 
 with gr.Blocks(title="오토라벨링 방법 비교", theme=THEME, css=CSS) as app:
     gr.Markdown("## 오토라벨링 방법 비교", elem_id="page-title")
-    gr.Markdown("헬기 정비 부품을 자동 인식하는 AI 를 만들기 위해, 학습용 정답 박스(라벨)를 사람 대신 "
-                "**자동으로 만드는 방법 7가지**를 실험했습니다. 방법을 선택하면 ①어떤 데이터로 "
-                "②라벨이 실제로 어떻게 생겼고 ③성적이 어땠는지를 보여줍니다.", elem_id="page-sub")
+    with gr.Row(equal_height=True):
+        gr.Markdown("헬기 정비 부품을 자동 인식하는 AI 를 만들기 위해, 학습용 정답 박스(라벨)를 사람 대신 "
+                    "**자동으로 만드는 방법 7가지**를 실험했습니다. 방법을 선택하면 ①어떤 데이터로 "
+                    "②라벨이 실제로 어떻게 생겼고 ③성적이 어땠는지를 보여줍니다.", elem_id="page-sub", scale=4)
+        with gr.Column(scale=1, min_width=220):
+            export_btn = gr.Button("HTML 리포트 내보내기", size="sm")
+            export_msg = gr.Textbox(show_label=False, interactive=False, lines=2)
     with gr.Accordion("이 화면이 처음이라면 - 용어 안내", open=False, elem_id="intro-acc"):
         gr.Markdown("""| 용어 | 뜻 |
 |---|---|
@@ -361,11 +390,13 @@ with gr.Blocks(title="오토라벨링 방법 비교", theme=THEME, css=CSS) as a
         gr.Markdown("### 2. 모델이 만든 바운딩박스 vs 정답 라벨", elem_classes="section-h")
         gal = gr.Gallery(label="비교 이미지 (초록/색 박스 = 모델·자동 라벨, 빨강 = 정답)", columns=2, height=400)
         with gr.Column(visible=False) as live_grp:
+            gr.Markdown("평가셋 **전체를 순서대로 탐색**하며 모델 박스와 정답을 비교합니다. "
+                        "신뢰도 기준 = 오토라벨 채택 조건(conf 0.6) 고정.")
             with gr.Row(equal_height=True):
-                gr.Markdown("평가셋에서 무작위 이미지를 뽑아 나란히 비교합니다. 신뢰도 기준 = 오토라벨 채택 조건(conf 0.6) 고정.",
-                            scale=4)
-                live_btn = gr.Button("다른 이미지 보기", variant="primary", size="sm",
-                                     elem_id="live-btn", scale=1)
+                prev_c = gr.Button("← 이전", size="sm")
+                next_c = gr.Button("다음 →", size="sm")
+                rand_c = gr.Button("랜덤", size="sm")
+                live_idx = gr.Slider(0, 224, step=1, value=0, label="이미지 번호", scale=3)
             with gr.Row():
                 with gr.Column():
                     gr.Markdown("**모델이 만든 바운딩박스**")
@@ -378,10 +409,15 @@ with gr.Blocks(title="오토라벨링 방법 비교", theme=THEME, css=CSS) as a
         met_summary = gr.Textbox(label="판정·요약", lines=2, interactive=False, elem_id="judge")
         met_table = gr.Dataframe(label="지표", interactive=False)
 
+        cmp_outs = [live_pred, live_gt, live_note, live_idx]
         method.change(show_method, method, [desc_md, gal, met_table, met_summary, live_grp])
-        live_btn.click(live_compare, None, [live_pred, live_gt, live_note])
+        live_idx.release(live_compare, live_idx, cmp_outs)
+        prev_c.click(lambda i: nav_compare(i, -1), live_idx, cmp_outs)
+        next_c.click(lambda i: nav_compare(i, +1), live_idx, cmp_outs)
+        rand_c.click(rand_compare, None, cmp_outs)
+        export_btn.click(export_report, None, export_msg)
         app.load(show_method, method, [desc_md, gal, met_table, met_summary, live_grp])
-        app.load(live_compare, None, [live_pred, live_gt, live_note])
+        app.load(live_compare, None, cmp_outs)
 
     with gr.Tab("② 기타 실험 결과"):
         with gr.Row():
