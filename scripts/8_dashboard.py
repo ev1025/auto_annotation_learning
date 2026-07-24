@@ -7,7 +7,7 @@
 를 한 화면에 보여준다. 비교 이미지 원본은 docs/method_previews/, 지표 원본은
 리포에 커밋된 결과 json (exp_results/, zeroshot_labeler/eval_out/).
 
-실행: python scripts/8_dashboard.py  ->  http://127.0.0.1:7862 (로그인 AUTH)
+실행: python scripts/8_dashboard.py  ->  http://127.0.0.1:7862 (로그인 없음, 로컬 전용 바인딩)
 """
 import json
 from pathlib import Path
@@ -19,7 +19,6 @@ import yaml
 import config
 
 PORT = 7862
-AUTH = ("suri", "suri")
 PREV_DIR = config.BASE_DIR / "docs" / "method_previews"
 TEST_IMG = config.BASE_DIR / "mechanical-parts-yolo" / "test" / "images"
 TEST_LBL = config.BASE_DIR / "mechanical-parts-yolo" / "test" / "labels"
@@ -345,4 +344,5 @@ with gr.Blocks(title="오토라벨링 방법 비교") as app:
         app.load(on_category, cat, [topic, exp_table, exp_summary])
 
 if __name__ == "__main__":
-    app.launch(server_name="0.0.0.0", server_port=PORT, auth=AUTH)
+    # 로그인 제거에 맞춰 로컬 전용 바인딩(127.0.0.1). 외부 공개 시에는 auth 를 다시 걸 것.
+    app.launch(server_name="127.0.0.1", server_port=PORT)
