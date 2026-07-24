@@ -179,11 +179,12 @@ td { padding: 7px 10px; border-bottom: 1px solid var(--line); }
 figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 600; }
 .cap-sub { font-size: 12.5px; color: var(--muted); font-weight: 400; margin-left: 6px; }
 .gallery figcaption { margin: 5px 0 0; text-align: center; font-weight: 400; font-size: 13px; color: var(--muted); }
-.count-list { list-style: none; padding: 4px 0 0 2px; margin: 0; }
+.count-list { list-style: disc; padding: 4px 0 0 22px; margin: 0; }
 .count-list li {
   font-size: 13.5px; color: var(--ink); margin: 3px 0;
   font-variant-numeric: tabular-nums;
 }
+.count-list li::marker { color: var(--accent); }
 .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 8px; }
 
 /* ---------- 기타 실험 ---------- */
