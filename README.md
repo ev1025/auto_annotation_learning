@@ -99,7 +99,8 @@ xr_autolearning/
 ├─ dashboard/                    # 검증 대시보드 프론트 (React + Vite, 빌드 산출물 dist/ 는 미커밋)
 ├─ data/                         # 모든 데이터의 단일 루트 (전체 git 제외, 이름 규칙: 소문자 영문)
 │  ├─ training_pool/             #   운영 학습 풀: 등록한 부품의 사진·라벨이 여기 누적 (images/ labels/ unlabeled_images/)
-│  ├─ uploads/                   #   부품 등록 입력함 (uploads/<부품명>/ 에 사진·영상을 넣고 등록 실행)
+│  ├─ uploads/                   #   부품 등록 입력함 - 처음엔 없음, 등록할 부품이 생기면 만들어 사용
+│  │                             #   (uploads/<부품명>/ 에 사진·영상을 넣고 등록 명령 실행, 6.1 참고)
 │  ├─ robo_coco/                 #   Roboflow 공개 기계부품 데이터 원본 (COCO 포맷, 실험용)
 │  ├─ robo_yolo/                 #   위 원본의 YOLO 변환본 (실험 기준 데이터, 대시보드 즉석 비교가 사용)
 │  ├─ gearbox_register_trial*/   #   기어박스 영상으로 부품 등록 기능을 검증한 산출물
