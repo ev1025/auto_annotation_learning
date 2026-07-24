@@ -103,7 +103,7 @@ xr_autolearning/
 │  ├─ robo_yolo/     #   실험용 공개 데이터 (YOLO 변환본, 대시보드 즉석 비교가 사용)
 │  ├─ uploads/                   #   부품 등록 입력 (uploads/<부품명>/ 사진·영상)
 │  ├─ videos/                    #   실사 검증 영상 (gearbox*.mp4)
-│  └─ regtest_*/                 #   등록 회귀테스트 산출물
+│  └─ register_test_*/           #   부품 등록 검증 산출물 (sparse=1차 성긴 샘플링 / dense=밀도 6배)
 ├─ docs/                         # 문서 자산 (코드 아님: 이미지·리포트)
 │  ├─ method_previews/           #   오토라벨링 방법별 증거 이미지 (대시보드·리포트가 표시, git 추적)
 │  ├─ report.html                #   '내보내기' 산출물 (verify/build_report.py 가 생성)
