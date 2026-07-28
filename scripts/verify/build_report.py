@@ -205,6 +205,11 @@ def ordered(items):
     return "<ol>" + "".join(f"<li>{i}</li>" for i in items) + "</ol>"
 
 
+def _bold(t):
+    import re
+    return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t)
+
+
 def flow_html(steps):
     parts = []
     for i, s in enumerate(steps):
@@ -212,8 +217,20 @@ def flow_html(steps):
             parts.append('<div class="flow-arrow">↓</div>')
         parts.append(
             f'<div class="flow-node"><span class="flow-step">{s["step"]}</span>'
-            f'<span class="flow-text">{s["text"].replace("**","")}</span></div>')
+            f'<span class="flow-text">{_bold(s["text"])}</span></div>')
     return f'<div class="flow">{"".join(parts)}</div>'
+
+
+def desc_html(mid):
+    """방법 설명문(subtitle)을 core 레지스트리에서 가져온다."""
+    m = core.method_by_id(mid)
+    return f'<p class="method-desc">{m["subtitle"]}</p>' if m and m.get("subtitle") else ""
+
+
+def flow_of(mid):
+    """실험 순서 = core 레지스트리의 flow 를 그대로 렌더 (중복 방지)."""
+    m = core.method_by_id(mid)
+    return (sub("실험 순서") + flow_html(m["flow"])) if m and m.get("flow") else ""
 
 
 def bullets(items):
@@ -266,13 +283,7 @@ def build():
     else:
         pair_html = f'<p class="fn">{pair_note}</p>'
     m1 = section("m1", "Pseudo-labeling", badge("adopt"),
-        '<p class="method-desc">의사 라벨링(Pseudo-labeling)은 라벨이 없는 데이터에 모델이 예측한 값을 '
-        '임시 라벨로 지정해 학습에 재활용하는 준지도학습 기법입니다.</p>' +
-        sub("실험 순서") + ordered([
-            "<b>1차 모델</b>: 순수 YOLO 모델에 기계부품 데이터(bolt·nut·gear·bearing) 10~15%(149장)를 학습시킨다.",
-            "<b>임시 학습 데이터 생성</b>: 1차 모델에게 라벨이 없는 데이터 65~70%(647장)를 예측시키고, 신뢰도(confidence)가 0.6 이상인 라벨만 채택.",
-            "<b>2차 모델</b>: 순수 YOLO 모델에 1의 학습데이터와 2의 결과(0.6 이상 데이터)를 학습시킨다.",
-            "<b>임시 학습 데이터 효과 검증</b>: 1차 모델과 2차 모델의 평가지표를 비교한다."]) +
+        desc_html("m1") + flow_of("m1") +
         code_html("m1") +
         sub("실제 입출력 결과") + pair_html +
         sub("실험 결과") +
@@ -284,16 +295,7 @@ def build():
 
     # ---- 방법 2 ----
     m2 = section("m2", "텍스트 제로샷 (Grounding DINO)", badge("drop"),
-        '<p class="method-desc">학습되지 않은 객체를 설명 문구만으로 찾는 방법으로, 이미지의 객체와 '
-        '프롬프트의 유사도를 판단하여 클래스를 부여하는 방식.</p>' +
-        sub("실험 순서") + flow_html([
-            {"step": "입력", "text": "이미지 1장 + 고정 영어 프롬프트 4개 (metal hex bolt screw → bolt 등, 매 이미지 동일)"},
-            {"step": "1", "text": "영역·텍스트 인코딩 — 물체 후보 영역을 뽑고, 프롬프트 4개를 각각 숫자 벡터로 변환"},
-            {"step": "2", "text": "유사도 매칭 — 영역 후보와 프롬프트의 유사도를 계산해 0.35 이상만 남기고, 가장 닮은 프롬프트를 클래스로 결정"},
-            {"step": "3", "text": "후처리 — 겹친 중복 박스(NMS)와 화면을 덮는 거대 박스 제거"},
-            {"step": "출력", "text": "자동 라벨 — 탐지된 객체마다 박스 1개 + 클래스 1개 (프롬프트 4개는 '가능한 클래스 목록'일 뿐, 박스 수 = 이미지 속 통과한 객체 수. 볼트 5개면 bolt 박스 5개)"},
-            {"step": "채점", "text": "평가셋 204장에 적용, 숨긴 정답과 IoU 0.5 대조 → 정밀도 0.238 / 재현율 0.415"},
-            {"step": "탈락", "text": "탈락 사유 — 물체 위치는 곧잘 찾지만(재현율 0.42) hex bolt·hex nut 같은 유사 부품의 클래스를 자주 틀려 오탐이 맞춘 것의 3배. 무검수 라벨 기준(정밀도 0.87)에 크게 미달"}]) +
+        desc_html("m2") + flow_of("m2") +
         sub("실제 입출력 결과") + gallery_html("dino_text") +
         '<p class="fn">초록 = 모델 박스, 빨강 = 정답 라벨 (한 이미지에 겹쳐 표시)</p>' +
         sub("실험 결과") +
@@ -302,10 +304,7 @@ def build():
 
     # ---- 방법 3 ----
     m3 = section("m3", "Grounded-SAM 타이트박스", badge("drop"),
-        sub("실험 순서") + bullets([
-            "<b>방식</b>: 방법 2와 동일 + SAM 마스크로 박스를 픽셀 경계까지 타이트하게 교정",
-            "<b>결과</b>: 정밀도 개선 없음. '박스 여백이 문제'라는 가설이 실측으로 기각됨 (맞은 박스 평균 IoU: DINO 원본 0.908 > SAM 0.876)",
-            "<b>비고</b>: 증거 이미지는 서버 유실로 미보존"]) +
+        desc_html("m3") + flow_of("m3") +
         sub("실제 입출력 결과") + '<p class="fn">증거 이미지 미보존 - 아래 지표로 확인</p>' +
         sub("실험 결과") +
         verdict(f"정밀도 {gs_p} (방법 2와 동일 수준) → 병목은 박스 여백이 아니라 클래스 혼동으로 판명") +
@@ -313,10 +312,7 @@ def build():
 
     # ---- 방법 4 ----
     m4 = section("m4", "SAM + CLIP 갤러리", badge("drop"),
-        sub("실험 순서") + bullets([
-            "<b>방식</b>: SAM 이 물체 후보를 전부 분할 → 각 후보를 참조 갤러리(정답에서 오린 크롭, 클래스당 10장)와 CLIP 임베딩 유사도로 분류",
-            "<b>의의</b>: 텍스트 → 시각 매칭 전환으로 정밀도 2.5배 도약 (0.24 → 0.60)",
-            "<b>비고</b>: 증거 이미지 미보존"]) +
+        desc_html("m4") + flow_of("m4") +
         sub("실제 입출력 결과") + '<p class="fn">증거 이미지 미보존 - 아래 지표로 확인</p>' +
         sub("실험 결과 (유사도 임계값별)") +
         verdict("최고 정밀도 0.60 → 기준(0.87) 미달. 그러나 '시각 매칭이 텍스트보다 우월'을 입증해 방법 5로 이어짐") +
@@ -325,11 +321,7 @@ def build():
     # ---- 방법 5 ----
     hp = dino_hp or {}
     m5 = section("m5", "SAM + DINOv2 갤러리", badge("adopt"),
-        sub("실험 순서") + bullets([
-            "<b>방식</b>: 방법 4와 동일하되 임베딩을 CLIP → <b>DINOv2</b>(질감·형상 특징)로 교체",
-            f"<b>성과</b>: 임계값 {hp.get('tau')}에서 정밀도 {hp.get('precision')} = 무검수 기준(0.87) 최초 충족",
-            "<b>의의</b>: 방법 7(1탭 참조)의 이론적 기반이 됨",
-            "<b>비고</b>: 증거 이미지 미보존"]) +
+        desc_html("m5") + flow_of("m5") +
         sub("실제 입출력 결과") + '<p class="fn">증거 이미지 미보존 - 아래 지표로 확인</p>' +
         sub("실험 결과 (유사도 임계값별)") +
         verdict(f"고정밀 운영점 달성: 정밀도 {hp.get('precision')} / 재현율 {hp.get('recall')} (임계값 {hp.get('tau')})") +
@@ -337,11 +329,7 @@ def build():
 
     # ---- 방법 6 ----
     m6 = section("m6", "상호 일관성 매칭", badge("partial"),
-        sub("실험 순서") + bullets([
-            "<b>방식</b>: 등록 폴더(부품 1종)의 SAM 후보 중 '다른 모든 사진에도 비슷한 물체가 있는 후보'를 DINOv2 로 식별해 라벨링",
-            "<b>적용 ①</b>: 사진 묶음 시뮬 (부품 크롭 2종 × 15장) → 성공",
-            "<b>적용 ②</b>: 실사 기어박스 영상 49프레임 → <b>실패</b> (한 장면 영상은 배경도 매 프레임 등장해 매트·드릴·사람까지 오채택)",
-            "<b>교훈</b>: 채택률 98%라는 수치만 보면 합격이었으나, 육안 검증이 실패를 적발"]) +
+        desc_html("m6") + flow_of("m6") +
         code_html("m6") +
         sub("실제 입출력 결과") + gallery_html("mutual") +
         sub("실험 결과") +
@@ -352,10 +340,7 @@ def build():
 
     # ---- 방법 7 ----
     m7 = section("m7", "1탭 참조 매칭", badge("adopt"),
-        sub("실험 순서") + bullets([
-            "<b>방식</b>: 등록 화면에서 부품을 <b>한 번 클릭</b> → SAM 포인트 분할로 참조 크롭 확보 → 모든 프레임의 SAM 후보를 참조와 DINOv2 유사도(임계값 0.7)로 매칭",
-            "<b>데이터</b>: 실사 기어박스 영상 (1차 33프레임 → 완결 193프레임)",
-            "<b>검증</b>: 생성 라벨로 학습 후, 학습에 안 쓴 별도 영상(16프레임)에서 탐지 확인"]) +
+        desc_html("m7") + flow_of("m7") +
         code_html("m7") +
         sub("실제 입출력 결과") + gallery_html("one_tap") +
         sub("실험 결과") +
