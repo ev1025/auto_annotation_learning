@@ -82,9 +82,11 @@ def load_sweep(rel):
     bp = max(base, key=lambda s: s["precision"]) if base else {}
     p = bp.get("precision", 0)
     ok = "충족" if p >= 0.87 else "미달"
-    summary = (f"유사도 임계값을 높일수록 정밀도(맞은 라벨 비율)는 오르고 재현율(찾아낸 비율)은 "
-               f"떨어진다 - 맞바꿈 관계. 가장 높은 정밀도는 {p} (임계값 {bp.get('tau')}). "
-               f"사람 검수 없이 라벨로 쓰려면 정밀도 0.87 이상이어야 하는데 → {ok}.")
+    summary = "\n".join([
+        "**맞바꿈**: 유사도 임계값 ↑ → 정밀도(맞은 라벨 비율) ↑, 재현율(찾아낸 비율) ↓",
+        f"**최고 정밀도**: {p} (임계값 {bp.get('tau')})",
+        f"**판정**: 사람 검수 없이 쓸 기준(정밀도 0.87) → {ok}",
+    ])
     return (["유사도 임계값", "정밀도", "재현율"], rows, summary)
 
 

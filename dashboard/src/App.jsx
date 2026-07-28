@@ -12,6 +12,15 @@ function Badge({ kind, label }) {
   return <span className={`badge ${kind}`}>{label}</span>
 }
 
+// 요약: 줄바꿈(\n)이 있으면 개조식 불릿, 없으면 한 문단
+function Summary({ text, callout }) {
+  if (!text) return null
+  const lines = String(text).split('\n').filter(Boolean)
+  const cls = callout ? 'callout' : 'verdict'
+  if (lines.length <= 1) return <p className={cls}>{md(text)}</p>
+  return <ul className={`${cls} ${cls}-list`}>{lines.map((l, i) => <li key={i}>{md(l)}</li>)}</ul>
+}
+
 function Callout({ children }) {
   return <div className="callout">{children}</div>
 }
@@ -190,7 +199,7 @@ function MethodView({ id }) {
       )}
 
       <h3 className="section-h">실험 결과</h3>
-      {m.metrics.summary && <p className="verdict">{m.metrics.summary}</p>}
+      <Summary text={m.metrics.summary} />
       <MetricsTable metrics={m.metrics} />
       <SubTables tables={m.metrics.subtables} />
     </div>
@@ -234,7 +243,7 @@ function ExtraView() {
         ))}
       </div>
       {metrics && <>
-        {metrics.summary && <Callout>{metrics.summary}</Callout>}
+        <Summary text={metrics.summary} callout />
         <MetricsTable metrics={metrics} />
         <SubTables tables={metrics.subtables} />
       </>}
