@@ -242,7 +242,7 @@ def tech_html(mid):
     rows = "".join(
         f'<div class="tech-row"><span class="tech-name">{n}</span>'
         f'<span class="tech-desc">{d}</span></div>' for n, d in techs)
-    return f'<div class="tech"><div class="tech-title">사용 기술</div>{rows}</div>' 
+    return sub("사용 기술") + f'<div class="tech-list">{rows}</div>' 
 
 
 def bullets(items):
@@ -441,9 +441,8 @@ td{border-bottom:1px solid var(--line);padding:6px 10px}
 .method-desc{font-size:16px;font-weight:700;color:var(--ink);margin:6px 0 18px;line-height:1.6}
 ol{padding-left:22px}ol li{margin:5px 0}
 .subtable-title{font-size:14px;font-weight:600;color:var(--ink);margin:18px 0 6px}
-.tech{border-left:4px solid var(--accent);background:var(--bg);border-radius:0 8px 8px 0;padding:12px 16px;margin:4px 0 12px}
-.tech-title{font-size:12.5px;font-weight:700;color:var(--accent);margin-bottom:8px}
-.tech-row{display:flex;gap:10px;align-items:baseline;margin:4px 0;flex-wrap:wrap}
+.tech-list{margin:4px 0 6px}
+.tech-row{display:flex;gap:10px;align-items:baseline;margin:6px 0;flex-wrap:wrap}
 .tech-name{flex-shrink:0;font-weight:700;font-size:13.5px;color:var(--ink);background:#eef2ff;border:1px solid #c7d2fe;border-radius:6px;padding:1px 8px}
 .tech-desc{font-size:13.5px;color:var(--muted)}
 .flow{display:flex;flex-direction:column}

@@ -141,9 +141,9 @@ function MethodView({ id }) {
 
       {m.subtitle && <p className="method-desc">{m.subtitle}</p>}
 
-      {m.tech?.length > 0 && (
-        <div className="tech">
-          <div className="tech-title">사용 기술</div>
+      {m.tech?.length > 0 && (<>
+        <h3 className="section-h">사용 기술</h3>
+        <div className="tech-list">
           {m.tech.map(([name, desc], i) => (
             <div className="tech-row" key={i}>
               <span className="tech-name">{name}</span>
@@ -151,7 +151,7 @@ function MethodView({ id }) {
             </div>
           ))}
         </div>
-      )}
+      </>)}
 
       <h3 className="section-h">실험 순서</h3>
       {m.flow?.length
