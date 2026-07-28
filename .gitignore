@@ -44,3 +44,7 @@ uploads/
 # dashboard frontend
 dashboard/node_modules/
 dashboard/dist/
+
+# self-training 영상 실험 산출물 (models/runs/frames 대용량)
+exp_selftrain/
+models/sam/

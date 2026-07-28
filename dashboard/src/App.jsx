@@ -291,7 +291,7 @@ export default function App() {
       <aside>
         <div className="brand">
           <h1>오토라벨링 검증</h1>
-          <p>학습 라벨을 자동 생성하는<br />7가지 방법의 실험 기록</p>
+          <p>학습 라벨을 자동 생성하는<br />8가지 방법의 실험 기록</p>
         </div>
         <nav>
           <div className="nav-title">시도 방법 (번호 = 시도 순서)</div>

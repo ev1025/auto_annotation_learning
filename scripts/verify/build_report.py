@@ -189,6 +189,14 @@ def verdict(text):
     return f'<p class="verdict">{text}</p>'
 
 
+def verdict_ml(text):
+    """줄바꿈 있으면 개조식 불릿, 없으면 한 문단 (대시보드 Summary 와 동일 규칙)."""
+    lines = [l for l in text.split("\n") if l]
+    if len(lines) <= 1:
+        return verdict(_bold(text))
+    return '<ul class="verdict verdict-list">' + "".join(f"<li>{_bold(l)}</li>" for l in lines) + "</ul>"
+
+
 def code_html(mid):
     m = core.method_by_id(mid)
     blocks = []
@@ -281,6 +289,7 @@ def build():
         bar_row("5. SAM + DINOv2 갤러리", 0.927, " (임계값 0.85)", "adopt"),
         bar_row("6. 상호 일관성 매칭", None, "사진 묶음 성공 / 영상 실패 (배경 오채택)", "partial"),
         bar_row("7. 포인트 참조 매칭", None, "오채택 0 · 학습 후 미학습 영상 재현율 88% **", "adopt"),
+        bar_row("8. 포인트 참조 + self-training", None, "영상 자가증식 · 재현율 84% → 96% (+12%p) **", "adopt"),
     ])
     overview += ('<p class="fn">* 1번은 자체 실증 데이터(미라벨 풀 647장) 기준, 2~5번은 동일 평가셋 204장 기준. '
                  '** 7번은 영상 등록 실험이라 라벨 정밀도 대신 오채택·최종 탐지 성능으로 평가.</p>')
@@ -367,6 +376,15 @@ def build():
             ["학습 후 검증 (라벨 20장)", "미학습 영상 탐지 5/16장 (31%, conf 0.4)"],
             ["학습 후 검증 (라벨 114장)", "미학습 영상 탐지 14/16장 (88%, conf 0.4), 오탐 0"]]))
 
+    # ---- 방법 8 (포인트 참조 + self-training) ----
+    m8_m = core.method_metrics(core.method_by_id("m8"))
+    m8 = section("m8", "포인트 참조 + self-training", badge("adopt"),
+        desc_html("m8") + tech_html("m8") + flow_of("m8") +
+        sub("실제 입출력 결과") + gallery_html("selftrain") +
+        sub("실험 결과") +
+        verdict_ml(m8_m["summary"]) +
+        table(m8_m["headers"], m8_m["rows"]))
+
     # ---- 부록 ----
     bench = jload("bench_results/benchmark.json")
     bench_rows = [[r["model"], r["imgsz"], r["map50"], r["map50_95"],
@@ -392,13 +410,13 @@ def build():
                  ("m1", "self-training [채택]"), ("m2", "텍스트 제로샷"),
                  ("m3", "Grounded-SAM"), ("m4", "SAM+CLIP"),
                  ("m5", "SAM+DINOv2 [채택]"), ("m6", "상호 일관성"),
-                 ("m7", "포인트 참조 [채택]"), ("appendix", "부록 · 벤치마크")]
+                 ("m7", "포인트 참조 [채택]"), ("m8", "포인트+self-train [채택]"), ("appendix", "부록 · 벤치마크")]
     toc = "".join(f'<a href="#{a}">{t}</a>' for a, t in toc_items)
 
     intro = section("intro", "프로젝트 배경", "",
         "<p>헬기 정비 부품을 카메라로 자동 인식(탐지)하는 AI 를 만들고 있습니다. AI 학습에는 이미지마다 "
         "부품 위치를 표시한 <b>정답 박스(라벨)</b>가 필요한데, 이를 사람이 일일이 그리는 대신 "
-        "<b>자동으로 만드는 방법(오토라벨링)</b> 7가지를 실험하고 비교했습니다.</p>"
+        "<b>자동으로 만드는 방법(오토라벨링)</b> 8가지를 실험하고 비교했습니다.</p>"
         "<p>각 방법마다 같은 틀로 기록했습니다: <b>① 어떤 데이터를 어떻게 사용했나 → "
         "② 만들어진 라벨이 실제로 어떻게 생겼나(정답과 비교) → ③ 수치 성적과 판정.</b></p>" +
         sub("용어") +
@@ -411,7 +429,7 @@ def build():
             ["평가셋", "학습에 쓰지 않고 채점에만 쓰는 별도 문제지"]]))
 
     overview_sec = section("overview", "결과 한눈에 · 라벨 정밀도", "",
-        '<p>7가지 방법의 라벨 품질(정밀도)과 판정. 막대에 마우스를 올리면 값이 보입니다.</p>'
+        '<p>8가지 방법의 라벨 품질(정밀도)과 판정. 막대에 마우스를 올리면 값이 보입니다.</p>'
         f'<div class="bars">{overview}</div>')
 
     css = """
@@ -461,6 +479,8 @@ h3.section-h{font-size:16px;font-weight:700;color:var(--ink);border-left:4px sol
              background:var(--bg);padding:9px 14px;border-radius:0 8px 8px 0;margin:30px 0 16px}
 .method-desc + h3.section-h{margin-top:10px}
 .verdict{font-size:15px;color:var(--ink);margin:4px 0 12px;line-height:1.6}
+.verdict-list{list-style:none;padding:0}
+.verdict-list li{font-size:14.5px;line-height:1.6;margin:4px 0;padding-left:14px;border-left:3px solid var(--line)}
 .snippet{margin:14px 0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .snip-head{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;padding:8px 14px;
            background:var(--bg);border-bottom:1px solid var(--line)}
@@ -491,8 +511,8 @@ figcaption{font-size:13px;color:var(--muted);margin-top:4px;text-align:center}
 <nav><div class="box"><b style="font-size:13px;color:var(--muted)">목차</b>{toc}</div></nav>
 <main>
 <h1>오토라벨링 검증 리포트</h1>
-<p class="subtitle">사람 대신 AI 학습 라벨을 자동 생성하는 7가지 방법의 실험 기록 · XR 오토러닝 프로젝트</p>
-{intro}{overview_sec}{m1}{m2}{m3}{m4}{m5}{m6}{m7}{appendix}
+<p class="subtitle">사람 대신 AI 학습 라벨을 자동 생성하는 8가지 방법의 실험 기록 · XR 오토러닝 프로젝트</p>
+{intro}{overview_sec}{m1}{m2}{m3}{m4}{m5}{m6}{m7}{m8}{appendix}
 <p class="fn" style="text-align:center;margin:10px 0 30px">본 리포트는 scripts/verify/build_report.py 가 실험 결과 파일에서 자동 생성 · 수치 원본: exp_results/, bench_results/, exp_results/zeroshot/</p>
 </main></div></body></html>"""
     OUT.write_text(html, encoding="utf-8")

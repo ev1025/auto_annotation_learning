@@ -469,7 +469,7 @@ python scripts/experiments/benchmark.py --src ./data/robo_yolo \
 ### 6.6 육안 검증 (대시보드 + 리포트 내보내기)
 
 ```bash
-# 검증 대시보드 (React + FastAPI): 방법 7종의 데이터·증거이미지·지표 + 평가셋 전체 탐색 비교
+# 검증 대시보드 (React + FastAPI): 방법 8종의 데이터·증거이미지·지표 + 평가셋 전체 탐색 비교
 cd dashboard && npm install && npm run build && cd ..   # 프론트 변경 시에만 1회
 python scripts/verify/dashboard_api.py       # http://127.0.0.1:7862
 
