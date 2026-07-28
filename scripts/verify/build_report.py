@@ -205,6 +205,17 @@ def ordered(items):
     return "<ol>" + "".join(f"<li>{i}</li>" for i in items) + "</ol>"
 
 
+def flow_html(steps):
+    parts = []
+    for i, s in enumerate(steps):
+        if i:
+            parts.append('<div class="flow-arrow">↓</div>')
+        parts.append(
+            f'<div class="flow-node"><span class="flow-step">{s["step"]}</span>'
+            f'<span class="flow-text">{s["text"].replace("**","")}</span></div>')
+    return f'<div class="flow">{"".join(parts)}</div>'
+
+
 def bullets(items):
     return "<ul>" + "".join(f"<li>{i}</li>" for i in items) + "</ul>"
 
@@ -276,13 +287,13 @@ def build():
         '<p class="method-desc">텍스트 제로샷은 이 데이터로 학습을 전혀 하지 않고, 영어 프롬프트(설명 문구)만으로 '
         '물체를 찾는 방식이다. 범용 개방어휘 탐지기 Grounding DINO 가 \'이미지 영역이 어느 문구와 닮았나\'를 '
         '유사도로 매칭해 박스에 클래스를 붙인다 (글을 생성하는 LLM 이 아니라 텍스트·이미지 매칭 모델).</p>' +
-        sub("실험 순서") + ordered([
-            "<b>프롬프트 준비</b>: 부품마다 영어 설명 문구를 미리 지정 (metal hex bolt screw → bolt 등 4종, 매 이미지 동일)",
-            "<b>영역·텍스트 인코딩</b>: 이미지에서 물체 후보 영역을 뽑고, 프롬프트 4개를 각각 숫자 벡터로 변환",
-            "<b>유사도 매칭</b>: 영역 후보와 프롬프트의 유사도를 계산해 0.35 이상만 남기고, 가장 닮은 프롬프트를 그 박스의 클래스로 결정",
-            "<b>후처리</b>: 겹친 중복 박스(NMS)와 화면을 덮는 거대 박스 제거",
-            "<b>채점</b>: 정답을 숨긴 평가셋 204장에 적용, 숨긴 정답과 IoU 0.5 기준 대조",
-            "<b>탈락 사유</b>: 물체 위치는 곧잘 찾지만(재현율 0.42) hex bolt·hex nut 같은 유사 부품의 클래스를 자주 틀려 오탐이 맞춘 것의 3배 → 무검수 라벨로 부적합"]) +
+        sub("실험 순서") + flow_html([
+            {"step": "입력", "text": "이미지 1장 + 고정 영어 프롬프트 4개 (metal hex bolt screw → bolt 등, 매 이미지 동일)"},
+            {"step": "1", "text": "영역·텍스트 인코딩 — 물체 후보 영역을 뽑고, 프롬프트 4개를 각각 숫자 벡터로 변환"},
+            {"step": "2", "text": "유사도 매칭 — 영역 후보와 프롬프트의 유사도를 계산해 0.35 이상만 남기고, 가장 닮은 프롬프트를 클래스로 결정"},
+            {"step": "3", "text": "후처리 — 겹친 중복 박스(NMS)와 화면을 덮는 거대 박스 제거"},
+            {"step": "출력", "text": "자동 라벨 = 박스 + 클래스 여러 개"},
+            {"step": "채점", "text": "평가셋 204장에 적용, 숨긴 정답과 IoU 0.5 대조 → 정밀도 0.238 / 재현율 0.415 → 탈락 (유사 부품 클래스 혼동, 오탐 3배)"}]) +
         sub("실제 입출력 결과") + gallery_html("dino_text") +
         '<p class="fn">초록 = 모델 박스, 빨강 = 정답 라벨 (한 이미지에 겹쳐 표시)</p>' +
         sub("실험 결과") +
@@ -433,6 +444,13 @@ td{border-bottom:1px solid var(--line);padding:6px 10px}
 .method-desc{font-size:16px;font-weight:700;color:var(--ink);margin:6px 0 18px;line-height:1.6}
 ol{padding-left:22px}ol li{margin:5px 0}
 .subtable-title{font-size:14px;font-weight:600;color:var(--ink);margin:18px 0 6px}
+.flow{display:flex;flex-direction:column}
+.flow-node{display:flex;align-items:center;gap:12px;background:var(--bg);border:1px solid var(--line);
+           border-radius:10px;padding:11px 14px}
+.flow-arrow{color:var(--accent);font-size:20px;font-weight:700;line-height:1;padding-left:16px;margin:5px 0}
+.flow-step{flex-shrink:0;min-width:40px;text-align:center;background:var(--accent);color:#fff;
+           border-radius:6px;font-size:12.5px;font-weight:700;padding:4px 8px}
+.flow-text{font-size:14px;line-height:1.55}
 h3.section-h{font-size:16px;font-weight:700;color:var(--ink);border-left:4px solid var(--accent);
              background:var(--bg);padding:9px 14px;border-radius:0 8px 8px 0;margin:30px 0 16px}
 .method-desc + h3.section-h{margin-top:10px}

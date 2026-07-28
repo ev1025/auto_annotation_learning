@@ -92,6 +92,21 @@ h3.section-h {
 .verdict {
   font-size: 15px; color: var(--ink); margin: 4px 0 12px; line-height: 1.6;
 }
+.flow { display: flex; flex-direction: column; margin: 4px 0 6px; }
+.flow-node {
+  display: flex; align-items: flex-start; gap: 12px;
+  background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px;
+}
+.flow-arrow {
+  color: var(--accent); font-size: 20px; font-weight: 700; line-height: 1;
+  padding-left: 16px; margin: 5px 0;
+}
+.flow-step {
+  flex-shrink: 0; min-width: 40px; text-align: center; align-self: center;
+  background: var(--accent); color: #fff; border-radius: 6px;
+  font-size: 12.5px; font-weight: 700; padding: 4px 8px;
+}
+.flow-text { font-size: 14px; line-height: 1.55; align-self: center; }
 ul, ol { padding-left: 22px; }
 ol li { margin: 5px 0; padding-left: 3px; }
 .method-desc {

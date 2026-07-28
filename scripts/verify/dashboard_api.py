@@ -43,6 +43,7 @@ def api_method(mid: str):
     return {"id": m["id"], "no": m["no"], "title": m["title"],
             "badge": m["badge"], "badge_label": m["badge_label"], "live": m["live"],
             "subtitle": m.get("subtitle", ""), "ordered": m.get("ordered", False),
+            "flow": m.get("flow", []),
             "bullets": m["bullets"], "code": m.get("code", []),
             "gallery": core.method_gallery(m),
             "metrics": core.method_metrics(m)}

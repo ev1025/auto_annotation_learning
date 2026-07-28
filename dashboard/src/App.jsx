@@ -30,6 +30,22 @@ function MetricsTable({ metrics }) {
   )
 }
 
+function FlowDiagram({ steps }) {
+  return (
+    <div className="flow">
+      {steps.map((s, i) => (
+        <div key={i}>
+          {i > 0 && <div className="flow-arrow">↓</div>}
+          <div className="flow-node">
+            <span className="flow-step">{s.step}</span>
+            <span className="flow-text">{md(s.text)}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function SubTables({ tables }) {
   if (!tables?.length) return null
   return tables.map((t, i) => (
@@ -126,9 +142,11 @@ function MethodView({ id }) {
       {m.subtitle && <p className="method-desc">{m.subtitle}</p>}
 
       <h3 className="section-h">실험 순서</h3>
-      {m.ordered
-        ? <ol>{m.bullets.map((b, i) => <li key={i}>{md(b)}</li>)}</ol>
-        : <ul>{m.bullets.map((b, i) => <li key={i}>{md(b)}</li>)}</ul>}
+      {m.flow?.length
+        ? <FlowDiagram steps={m.flow} />
+        : m.ordered
+          ? <ol>{m.bullets.map((b, i) => <li key={i}>{md(b)}</li>)}</ol>
+          : <ul>{m.bullets.map((b, i) => <li key={i}>{md(b)}</li>)}</ul>}
 
       {m.code?.length > 0 && <>
         <h3 className="section-h">실제 코드</h3>
