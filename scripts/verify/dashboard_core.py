@@ -75,19 +75,17 @@ def load_sweep(rel):
     d = jload(rel)
     if not d:
         return None
-    has_margin = any("margin" in s for s in d.get("sweep", []))
-    if has_margin:
-        rows = [[s["tau"], s["margin"], s["precision"], s["recall"], s["f1"]] for s in d["sweep"]]
-        headers = ["유사도 임계값", "1·2위 격차 조건", "정밀도", "재현율", "F1"]
-    else:
-        rows = [[s["tau"], s["precision"], s["recall"], s["f1"]] for s in d["sweep"]]
-        headers = ["유사도 임계값", "정밀도", "재현율", "F1"]
-    b = d.get("best_f1", {})
-    hp = d.get("best_recall_at_p85")
-    summary = f"균형점: 임계값 {b.get('tau')} -> P {b.get('precision')} / R {b.get('recall')}"
-    summary += (f" / 고정밀 운영점: P {hp['precision']} R {hp['recall']} (임계값 {hp['tau']})"
-                if hp else " / 정밀도 0.85 달성 지점 없음")
-    return headers, rows, summary
+    # 기본 스윕(격차 규칙 없는 margin 0)만, 대표 임계값 4개로 압축
+    base = [s for s in d.get("sweep", []) if s.get("margin", 0.0) == 0.0]
+    key = (0.6, 0.7, 0.8, 0.85)
+    rows = [[s["tau"], s["precision"], s["recall"]] for s in base if s["tau"] in key]
+    bp = max(base, key=lambda s: s["precision"]) if base else {}
+    p = bp.get("precision", 0)
+    ok = "충족" if p >= 0.87 else "미달"
+    summary = (f"유사도 임계값을 높일수록 정밀도(맞은 라벨 비율)는 오르고 재현율(찾아낸 비율)은 "
+               f"떨어진다 - 맞바꿈 관계. 가장 높은 정밀도는 {p} (임계값 {bp.get('tau')}). "
+               f"사람 검수 없이 라벨로 쓰려면 정밀도 0.87 이상이어야 하는데 → {ok}.")
+    return (["유사도 임계값", "정밀도", "재현율"], rows, summary)
 
 
 def static_metrics(rows, summary):

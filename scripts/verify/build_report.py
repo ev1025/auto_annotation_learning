@@ -146,7 +146,7 @@ def zeroshot_rows(rel):
 
 def sweep_rows(rel, taus=(0.6, 0.7, 0.8, 0.85)):
     d = jload(rel)
-    rows = [[s["tau"], s["precision"], s["recall"], s["f1"]]
+    rows = [[s["tau"], s["precision"], s["recall"]]
             for s in d["sweep"] if s.get("margin", 0.0) == 0.0 and s["tau"] in taus]
     return rows, d.get("best_recall_at_p85")
 
@@ -327,8 +327,9 @@ def build():
         desc_html("m4") + tech_html("m4") + flow_of("m4") +
         sub("실제 입출력 결과") + '<p class="fn">증거 이미지 미보존 - 아래 지표로 확인</p>' +
         sub("실험 결과 (유사도 임계값별)") +
-        verdict("최고 정밀도 0.60 → 기준(0.87) 미달. 그러나 '시각 매칭이 텍스트보다 우월'을 입증해 방법 5로 이어짐") +
-        table(["유사도 임계값", "정밀도", "재현율", "F1"], clip_rows))
+        verdict("유사도 임계값을 높일수록 정밀도는 오르고 재현율은 떨어진다(맞바꿈). 최고 정밀도 0.60(임계값 0.85)으로 "
+                "사람 검수 없이 쓸 수 있는 기준(0.87)엔 미달. 다만 텍스트→시각 매칭 전환으로 정밀도가 2.5배(0.24→0.60) 올라 방법 5로 이어짐") +
+        table(["유사도 임계값", "정밀도", "재현율"], clip_rows))
 
     # ---- 방법 5 ----
     hp = dino_hp or {}
@@ -336,8 +337,9 @@ def build():
         desc_html("m5") + tech_html("m5") + flow_of("m5") +
         sub("실제 입출력 결과") + '<p class="fn">증거 이미지 미보존 - 아래 지표로 확인</p>' +
         sub("실험 결과 (유사도 임계값별)") +
-        verdict(f"고정밀 운영점 달성: 정밀도 {hp.get('precision')} / 재현율 {hp.get('recall')} (임계값 {hp.get('tau')})") +
-        table(["유사도 임계값", "정밀도", "재현율", "F1"], dino_rows))
+        verdict("유사도 임계값을 높일수록 정밀도는 오르고 재현율은 떨어진다(맞바꿈). 최고 정밀도 0.927(임계값 0.85)로 "
+                "사람 검수 없이 라벨로 쓸 수 있는 기준(정밀도 0.87)을 최초로 충족") +
+        table(["유사도 임계값", "정밀도", "재현율"], dino_rows))
 
     # ---- 방법 6 ----
     m6 = section("m6", "상호 일관성 매칭", badge("partial"),
