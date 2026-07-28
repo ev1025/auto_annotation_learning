@@ -141,6 +141,18 @@ function MethodView({ id }) {
 
       {m.subtitle && <p className="method-desc">{m.subtitle}</p>}
 
+      {m.tech?.length > 0 && (
+        <div className="tech">
+          <div className="tech-title">사용 기술</div>
+          {m.tech.map(([name, desc], i) => (
+            <div className="tech-row" key={i}>
+              <span className="tech-name">{name}</span>
+              <span className="tech-desc">{desc}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <h3 className="section-h">실험 순서</h3>
       {m.flow?.length
         ? <FlowDiagram steps={m.flow} />

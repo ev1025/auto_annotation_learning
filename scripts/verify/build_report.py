@@ -233,6 +233,18 @@ def flow_of(mid):
     return (sub("실험 순서") + flow_html(m["flow"])) if m and m.get("flow") else ""
 
 
+def tech_html(mid):
+    """사용 기술 콜아웃 = core 레지스트리의 tech 를 렌더."""
+    m = core.method_by_id(mid)
+    techs = m.get("tech", []) if m else []
+    if not techs:
+        return ""
+    rows = "".join(
+        f'<div class="tech-row"><span class="tech-name">{n}</span>'
+        f'<span class="tech-desc">{d}</span></div>' for n, d in techs)
+    return f'<div class="tech"><div class="tech-title">사용 기술</div>{rows}</div>' 
+
+
 def bullets(items):
     return "<ul>" + "".join(f"<li>{i}</li>" for i in items) + "</ul>"
 
@@ -283,7 +295,7 @@ def build():
     else:
         pair_html = f'<p class="fn">{pair_note}</p>'
     m1 = section("m1", "Pseudo-labeling", badge("adopt"),
-        desc_html("m1") + flow_of("m1") +
+        desc_html("m1") + tech_html("m1") + flow_of("m1") +
         code_html("m1") +
         sub("실제 입출력 결과") + pair_html +
         sub("실험 결과") +
@@ -295,7 +307,7 @@ def build():
 
     # ---- 방법 2 ----
     m2 = section("m2", "텍스트 제로샷 (Grounding DINO)", badge("drop"),
-        desc_html("m2") + flow_of("m2") +
+        desc_html("m2") + tech_html("m2") + flow_of("m2") +
         sub("실제 입출력 결과") + gallery_html("dino_text") +
         '<p class="fn">초록 = 모델 박스, 빨강 = 정답 라벨 (한 이미지에 겹쳐 표시)</p>' +
         sub("실험 결과") +
@@ -304,7 +316,7 @@ def build():
 
     # ---- 방법 3 ----
     m3 = section("m3", "Grounded-SAM 타이트박스", badge("drop"),
-        desc_html("m3") + flow_of("m3") +
+        desc_html("m3") + tech_html("m3") + flow_of("m3") +
         sub("실제 입출력 결과") + '<p class="fn">증거 이미지 미보존 - 아래 지표로 확인</p>' +
         sub("실험 결과") +
         verdict(f"정밀도 {gs_p} (방법 2와 동일 수준). 박스를 타이트하게 해도 성능이 안 올랐다 = 위치는 맞혔지만 '무슨 객체인지'를 못 맞힌 것 → 병목은 박스 여백이 아니라 클래스 오분류로 판명") +
@@ -312,7 +324,7 @@ def build():
 
     # ---- 방법 4 ----
     m4 = section("m4", "SAM + CLIP 갤러리", badge("drop"),
-        desc_html("m4") + flow_of("m4") +
+        desc_html("m4") + tech_html("m4") + flow_of("m4") +
         sub("실제 입출력 결과") + '<p class="fn">증거 이미지 미보존 - 아래 지표로 확인</p>' +
         sub("실험 결과 (유사도 임계값별)") +
         verdict("최고 정밀도 0.60 → 기준(0.87) 미달. 그러나 '시각 매칭이 텍스트보다 우월'을 입증해 방법 5로 이어짐") +
@@ -321,7 +333,7 @@ def build():
     # ---- 방법 5 ----
     hp = dino_hp or {}
     m5 = section("m5", "SAM + DINOv2 갤러리", badge("adopt"),
-        desc_html("m5") + flow_of("m5") +
+        desc_html("m5") + tech_html("m5") + flow_of("m5") +
         sub("실제 입출력 결과") + '<p class="fn">증거 이미지 미보존 - 아래 지표로 확인</p>' +
         sub("실험 결과 (유사도 임계값별)") +
         verdict(f"고정밀 운영점 달성: 정밀도 {hp.get('precision')} / 재현율 {hp.get('recall')} (임계값 {hp.get('tau')})") +
@@ -329,7 +341,7 @@ def build():
 
     # ---- 방법 6 ----
     m6 = section("m6", "상호 일관성 매칭", badge("partial"),
-        desc_html("m6") + flow_of("m6") +
+        desc_html("m6") + tech_html("m6") + flow_of("m6") +
         code_html("m6") +
         sub("실제 입출력 결과") + gallery_html("mutual") +
         sub("실험 결과") +
@@ -340,7 +352,7 @@ def build():
 
     # ---- 방법 7 ----
     m7 = section("m7", "1탭 참조 매칭", badge("adopt"),
-        desc_html("m7") + flow_of("m7") +
+        desc_html("m7") + tech_html("m7") + flow_of("m7") +
         code_html("m7") +
         sub("실제 입출력 결과") + gallery_html("one_tap") +
         sub("실험 결과") +
@@ -429,6 +441,11 @@ td{border-bottom:1px solid var(--line);padding:6px 10px}
 .method-desc{font-size:16px;font-weight:700;color:var(--ink);margin:6px 0 18px;line-height:1.6}
 ol{padding-left:22px}ol li{margin:5px 0}
 .subtable-title{font-size:14px;font-weight:600;color:var(--ink);margin:18px 0 6px}
+.tech{border-left:4px solid var(--accent);background:var(--bg);border-radius:0 8px 8px 0;padding:12px 16px;margin:4px 0 12px}
+.tech-title{font-size:12.5px;font-weight:700;color:var(--accent);margin-bottom:8px}
+.tech-row{display:flex;gap:10px;align-items:baseline;margin:4px 0;flex-wrap:wrap}
+.tech-name{flex-shrink:0;font-weight:700;font-size:13.5px;color:var(--ink);background:#eef2ff;border:1px solid #c7d2fe;border-radius:6px;padding:1px 8px}
+.tech-desc{font-size:13.5px;color:var(--muted)}
 .flow{display:flex;flex-direction:column}
 .flow-node{display:flex;align-items:center;gap:12px;background:var(--bg);border:1px solid var(--line);
            border-radius:10px;padding:11px 14px}
