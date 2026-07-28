@@ -153,10 +153,12 @@ function MethodView({ id }) {
       {m.tech?.length > 0 && (<>
         <h3 className="section-h">사용 기술</h3>
         <div className="tech-list">
-          {m.tech.map(([name, desc], i) => (
+          {m.tech.map((t, i) => (
             <div className="tech-row" key={i}>
-              <span className="tech-name">{name}</span>
-              <span className="tech-desc">{desc}</span>
+              <span className="tech-name">{t.name}</span>
+              <span className="tech-desc">
+                {t.desc}{t.usage && <span className="tech-usage"> · {t.usage}</span>}
+              </span>
             </div>
           ))}
         </div>

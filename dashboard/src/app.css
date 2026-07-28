@@ -107,6 +107,7 @@ h3.section-h {
   background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 1px 8px;
 }
 .tech-desc { font-size: 13.5px; color: var(--muted); }
+.tech-usage { color: var(--accent); }
 .flow { display: flex; flex-direction: column; margin: 4px 0 6px; }
 .flow-node {
   display: flex; align-items: flex-start; gap: 12px;

@@ -236,12 +236,14 @@ def flow_of(mid):
 def tech_html(mid):
     """사용 기술 콜아웃 = core 레지스트리의 tech 를 렌더."""
     m = core.method_by_id(mid)
-    techs = m.get("tech", []) if m else []
+    techs = core.resolve_tech(m) if m else []
     if not techs:
         return ""
-    rows = "".join(
-        f'<div class="tech-row"><span class="tech-name">{n}</span>'
-        f'<span class="tech-desc">{d}</span></div>' for n, d in techs)
+    rows = ""
+    for tc in techs:
+        usage = f' <span class="tech-usage">· {tc["usage"]}</span>' if tc["usage"] else ""
+        rows += (f'<div class="tech-row"><span class="tech-name">{tc["name"]}</span>'
+                 f'<span class="tech-desc">{tc["desc"]}{usage}</span></div>')
     return sub("사용 기술") + f'<div class="tech-list">{rows}</div>' 
 
 
@@ -447,6 +449,7 @@ ol{padding-left:22px}ol li{margin:5px 0}
 .tech-row{display:flex;gap:10px;align-items:baseline;margin:6px 0;flex-wrap:wrap}
 .tech-name{flex-shrink:0;font-weight:700;font-size:13.5px;color:var(--ink);background:#eef2ff;border:1px solid #c7d2fe;border-radius:6px;padding:1px 8px}
 .tech-desc{font-size:13.5px;color:var(--muted)}
+.tech-usage{color:var(--accent)}
 .flow{display:flex;flex-direction:column}
 .flow-node{display:flex;align-items:center;gap:12px;background:var(--bg);border:1px solid var(--line);
            border-radius:10px;padding:11px 14px}
