@@ -509,7 +509,6 @@ function AutoLabelView() {
         {/* 현재 부품 */}
         <div className="wiz-head">
           <span className="wiz-title">{partName}</span>
-          <span className="wiz-idx">{partIdx + 1} / {partFolders.length}</span>
           <span style={{ marginLeft: 'auto' }} />
           <button className="al-secondary sm" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}>◀ 이전</button>
           <button className="al-secondary sm" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1}>다음 ▶</button>
@@ -534,6 +533,7 @@ function AutoLabelView() {
           <button className="chip" onClick={() => setIdx(i => Math.max(i - 1, 0))} disabled={running}>◀</button>
           <input className="al-slider" type="range" min={0} max={Math.max(count - 1, 0)} value={idx}
                  onChange={(e) => setIdx(+e.target.value)} disabled={running} />
+          <span className="al-hint" style={{ minWidth: 54, textAlign: 'center' }}>{idx + 1}/{count}</span>
           <button className="chip" onClick={() => setIdx(i => Math.min(i + 1, count - 1))} disabled={running}>▶</button>
           <button className="chip" onClick={() => setIdx(i => Math.min(i + 10, count - 1))} disabled={running}>10▶▶</button>
           <button className="chip" onClick={undo} disabled={running || !cur.length}>점 취소</button>
@@ -541,7 +541,7 @@ function AutoLabelView() {
           <button className="cmp-random" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
             {maskBusy ? '생성 중...' : '입력 마스크 확인'}
           </button>
-          <span className="al-hint">{idx + 1}/{count} · 점 {cur.length}</span>
+          <span className="al-hint">점 {cur.length}</span>
         </div>
 
         {/* 입력 마스크 크게 확인 (주요 콘텐츠) */}

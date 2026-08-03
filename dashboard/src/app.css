@@ -255,9 +255,9 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 }
 .al-frame img { width: 100%; display: block; }
 .al-dot {
-  position: absolute; width: 16px; height: 16px; border-radius: 50%;
-  transform: translate(-50%, -50%); border: 2px solid #fff;
-  box-shadow: 0 0 0 1.5px rgba(0,0,0,0.45); pointer-events: none;
+  position: absolute; width: 10px; height: 10px; border-radius: 50%;
+  transform: translate(-50%, -50%); border: 1.5px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.45); pointer-events: none;
 }
 .al-dot.pos { background: #2563eb; }
 .al-dot.neg { background: #ef4444; }
