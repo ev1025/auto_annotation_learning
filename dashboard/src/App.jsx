@@ -414,6 +414,13 @@ function AutoLabelView() {
   }
   const nLabeled = partFolders.filter(pf => pfTrain(pf).some(isLabeled)).length
   const curShots = buildShots(src)                 // 현재 학습 테이크의 유효 참조샷
+  const shotFrames = Object.keys(pts).map(Number).filter(i => (pts[i] || []).length).sort((a, b) => a - b)  // 이 영상에서 탭한 프레임들
+  const goShot = (i) => { setIdx(i); setActiveShot(shotKey(src, i)) }   // 그 프레임으로 이동 + (캐시 있으면) 마스크 표시
+  const deleteShotFrame = (i) => {                  // 그 프레임 탭 삭제
+    dropMask(src, i)
+    setPtsBySrc(prev => { const vp = { ...(prev[src] || {}) }; delete vp[i]; return { ...prev, [src]: vp } })
+    setActiveShot(c => c === shotKey(src, i) ? null : c)
+  }
 
   // 현재 프레임 마스크 확인(가볍게, 단일 프레임) → 크게 표시
   const previewMask = async () => {
@@ -495,81 +502,103 @@ function AutoLabelView() {
         {prepProg && <span className="al-hint" style={{ fontWeight: 400, marginLeft: 10 }}>⏳ {prepProg}</span>}
       </h3>
 
-      {/* 부품 진행 레일: 클릭하면 그 부품으로 이동 */}
-      <div className="part-rail">
-        {partFolders.map((pf, i) => (
-          <button key={pf.folder} className={`part-chip ${pfStatus(pf)} ${i === partIdx ? 'on' : ''}`}
-                  onClick={() => goPart(i)} disabled={running} title={partOf(pf.folder)}>
-            {partOf(pf.folder)}
-          </button>
-        ))}
-      </div>
+      {!src ? <p className="al-hint">부품 폴더가 없습니다. (data/bell412/parts/&lt;부품&gt;/videos)</p> : (
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+          {/* 부품 목록: 세로 스크롤 박스 */}
+          <div className="part-list">
+            {partFolders.map((pf, i) => (
+              <button key={pf.folder} className={`part-item ${pfStatus(pf)} ${i === partIdx ? 'on' : ''}`}
+                      onClick={() => goPart(i)} disabled={running} title={partOf(pf.folder)}>
+                {partOf(pf.folder)}
+              </button>
+            ))}
+          </div>
 
-      {!src ? <p className="al-hint">부품 폴더가 없습니다. (data/bell412/parts/&lt;부품&gt;/videos)</p> : <>
-        {/* 현재 부품 */}
-        <div className="wiz-head">
-          <span className="wiz-title">{partName}</span>
-          <span style={{ marginLeft: 'auto' }} />
-          <button className="al-secondary sm" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}>◀ 이전</button>
-          <button className="al-secondary sm" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1}>다음 ▶</button>
-        </div>
-
-        {preparing
-          ? <div className="al-frame" style={{ display: 'inline-block', padding: 30, textAlign: 'center', cursor: 'default' }}>
-              <span className="al-hint" style={{ color: '#e2e8f0' }}>프레임 컷 중...</span>
+          {/* 오른쪽: 액션 + 이미지 + 마스크 + 프레임 */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="wiz-head">
+              <span className="wiz-title">{partName}</span>
+              <button className="al-secondary sm" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}>◀ 이전</button>
+              <button className="al-secondary sm" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1}>다음 ▶</button>
+              <button className="cmp-random" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
+                {maskBusy ? '생성 중...' : '입력 마스크 확인'}
+              </button>
+              <button className="al-primary" onClick={genLabel} disabled={running || curShots.length === 0}>
+                {labelStatus?.running ? '라벨 생성 중...' : (isLabeled(src) ? '↻ 라벨 다시 생성' : '라벨 생성')}
+              </button>
+              {labelStatus && !labelStatus.error && labelStatus.video === src &&
+                <span className="al-hint">{labelStatus.running ? '전파 중...' : (labelStatus.stage === 'done' ? `✓ 라벨 ${labelStatus.labels}장` : '')}</span>}
             </div>
-          : <div className="al-frame" style={{ display: 'inline-block', width: 'auto', maxWidth: '100%' }}
-                 onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
-              {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false}
-                           style={{ width: 'auto', maxHeight: 420, maxWidth: 560 }} />}
-              {cur.map((p, i) => (
-                <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
-                      style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />
-              ))}
-            </div>}
 
-        <div className="al-controls">
-          <button className="chip" onClick={() => setIdx(i => Math.max(i - 10, 0))} disabled={running}>◀◀10</button>
-          <button className="chip" onClick={() => setIdx(i => Math.max(i - 1, 0))} disabled={running}>◀</button>
-          <input className="al-slider" type="range" min={0} max={Math.max(count - 1, 0)} value={idx}
-                 onChange={(e) => setIdx(+e.target.value)} disabled={running} />
-          <span className="al-hint" style={{ minWidth: 54, textAlign: 'center' }}>{idx + 1}/{count}</span>
-          <button className="chip" onClick={() => setIdx(i => Math.min(i + 1, count - 1))} disabled={running}>▶</button>
-          <button className="chip" onClick={() => setIdx(i => Math.min(i + 10, count - 1))} disabled={running}>10▶▶</button>
-          <button className="chip" onClick={undo} disabled={running || !cur.length}>점 취소</button>
-          <button className="chip" onClick={clearFrame} disabled={running || !cur.length}>지우기</button>
-          <button className="cmp-random" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
-            {maskBusy ? '생성 중...' : '입력 마스크 확인'}
-          </button>
-          <span className="al-hint">점 {cur.length}</span>
-        </div>
-
-        {/* 입력 마스크 크게 확인 (주요 콘텐츠) */}
-        {activeMask && (activeMask.error
-          ? <p className="fn" style={{ color: '#b91c1c' }}>마스크 오류: {activeMask.error}</p>
-          : <div className="al-maskbig">
-              <div className="al-maskbig-cap">
-                입력 마스크 · <span className="mk-g">초록=마스크</span> <span className="mk-o">주황=박스</span> <span className="mk-b">파랑=포함점</span> <span className="mk-r">빨강=제외점</span>
-                {typeof activeMask.area_frac === 'number' && <> · 면적 {(activeMask.area_frac * 100).toFixed(1)}%</>}
+            {/* 탭 이미지 · 입력 마스크 결과 */}
+            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              {preparing
+                ? <div className="al-frame" style={{ display: 'inline-block', padding: 30, textAlign: 'center', cursor: 'default' }}>
+                    <span className="al-hint" style={{ color: '#e2e8f0' }}>프레임 컷 중...</span>
+                  </div>
+                : <div className="al-frame" style={{ display: 'inline-block', width: 'auto', maxWidth: '100%' }}
+                       onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
+                    {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false}
+                                 style={{ width: 'auto', maxHeight: 420, maxWidth: 500 }} />}
+                    {cur.map((p, i) => (
+                      <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
+                            style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />
+                    ))}
+                  </div>}
+              <div style={{ flex: 1, minWidth: 240 }}>
+                {activeMask
+                  ? (activeMask.error
+                      ? <p className="fn" style={{ color: '#b91c1c' }}>마스크 오류: {activeMask.error}</p>
+                      : <div className="al-maskbig">
+                          <div className="al-maskbig-cap">
+                            입력 마스크 · <span className="mk-g">초록=마스크</span> <span className="mk-o">주황=박스</span> <span className="mk-b">파랑=포함점</span> <span className="mk-r">빨강=제외점</span>
+                            {typeof activeMask.area_frac === 'number' && <> · 면적 {(activeMask.area_frac * 100).toFixed(1)}%</>}
+                          </div>
+                          <img src={activeMask.combo} alt="입력 마스크" />
+                        </div>)
+                  : <p className="al-hint">탭 후 <b>입력 마스크 확인</b>을 누르면 여기에 마스크가 나옵니다.</p>}
               </div>
-              <img src={activeMask.combo} alt="입력 마스크" />
-            </div>)}
+            </div>
 
-        {/* 라벨 생성 → 다음 부품 */}
-        <div className="al-controls" style={{ marginTop: 14 }}>
-          <button className="al-primary" onClick={genLabel}
-                  disabled={running || curShots.length === 0}>
-            {labelStatus?.running ? '라벨 생성 중...' : (isLabeled(src) ? '↻ 라벨 다시 생성' : '라벨 생성')}
-          </button>
-          {labelStatus && !labelStatus.error && labelStatus.video === src &&
-            <span className="al-hint">
-              {labelStatus.running ? '전파 중...' : (labelStatus.stage === 'done' ? `✓ 라벨 ${labelStatus.labels}장` : '')}
-            </span>}
+            {/* 프레임 이동 */}
+            <div className="al-controls">
+              <button className="chip" onClick={() => setIdx(i => Math.max(i - 10, 0))} disabled={running}>◀◀10</button>
+              <button className="chip" onClick={() => setIdx(i => Math.max(i - 1, 0))} disabled={running}>◀</button>
+              <input className="al-slider" type="range" min={0} max={Math.max(count - 1, 0)} value={idx}
+                     onChange={(e) => setIdx(+e.target.value)} disabled={running} />
+              <span className="al-hint" style={{ minWidth: 54, textAlign: 'center' }}>{idx + 1}/{count}</span>
+              <button className="chip" onClick={() => setIdx(i => Math.min(i + 1, count - 1))} disabled={running}>▶</button>
+              <button className="chip" onClick={() => setIdx(i => Math.min(i + 10, count - 1))} disabled={running}>10▶▶</button>
+              <button className="chip" onClick={undo} disabled={running || !cur.length}>점 취소</button>
+              <button className="chip" onClick={clearFrame} disabled={running || !cur.length}>지우기</button>
+            </div>
+
+            {/* 이 영상에서 탭한 프레임(참조샷): 클릭하면 그 프레임으로 이동 확인, ×로 삭제 */}
+            {shotFrames.length > 0 && (
+              <div className="al-shots">
+                <span className="al-hint" style={{ marginRight: 4 }}>참조샷:</span>
+                {shotFrames.map(i => {
+                  const npos = (pts[i] || []).filter(p => p.lab === 1).length
+                  const nneg = (pts[i] || []).length - npos
+                  const done = !!masks[shotKey(src, i)] && !masks[shotKey(src, i)].error
+                  return (
+                    <span key={i} className="al-shot-wrap">
+                      <button className={`al-shot ${idx === i ? 'on' : ''} ${npos >= 1 ? '' : 'bad'}`}
+                              onClick={() => goShot(i)} disabled={running}>
+                        {done ? '✓ ' : ''}#{i} +{npos}{nneg ? `/-${nneg}` : ''}
+                      </button>
+                      <span className="al-shot-x" title="이 프레임 탭 삭제" onClick={() => !running && deleteShotFrame(i)}>×</span>
+                    </span>
+                  )
+                })}
+              </div>
+            )}
+            {labelStatus?.error && <p className="fn" style={{ color: '#b91c1c' }}>오류: {labelStatus.error}</p>}
+            {genDone && labelStatus.taps?.length > 0 &&
+              <div className="al-thumbs">{labelStatus.taps.map((u, i) => <img key={i} src={u} alt={`tap ${i}`} />)}</div>}
+          </div>
         </div>
-        {labelStatus?.error && <p className="fn" style={{ color: '#b91c1c' }}>오류: {labelStatus.error}</p>}
-        {genDone && labelStatus.taps?.length > 0 &&
-          <div className="al-thumbs">{labelStatus.taps.map((u, i) => <img key={i} src={u} alt={`tap ${i}`} />)}</div>}
-      </>}
+      )}
 
       {/* 멀티클래스 학습 */}
       {nLabeled > 0 && <>

@@ -323,8 +323,27 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .part-chip.on.done::before { color: #dcfce7; }
 .part-chip:disabled { opacity: 0.55; cursor: default; }
 
+/* 부품 목록: 세로 스크롤 박스(좁게) */
+.part-list {
+  flex: 0 0 auto; width: 172px; max-height: 520px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 4px; padding: 6px;
+  background: #f8fafc; border: 1px solid var(--line); border-radius: 10px;
+}
+.part-item {
+  text-align: left; padding: 5px 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: #fff; color: var(--ink); font-family: inherit; font-size: 12.5px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.part-item:hover:not(:disabled) { border-color: var(--accent); }
+.part-item.tapped { border-color: #fcd34d; background: #fffbeb; }
+.part-item.done { border-color: #86efac; background: #f0fdf4; }
+.part-item.done::before { content: '✓ '; color: #16a34a; font-weight: 700; }
+.part-item.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.part-item.on.done::before { color: #dcfce7; }
+.part-item:disabled { opacity: 0.55; cursor: default; }
+
 /* 현재 부품 헤더 */
-.wiz-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 18px 0 6px; }
+.wiz-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; }
 .wiz-title { font-size: 18px; font-weight: 700; color: var(--ink); word-break: break-all; }
 .wiz-idx { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
