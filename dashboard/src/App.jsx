@@ -511,24 +511,8 @@ function AutoLabelView() {
       </h3>
 
       {!src ? <p className="al-hint">부품 폴더가 없습니다. (data/bell412/parts/&lt;부품&gt;/videos)</p> : (
-        <div>
-          {/* 부품 목록: 상단 가로 스트립. 라벨된 부품은 체크박스로 학습 포함/제외 */}
-          <div className="part-rail">
-            {partFolders.map((pf, i) => {
-              const part = partOf(pf.folder)
-              const labeled = pfTrain(pf).some(isLabeled)
-              return (
-                <div key={pf.folder} className={`part-chip ${pfStatus(pf)} ${i === partIdx ? 'on' : ''}`}
-                     onClick={() => !running && goPart(i)} title={part}>
-                  {labeled && <input type="checkbox" className="part-ck" checked={!excluded.includes(part)}
-                                     onClick={e => e.stopPropagation()} onChange={() => toggleExcluded(part)} disabled={running} />}
-                  <span>{part}</span>
-                </div>
-              )
-            })}
-          </div>
-
-          <div>
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div className="wiz-head">
               <span className="wiz-title">{partName}</span>
               <span className="al-hint">좌클릭(포함점)·우클릭(제외점) 후 <b>입력 마스크 확인</b> → 오른쪽에 마스크.</span>
@@ -560,7 +544,7 @@ function AutoLabelView() {
                 : <div className="al-frame" style={{ display: 'inline-block', flex: '0 0 auto', width: 'auto', maxWidth: '100%' }}
                        onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
                     {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false}
-                                 style={{ width: 'auto', maxHeight: 440, maxWidth: 440 }} />}
+                                 style={{ width: 'auto', maxHeight: 400, maxWidth: 340 }} />}
                     {cur.map((p, i) => (
                       <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
                             style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />
@@ -569,7 +553,7 @@ function AutoLabelView() {
               {activeMask && (activeMask.error
                 ? <p className="fn" style={{ color: '#b91c1c' }}>마스크 오류: {activeMask.error}</p>
                 : <div className="al-frame" style={{ display: 'inline-block', flex: '0 0 auto', cursor: 'default' }}>
-                    <img src={activeMask.combo} alt="입력 마스크" style={{ width: 'auto', maxHeight: 440, maxWidth: 440 }} />
+                    <img src={activeMask.combo} alt="입력 마스크" style={{ width: 'auto', maxHeight: 400, maxWidth: 340 }} />
                   </div>)}
             </div>
             {activeMask && !activeMask.error &&
@@ -617,6 +601,22 @@ function AutoLabelView() {
             {labelStatus?.error && <p className="fn" style={{ color: '#b91c1c' }}>오류: {labelStatus.error}</p>}
             {genDone && labelStatus.taps?.length > 0 &&
               <div className="al-thumbs">{labelStatus.taps.map((u, i) => <img key={i} src={u} alt={`tap ${i}`} />)}</div>}
+          </div>
+
+          {/* 오른쪽: 부품 목록 세로. 라벨된 부품은 체크박스로 학습 포함/제외 */}
+          <div className="part-list">
+            {partFolders.map((pf, i) => {
+              const part = partOf(pf.folder)
+              const labeled = pfTrain(pf).some(isLabeled)
+              return (
+                <div key={pf.folder} className={`part-item ${pfStatus(pf)} ${i === partIdx ? 'on' : ''}`}
+                     onClick={() => !running && goPart(i)} title={part}>
+                  {labeled && <input type="checkbox" className="part-ck" checked={!excluded.includes(part)}
+                                     onClick={e => e.stopPropagation()} onChange={() => toggleExcluded(part)} disabled={running} />}
+                  <span className="part-name">{part}</span>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
