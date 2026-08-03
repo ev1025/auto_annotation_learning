@@ -251,7 +251,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .al-frame {
   position: relative; display: block; width: 100%;
   border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
-  cursor: crosshair; user-select: none; background: #0f172a; line-height: 0;
+  cursor: crosshair; user-select: none; background: #f1f5f9; line-height: 0;
 }
 .al-frame img { width: 100%; display: block; }
 .al-dot {
@@ -311,17 +311,14 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
   background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; margin: 8px 0 4px;
 }
 .part-chip {
-  flex: 0 0 auto; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
   padding: 5px 11px; border: 1px solid var(--line); border-radius: 16px;
   background: #fff; color: var(--ink); font-family: inherit; font-size: 12.5px; cursor: pointer;
 }
-.part-chip:hover:not(:disabled) { border-color: var(--accent); }
+.part-chip:hover { border-color: var(--accent); }
 .part-chip.tapped { border-color: #fcd34d; background: #fffbeb; }
 .part-chip.done { border-color: #86efac; background: #f0fdf4; }
-.part-chip.done::before { content: '✓ '; color: #16a34a; font-weight: 700; }
 .part-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-.part-chip.on.done::before { color: #dcfce7; }
-.part-chip:disabled { opacity: 0.55; cursor: default; }
 
 /* 부품 목록: 세로 스크롤 박스(좁게) */
 .part-list {
