@@ -264,62 +264,44 @@ function BenchmarkView() {
   )
 }
 
-// 포인트 참조 오토라벨: 프레임 넘기며 클릭 → 자동 라벨 생성
+// 부품 라벨링(SAM2): 장비(부품)마다 탭 → 입력 마스크 확인 → 라벨 생성 → 다음 부품 → 다 모으면 멀티클래스 학습
 function AutoLabelView() {
   const [folders, setFolders] = useState([])        // [{folder,label,videos:[{name,count,ready}]}]
   const [folder, setFolder] = useState(null)        // 선택한 폴더(data 기준 rel 경로)
-  const [src, setSrc] = useState(null)              // 폴더 안에서 지금 탭 중인 영상
-  const [count, setCount] = useState(0)
-  const [idx, setIdx] = useState(0)
-  const [ptsBySrc, setPtsBySrc] = useState(() => {  // { 영상: { 프레임: [{rx,ry,lab}] } } 영상별 보관(폴더 넘어 누적)
+  const [partIdx, setPartIdx] = useState(0)         // 폴더 안 현재 부품(영상) 인덱스
+  const [count, setCount] = useState(0)             // 현재 부품 프레임 수
+  const [idx, setIdx] = useState(0)                 // 현재 프레임
+  const [ptsBySrc, setPtsBySrc] = useState(() => {  // { 영상: { 프레임: [{rx,ry,lab}] } } 영상별 보관
     try { return JSON.parse(localStorage.getItem('autolabel_shots_v1') || '{}') } catch { return {} }
   })
   const [preparing, setPreparing] = useState(false)
-  const [masks, setMasks] = useState({})            // {"영상:프레임": {pts_img,mask_img,box_img,area_frac,bbox}}
-  const [activeShot, setActiveShot] = useState(null)// 지금 이미지 보고 있는 참조샷 키
+  const [masks, setMasks] = useState({})            // {"영상:프레임": {combo,area_frac,bbox}}
+  const [activeShot, setActiveShot] = useState(null)// 크게 보고 있는 마스크 참조샷 키
   const [maskBusy, setMaskBusy] = useState(false)
-  const [maskProg, setMaskProg] = useState('')
-  const [propJob, setPropJob] = useState(null)
-  const [propStatus, setPropStatus] = useState(null)
+
+  const [session, setSession] = useState(() => localStorage.getItem('parts_session_v1') || null)
+  const [labeledMap, setLabeledMap] = useState({})  // {영상: {labels,frames}} 현재 세션에 라벨된 부품
+  const [labelJob, setLabelJob] = useState(null)
+  const [labelStatus, setLabelStatus] = useState(null)
+
+  const [evalSel, setEvalSel] = useState([])        // 평가(test) 영상
   const [trainJob, setTrainJob] = useState(null)
   const [trainStatus, setTrainStatus] = useState(null)
-  const [labeled, setLabeled] = useState({})        // {영상: [실행들]} 라벨 생성된 영상
-  const [trainSel, setTrainSel] = useState([])      // 학습에 쓸 영상 이름들(폴더 넘어)
-  const [evalSel, setEvalSel] = useState([])        // 평가할 영상 이름들
-  const running = !!propStatus?.running || !!trainStatus?.running
 
-  const loadLabeled = useCallback(() => {
-    fetch('/api/sam2/labeled').then(r => r.json()).then(setLabeled).catch(() => {})
-  }, [])
+  const running = !!labelStatus?.running || !!trainStatus?.running
+
+  const folderObj = folders.find(f => f.folder === folder)
+  const folderVideos = folderObj?.videos || []
+  const curPart = folderVideos[partIdx]
+  const src = curPart?.name || null
 
   const markReady = (name, cnt) => setFolders(prev => prev.map(f => ({
     ...f, videos: f.videos.map(v => v.name === name ? { ...v, ready: true, count: cnt } : v)
   })))
-
-  const prepareSrc = async (name, ready) => {   // 프레임 미컷이면 컷
-    if (ready) return
+  const prepareSrc = async (name) => {   // 프레임 미컷이면 컷
     setPreparing(true)
     const d = await fetch(`/api/autolabel/prepare?src=${encodeURIComponent(name)}`).then(r => r.json())
     setPreparing(false); setCount(d.count || 0); markReady(name, d.count || 0)
-  }
-
-  const pickSrc = (fo, name) => {   // 폴더 fo 안의 영상 name 을 탭 대상으로
-    const v = fo?.videos.find(x => x.name === name)
-    setSrc(name); setCount(v?.count || 0); setIdx(0); setPropStatus(null); setPropJob(null)
-    prepareSrc(name, v?.ready)
-  }
-  const chooseSrc = (name) => pickSrc(folders.find(f => f.folder === folder), name)
-
-  const nameSel = (fo, kw) => fo.videos.filter(v => v.name.toLowerCase().includes(kw)).map(v => v.name)
-  const applyFolder = (fo) => {   // 폴더 선택 시 첫 영상 준비 + 학습/평가 기본선택(이름 기준, 이 폴더 안만)
-    setTrainSel(nameSel(fo, 'train')); setEvalSel(nameSel(fo, 'test'))
-    const first = fo.videos.find(v => !v.name.toLowerCase().startsWith('test')) || fo.videos[0]
-    if (first) pickSrc(fo, first.name); else setSrc(null)
-  }
-  const chooseFolder = (rel) => {
-    const fo = folders.find(f => f.folder === rel)
-    if (!fo) return
-    setFolder(rel); setTrainStatus(null); setTrainJob(null); applyFolder(fo)
   }
 
   const loadFolders = useCallback(() => {
@@ -327,26 +309,37 @@ function AutoLabelView() {
       setFolders(d)
       setFolder(cur => {
         if (cur || !d[0]) return cur
-        const fo = d[0]
-        setTrainSel(fo.videos.filter(v => v.name.toLowerCase().includes('train')).map(v => v.name))
-        setEvalSel(fo.videos.filter(v => v.name.toLowerCase().includes('test')).map(v => v.name))
-        const first = fo.videos.find(v => !v.name.toLowerCase().startsWith('test')) || fo.videos[0]
-        if (first) { setSrc(first.name); setCount(first.count || 0) }
-        return fo.folder
+        setEvalSel(d[0].videos.filter(v => /test/i.test(v.name)).map(v => v.name))
+        return d[0].folder
       })
     })
   }, [])
+  const loadSessions = useCallback(() => {
+    fetch('/api/sam2/parts_sessions').then(r => r.json()).then(list => {
+      const saved = localStorage.getItem('parts_session_v1')
+      const found = list.find(s => s.session === saved) || list[0]
+      if (found) { setSession(found.session); setLabeledMap(found.videos || {}) }
+    }).catch(() => {})
+  }, [])
   useEffect(() => { loadFolders() }, [loadFolders])
-  useEffect(() => { loadLabeled() }, [loadLabeled])
+  useEffect(() => { loadSessions() }, [loadSessions])
 
-  useEffect(() => {   // 참조샷을 브라우저에 저장 (껐다 켜도 유지)
+  useEffect(() => {   // 부품 바뀌면 그 영상 프레임 준비
+    if (!src) { setCount(0); return }
+    setIdx(0); setActiveShot(null); setLabelStatus(null); setLabelJob(null)
+    const v = folderVideos.find(x => x.name === src)
+    if (v?.ready) setCount(v.count || 0); else prepareSrc(src)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src])
+
+  useEffect(() => {   // 참조샷 브라우저 저장(껐다 켜도 유지)
     try { localStorage.setItem('autolabel_shots_v1', JSON.stringify(ptsBySrc)) } catch { /* 용량초과 무시 */ }
   }, [ptsBySrc])
 
-  const pts = ptsBySrc[src] || {}            // 현재 영상의 점들
+  const pts = ptsBySrc[src] || {}
   const cur = pts[idx] || []
   const shotKey = (v, i) => `${v}:${i}`
-  const dropMask = (v, i) => setMasks(m => { const n = { ...m }; delete n[shotKey(v, i)]; return n })   // 점 바뀐 샷 캐시 무효
+  const dropMask = (v, i) => setMasks(m => { const n = { ...m }; delete n[shotKey(v, i)]; return n })
   const updateCur = (fn) => setPtsBySrc(prev => ({ ...prev, [src]: fn(prev[src] || {}) }))
   const addPoint = (e, lab) => {
     e.preventDefault()
@@ -360,11 +353,7 @@ function AutoLabelView() {
   }
   const undo = () => { dropMask(src, idx); updateCur(c => ({ ...c, [idx]: (c[idx] || []).slice(0, -1) })) }
   const clearFrame = () => { dropMask(src, idx); updateCur(c => { const n = { ...c }; delete n[idx]; return n }) }
-  const clearAllForSrc = () => {
-    setMasks(m => Object.fromEntries(Object.entries(m).filter(([k]) => !k.startsWith(`${src}:`))))
-    updateCur(() => ({}))
-  }
-  useEffect(() => {   // Ctrl+Z(맥 Cmd+Z) = 이 프레임 마지막 탭 취소
+  useEffect(() => {   // Ctrl+Z = 이 프레임 마지막 탭 취소
     const onKey = (e) => {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !running && cur.length) {
         e.preventDefault(); undo()
@@ -372,91 +361,80 @@ function AutoLabelView() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src, idx, cur.length, running])
 
-  const shotFrames = Object.keys(pts).map(Number).filter(i => (pts[i] || []).length).sort((a, b) => a - b)
-  const validShots = shotFrames.filter(i => (pts[i] || []).some(p => p.lab === 1))
-
-  // (1) 마스크 확인: 이 폴더의 모든 참조샷(부품 점 있는 프레임)을 SAM2로 한 번에 만들어 캐시
-  const confirmMasks = async () => {
-    const jobs = []
-    for (const v of tappedVideos) {
-      const vp = ptsBySrc[v.name] || {}
-      for (const i of Object.keys(vp).map(Number)) {
-        const p = vp[i] || []
-        if (p.some(x => x.lab === 1)) jobs.push({ v: v.name, i, points: p.map(x => [x.rx, x.ry, x.lab]) })
-      }
-    }
-    if (!jobs.length) return
-    setMaskBusy(true)
-    let done = 0
-    for (const jb of jobs) {
-      setMaskProg(`마스크 생성 중 ${done + 1}/${jobs.length} (${jb.v} #${jb.i})`)
-      const d = await fetch('/api/sam2/mask', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ src: jb.v, frame: jb.i, points: jb.points })
-      }).then(r => r.json()).catch(() => ({ error: '요청 실패' }))
-      setMasks(m => ({ ...m, [shotKey(jb.v, jb.i)]: d }))
-      done++
-      if (!activeShot) setActiveShot(shotKey(jb.v, jb.i))
-    }
-    setMaskBusy(false); setMaskProg('')
-  }
-
-  // (2) 라벨 생성: 이 영상 참조샷 → SAM2 영상 전파
-  const runPropagate = async () => {
-    const shots = validShots.map(i => [i, pts[i].map(p => [p.rx, p.ry, p.lab])])
-    const d = await fetch('/api/sam2/propagate', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ src, shots })
-    }).then(r => r.json())
-    if (d.error) { setPropStatus({ error: d.error }); return }
-    setPropJob(d.job); setPropStatus({ stage: 'start', running: true, done: 0, total: count })
-  }
-  useEffect(() => {
-    if (!propJob || !propStatus?.running) return
-    const t = setInterval(async () => {
-      const d = await fetch(`/api/sam2/status?job=${propJob}`).then(r => r.json())
-      setPropStatus(d)
-      if (!d.running) { clearInterval(t); loadLabeled() }
-    }, 1000)
-    return () => clearInterval(t)
-  }, [propJob, propStatus?.running])
-
-  const propStage = { start: '준비 중', load: 'SAM2 로딩 중', propagate: '영상 전파 중', done: '완료', error: '오류' }
-  const trainStage = { start: '준비 중', propagate: '라벨 생성 중', train: 'YOLO 학습 중', eval: 'test 영상 평가 중', done: '완료', error: '오류' }
-  const propDone = propStatus?.stage === 'done'
-  const folderObj = folders.find(f => f.folder === folder)
-  const folderVideos = folderObj?.videos || []
-  const hasTaps = (name) => Object.values(ptsBySrc[name] || {}).some(a => a.length)
-  const tappedVideos = folderVideos.filter(v => hasTaps(v.name))                 // 이 폴더에서 점 찍은 영상
-  // 학습/평가는 영상 단위(폴더 넘어 선택). 학습은 라벨 생성된 영상만.
-  const trainRuns = trainSel.filter(n => labeled[n]?.length).map(n => ({ src: n, run: labeled[n][0].run }))
-  const testSrcs = evalSel
-
-  // (3) 학습+평가: 이 폴더 train 영상 라벨 합쳐 학습 → test 영상 평가
-  const toggleTrain = (n) => setTrainSel(cur => cur.includes(n) ? cur.filter(x => x !== n) : [...cur, n])
-  const toggleEval = (n) => setEvalSel(cur => cur.includes(n) ? cur.filter(x => x !== n) : [...cur, n])
-  const goShot = (v, i) => { if (v !== src) chooseSrc(v); setIdx(i); setActiveShot(shotKey(v, i)) }
-  const deleteShot = (v, i) => {                       // 참조샷(그 프레임 점) 개별 삭제
-    setMasks(m => { const n = { ...m }; delete n[shotKey(v, i)]; return n })
-    setPtsBySrc(prev => { const vp = { ...(prev[v] || {}) }; delete vp[i]; return { ...prev, [v]: vp } })
-    setActiveShot(cur => cur === shotKey(v, i) ? null : cur)
-  }
-  const buildShots = (name) => {   // 영상의 참조샷 → [[프레임, [[rx,ry,lab],...]], ...] (부품점 있는 프레임만)
+  const buildShots = (name) => {   // 영상 참조샷 → [[프레임,[[rx,ry,lab],...]],...] (부품점 있는 프레임만)
     const vp = ptsBySrc[name] || {}
     return Object.keys(vp).map(Number).filter(i => (vp[i] || []).some(p => p.lab === 1)).sort((a, b) => a - b)
       .map(i => [i, vp[i].map(p => [p.rx, p.ry, p.lab])])
   }
-  const partName = (folderObj?.label || folder || '').split('/').pop()   // 부품명 = 폴더 끝 (예: gearbox)
-  const trainReady = trainSel.filter(n => buildShots(n).length)          // 점 찍은 학습영상
-  // 한 방에(부품 세션): train 영상 각자 전파→라벨 한 폴더 통합(results/<부품>/<시각>/) → 학습 → 평가
-  const runSession = async () => {
-    const train_shots = {}
-    trainReady.forEach(n => { train_shots[n] = buildShots(n) })
-    const r = await fetch('/api/sam2/session', {
+  const hasTaps = (name) => Object.values(ptsBySrc[name] || {}).some(a => a.length)
+  const isLabeled = (name) => !!labeledMap[name]
+  const partStatus = (name) => isLabeled(name) ? 'done' : (hasTaps(name) ? 'tapped' : 'todo')
+  const nLabeled = folderVideos.filter(v => isLabeled(v.name)).length
+  const curShots = buildShots(src)                 // 현재 부품의 유효 참조샷
+
+  // 현재 프레임 마스크 확인(가볍게, 단일 프레임) → 크게 표시
+  const previewMask = async () => {
+    if (!cur.length) return
+    setMaskBusy(true)
+    const d = await fetch('/api/sam2/mask', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ part: partName, train_shots, test_srcs: evalSel })
+      body: JSON.stringify({ src, frame: idx, points: cur.map(p => [p.rx, p.ry, p.lab]) })
+    }).then(r => r.json()).catch(() => ({ error: '요청 실패' }))
+    setMasks(m => ({ ...m, [shotKey(src, idx)]: d }))
+    setActiveShot(shotKey(src, idx))
+    setMaskBusy(false)
+  }
+
+  // 이 부품 라벨 생성: 참조샷 → SAM2 영상 전파 → 세션 폴더 누적
+  const genLabel = async () => {
+    if (!curShots.length) return
+    const r = await fetch('/api/sam2/parts_label', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session, video: src, shots: curShots })
+    }).then(x => x.json())
+    if (r.error) { setLabelStatus({ error: r.error }); return }
+    if (r.session) { setSession(r.session); localStorage.setItem('parts_session_v1', r.session) }
+    setLabelJob(r.job); setLabelStatus({ stage: 'start', running: true, video: src })
+  }
+  useEffect(() => {
+    if (!labelJob || !labelStatus?.running) return
+    const t = setInterval(async () => {
+      const d = await fetch(`/api/sam2/status?job=${labelJob}`).then(r => r.json())
+      setLabelStatus(d)
+      if (!d.running) {
+        clearInterval(t)
+        if (d.stage === 'done') {
+          if (d.session) { setSession(d.session); localStorage.setItem('parts_session_v1', d.session) }
+          setLabeledMap(m => ({ ...m, [d.video]: { labels: d.labels, frames: d.frames } }))
+        }
+      }
+    }, 1200)
+    return () => clearInterval(t)
+  }, [labelJob, labelStatus?.running])
+
+  const goPart = (i) => {
+    const n = Math.max(0, Math.min(i, folderVideos.length - 1))
+    setPartIdx(n)
+  }
+  const chooseFolder = (rel) => {
+    const fo = folders.find(f => f.folder === rel); if (!fo) return
+    setFolder(rel); setPartIdx(0); setTrainStatus(null); setTrainJob(null)
+    setEvalSel(fo.videos.filter(v => /test/i.test(v.name)).map(v => v.name))
+  }
+  const newSession = () => {
+    setSession(null); setLabeledMap({}); localStorage.removeItem('parts_session_v1')
+    setTrainStatus(null); setTrainJob(null)
+  }
+
+  // 멀티클래스 학습: 세션 누적 라벨 → 34클래스 통합 → YOLO 학습 → test 검출 평가
+  const toggleEval = (n) => setEvalSel(c => c.includes(n) ? c.filter(x => x !== n) : [...c, n])
+  const runTrain = async () => {
+    const r = await fetch('/api/sam2/multiclass', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session, epochs: 100, test_srcs: evalSel })
     }).then(x => x.json())
     if (r.error) { setTrainStatus({ error: r.error }); return }
     setTrainJob(r.job); setTrainStatus({ stage: 'start', running: true })
@@ -470,12 +448,17 @@ function AutoLabelView() {
     }, 1500)
     return () => clearInterval(t)
   }, [trainJob, trainStatus?.running])
+  const trainStage = { start: '준비 중', build: '라벨 통합(클래스 매핑)', train: 'YOLO 학습 중', eval: 'test 영상 평가 중', done: '완료', error: '오류' }
+
+  const activeMask = activeShot ? masks[activeShot] : null
+  const genDone = labelStatus?.stage === 'done' && labelStatus?.video === src
+  const testVideos = folderVideos.filter(v => /test/i.test(v.name))
 
   return (
     <div>
-      <h2>오토라벨 (SAM2 탭)</h2>
+      <h2>부품 라벨링 (SAM2)</h2>
 
-      <h3 className="section-h">1. 폴더 선택</h3>
+      <h3 className="section-h">폴더 선택</h3>
       <div className="chips">
         {folders.map(f => (
           <button key={f.folder} className={f.folder === folder ? 'chip on' : 'chip'}
@@ -487,165 +470,153 @@ function AutoLabelView() {
                 title="data 폴더 다시 스캔">↻ 새로고침</button>
       </div>
 
-      <h3 className="section-h">2. 영상 선택</h3>
-      <div className="chips">
-        {folderVideos.map(v => (
-          <button key={v.name} className={v.name === src ? 'chip on' : 'chip'}
-                  onClick={() => chooseSrc(v.name)} disabled={running || preparing}>
+      {/* 세션 + 전체 진행 */}
+      <div className="wiz-session">
+        <span className="al-hint">세션 <b>{session || '(첫 라벨 생성 시 자동)'}</b></span>
+        <span className="al-hint">라벨 완료 <b>{nLabeled}</b> / {folderVideos.length} 부품</span>
+        <button className="al-secondary sm" onClick={newSession} disabled={running}>새 세션</button>
+      </div>
+      <div className="al-progress"><i style={{ width: `${folderVideos.length ? nLabeled / folderVideos.length * 100 : 0}%` }} /></div>
+
+      {/* 부품 진행 레일: 클릭하면 그 부품으로 이동 */}
+      <div className="part-rail">
+        {folderVideos.map((v, i) => (
+          <button key={v.name} className={`part-chip ${partStatus(v.name)} ${i === partIdx ? 'on' : ''}`}
+                  onClick={() => goPart(i)} disabled={running} title={v.name}>
             {v.name}
           </button>
         ))}
       </div>
 
-      <h3 className="section-h">3. 객체 포인트 지정 {src && <span className="al-hint">— {src}</span>}</h3>
-      {preparing
-        ? <div className="al-frame" style={{ padding: 44, textAlign: 'center', cursor: 'default' }}>
-            <span className="al-hint" style={{ color: '#e2e8f0' }}>프레임 컷 중... (영상 길이에 따라 몇 초~수십 초)</span>
-          </div>
-        : <div className="al-frame" onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
-            {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=${idx}&w=960`} alt={`frame ${idx}`} draggable={false} />}
-            {cur.map((p, i) => (
-              <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
-                    style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />
-            ))}
-          </div>}
-
-      <div className="al-controls">
-        <button className="chip" onClick={() => setIdx(i => Math.max(i - 10, 0))} disabled={running}>◀◀ 10</button>
-        <button className="chip" onClick={() => setIdx(i => Math.max(i - 1, 0))} disabled={running}>◀</button>
-        <input className="al-slider" type="range" min={0} max={Math.max(count - 1, 0)} value={idx}
-               onChange={(e) => setIdx(+e.target.value)} disabled={running} />
-        <button className="chip" onClick={() => setIdx(i => Math.min(i + 1, count - 1))} disabled={running}>▶</button>
-        <button className="chip" onClick={() => setIdx(i => Math.min(i + 10, count - 1))} disabled={running}>10 ▶▶</button>
-        <span className="al-hint">frame {idx + 1} / {count} · 이 프레임 점 {cur.length}개</span>
-      </div>
-      <div className="al-controls">
-        <button className="chip" onClick={undo} disabled={running || !cur.length}>점 취소</button>
-        <button className="chip" onClick={clearFrame} disabled={running || !cur.length}>이 프레임 지우기</button>
-      </div>
-
-      <h3 className="section-h">4. 포인트별 마스크 확인</h3>
-      <div className="al-controls">
-        <button className="cmp-random" onClick={confirmMasks} disabled={running || maskBusy || tappedVideos.length === 0}>
-          {maskBusy ? (maskProg || '마스크 생성 중...') : '마스크 확인'}
-        </button>
-      </div>
-      {tappedVideos.map(v => {
-        const vp = ptsBySrc[v.name] || {}
-        const frames = Object.keys(vp).map(Number).filter(i => (vp[i] || []).length).sort((a, b) => a - b)
-        return (
-          <div key={v.name} style={{ marginBottom: 8 }}>
-            <span className="al-hint">
-              <b style={{ color: v.name === src ? '#6366f1' : undefined }}>{v.name}</b>
-            </span>
-            <div className="al-shots">
-              {frames.map(i => {
-                const npos = vp[i].filter(p => p.lab === 1).length
-                const nneg = vp[i].length - npos
-                const k = shotKey(v.name, i)
-                const done = !!masks[k] && !masks[k].error
-                return (
-                  <span key={i} className="al-shot-wrap">
-                    <button className={`al-shot ${activeShot === k ? 'on' : ''} ${npos >= 1 ? '' : 'bad'}`}
-                            onClick={() => goShot(v.name, i)} disabled={running}>
-                      {done ? '✓ ' : ''}#{i} <b>+{npos}</b>{nneg ? `/-${nneg}` : ''}
-                    </button>
-                    <span className="al-shot-x" title="이 참조샷 삭제"
-                          onClick={() => !running && deleteShot(v.name, i)}>×</span>
-                  </span>
-                )
-              })}
-            </div>
-          </div>
-        )
-      })}
-
-      {activeShot && masks[activeShot] && (masks[activeShot].error
-        ? <p className="fn" style={{ color: '#b91c1c' }}>마스크 오류({activeShot}): {masks[activeShot].error}</p>
-        : (() => {
-            const mk = masks[activeShot]
-            return (
-              <div className="al-result">
-                <div className="al-controls">
-                  <span className="al-hint">{activeShot}</span>
-                </div>
-                <div className="al-thumbs"><img src={mk.combo} alt="mask" style={{ maxWidth: 560 }} /></div>
-              </div>
-            )
-          })())}
-
-      <h3 className="section-h">5. 라벨 생성 및 훈련 학습 평가</h3>
-
-      <h4 className="subtable-title">학습 영상</h4>
-      <div className="chips">
-        {folderVideos.map(v => {
-          const isTrain = v.name.toLowerCase().includes('train')
-          const on = trainSel.includes(v.name)
-          const nTap = buildShots(v.name).length
-          return (
-            <button key={v.name} className={on ? 'chip on' : 'chip'} disabled={running || !isTrain}
-                    onClick={() => toggleTrain(v.name)}>
-              {isTrain ? (on ? '☑ ' : '☐ ') : ''}{v.name}
-              {nTap > 0 ? <span className="al-hint"> 탭 {nTap}</span> : null}
-            </button>
-          )
-        })}
-      </div>
-
-      <h4 className="subtable-title">평가 영상</h4>
-      <div className="chips">
-        {folderVideos.map(v => {
-          const isTest = v.name.toLowerCase().includes('test')
-          const on = evalSel.includes(v.name)
-          return (
-            <button key={v.name} className={on ? 'chip on' : 'chip'} disabled={running || !isTest}
-                    onClick={() => toggleEval(v.name)}>
-              {isTest ? (on ? '☑ ' : '☐ ') : ''}{v.name} <span className="al-hint">{v.ready ? `${v.count}컷` : `~${v.count}`}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="al-controls" style={{ marginTop: 10 }}>
-        <button className="cmp-random" onClick={runSession}
-                disabled={running || trainReady.length === 0 || evalSel.length === 0}>
-          {trainStatus?.running ? '진행 중...' : '라벨 생성 + 학습 + 평가'}
-        </button>
-      </div>
-
-      {trainStatus?.error && <p className="fn" style={{ color: '#b91c1c' }}>오류: {trainStatus.error}</p>}
-      {trainStatus && !trainStatus.error && (
-        <div className="al-result">
-          <div className="al-controls">
-            <b>{trainStage[trainStatus.stage] || trainStatus.stage}</b>
-            {trainStatus.note && <span className="al-hint">{trainStatus.note}</span>}
-            {trainStatus.train_labels && <span className="al-hint">학습 라벨 <b>{trainStatus.train_labels}</b>
-              {trainStatus.train_srcs && <> ({trainStatus.train_srcs.join('+')})</>}</span>}
-            {trainStatus.stage === 'eval' && <span className="al-hint">평가 {trainStatus.eval_done || 0} / {trainStatus.eval_total}</span>}
-          </div>
-          {trainStatus.stage === 'done' && trainStatus.run && (
-            <p className="al-hint">라벨 <code>results/{trainStatus.part}/{trainStatus.run}/</code> · 모델 <code>results/model/{trainStatus.run}/</code></p>
-          )}
-          {trainStatus.eval?.length > 0 && (
-            <>
-              <table className="cmp-table"><thead><tr>
-                <th>test 영상</th><th>프레임</th><th>검출</th><th>검출률</th><th>평균 신뢰도</th>
-              </tr></thead><tbody>
-                {trainStatus.eval.map(e => (
-                  <tr key={e.src}><td>{e.src}</td><td>{e.frames}</td><td>{e.detected}</td>
-                    <td><b>{Math.round(e.rate * 100)}%</b></td><td>{e.mean_conf}</td></tr>
-                ))}
-              </tbody></table>
-              {trainStatus.eval.map(e => e.samples?.length > 0 && (
-                <div key={e.src}>
-                  <h4 className="subtable-title">{e.src}</h4>
-                  <div className="al-thumbs">{e.samples.map((u, i) => <img key={i} src={u} alt={`${e.src} ${i}`} />)}</div>
-                </div>
-              ))}
-            </>
-          )}
+      {!src ? <p className="al-hint">폴더를 선택하세요.</p> : <>
+        {/* 현재 부품 */}
+        <div className="wiz-head">
+          <span className="wiz-title">{src}</span>
+          <span className="wiz-idx">부품 {partIdx + 1} / {folderVideos.length}</span>
+          {isLabeled(src) && <span className="badge adopt">✓ 라벨 {labeledMap[src].labels}장</span>}
+          <span style={{ marginLeft: 'auto' }} />
+          <button className="al-secondary sm" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}>◀ 이전 부품</button>
+          <button className="al-secondary sm" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= folderVideos.length - 1}>다음 부품 ▶</button>
         </div>
-      )}
+
+        <p className="al-hint">부품을 <b>좌클릭</b>(포함점), 배경 오채택되면 <b>우클릭</b>(제외점). 여러 각도가 필요하면 프레임을 넘겨 한 번 더 탭.</p>
+
+        {preparing
+          ? <div className="al-frame" style={{ padding: 44, textAlign: 'center', cursor: 'default' }}>
+              <span className="al-hint" style={{ color: '#e2e8f0' }}>프레임 컷 중... (몇 초~수십 초)</span>
+            </div>
+          : <div className="al-frame" onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
+              {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=${idx}&w=960`} alt={`frame ${idx}`} draggable={false} />}
+              {cur.map((p, i) => (
+                <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
+                      style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />
+              ))}
+            </div>}
+
+        <div className="al-controls">
+          <button className="chip" onClick={() => setIdx(i => Math.max(i - 10, 0))} disabled={running}>◀◀ 10</button>
+          <button className="chip" onClick={() => setIdx(i => Math.max(i - 1, 0))} disabled={running}>◀</button>
+          <input className="al-slider" type="range" min={0} max={Math.max(count - 1, 0)} value={idx}
+                 onChange={(e) => setIdx(+e.target.value)} disabled={running} />
+          <button className="chip" onClick={() => setIdx(i => Math.min(i + 1, count - 1))} disabled={running}>▶</button>
+          <button className="chip" onClick={() => setIdx(i => Math.min(i + 10, count - 1))} disabled={running}>10 ▶▶</button>
+          <span className="al-hint">frame {idx + 1} / {count} · 이 프레임 점 {cur.length}개 · 참조샷 {curShots.length}</span>
+        </div>
+        <div className="al-controls">
+          <button className="chip" onClick={undo} disabled={running || !cur.length}>점 취소</button>
+          <button className="chip" onClick={clearFrame} disabled={running || !cur.length}>이 프레임 지우기</button>
+          <button className="cmp-random" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
+            {maskBusy ? '마스크 생성 중...' : '입력 마스크 확인'}
+          </button>
+        </div>
+
+        {/* 입력 마스크 크게 확인 (주요 콘텐츠) */}
+        {activeMask && (activeMask.error
+          ? <p className="fn" style={{ color: '#b91c1c' }}>마스크 오류: {activeMask.error}</p>
+          : <div className="al-maskbig">
+              <div className="al-maskbig-cap">
+                입력 마스크 · <span className="mk-g">초록=마스크</span> <span className="mk-o">주황=박스</span> <span className="mk-b">파랑=포함점</span> <span className="mk-r">빨강=제외점</span>
+                {typeof activeMask.area_frac === 'number' && <> · 면적 {(activeMask.area_frac * 100).toFixed(1)}%</>}
+              </div>
+              <img src={activeMask.combo} alt="입력 마스크" />
+            </div>)}
+
+        {/* 라벨 생성 → 다음 부품 */}
+        <div className="al-controls" style={{ marginTop: 14 }}>
+          <button className="al-primary" onClick={genLabel}
+                  disabled={running || curShots.length === 0}>
+            {labelStatus?.running ? '라벨 생성 중...' : (isLabeled(src) ? '↻ 라벨 다시 생성' : '라벨 생성')}
+          </button>
+          {(genDone || isLabeled(src)) && partIdx < folderVideos.length - 1 &&
+            <button className="al-primary next" onClick={() => goPart(partIdx + 1)} disabled={running}>다음 부품 ▶</button>}
+          {labelStatus && !labelStatus.error && labelStatus.video === src &&
+            <span className="al-hint">
+              {labelStatus.running ? `${src} 영상 전파 중...` : (labelStatus.stage === 'done' ? `✓ 라벨 ${labelStatus.labels}장 / ${labelStatus.frames}프레임` : '')}
+            </span>}
+        </div>
+        {labelStatus?.error && <p className="fn" style={{ color: '#b91c1c' }}>오류: {labelStatus.error}</p>}
+        {genDone && labelStatus.taps?.length > 0 &&
+          <div className="al-thumbs">{labelStatus.taps.map((u, i) => <img key={i} src={u} alt={`tap ${i}`} />)}</div>}
+      </>}
+
+      {/* 멀티클래스 학습 */}
+      {nLabeled > 0 && <>
+        <h3 className="section-h">멀티클래스 학습</h3>
+        <p className="al-hint">라벨 완료 부품 <b>{nLabeled}</b>개를 클래스별로 통합해 YOLO 학습. 평가는 아래 test 영상(정답 라벨 없어 검출률·신뢰도·클래스 분포).</p>
+
+        <h4 className="subtable-title">평가(test) 영상</h4>
+        <div className="chips">
+          {testVideos.length === 0 && <span className="al-hint">이 폴더에 test 영상이 없습니다.</span>}
+          {testVideos.map(v => {
+            const on = evalSel.includes(v.name)
+            return (
+              <button key={v.name} className={on ? 'chip on' : 'chip'} disabled={running} onClick={() => toggleEval(v.name)}>
+                {on ? '☑ ' : '☐ '}{v.name}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="al-controls" style={{ marginTop: 10 }}>
+          <button className="al-primary" onClick={runTrain} disabled={running || !session}>
+            {trainStatus?.running ? '학습 중...' : '멀티클래스 학습 시작'}
+          </button>
+        </div>
+
+        {trainStatus?.error && <p className="fn" style={{ color: '#b91c1c' }}>오류: {trainStatus.error}</p>}
+        {trainStatus && !trainStatus.error && (
+          <div className="al-result">
+            <div className="al-controls">
+              <b>{trainStage[trainStatus.stage] || trainStatus.stage}</b>
+              {trainStatus.note && <span className="al-hint">{trainStatus.note}</span>}
+              {trainStatus.n_images && <span className="al-hint">통합 <b>{trainStatus.n_images}</b>장 / {trainStatus.n_classes}클래스</span>}
+              {trainStatus.stage === 'eval' && <span className="al-hint">평가 {trainStatus.eval_done || 0} / {trainStatus.eval_total}</span>}
+            </div>
+            {trainStatus.stage === 'done' && (
+              <p className="al-hint">모델 <code>results/parts/{trainStatus.session}/multiclass/model/</code></p>
+            )}
+            {trainStatus.eval?.length > 0 && (
+              <>
+                <table><thead><tr>
+                  <th>test 영상</th><th>프레임</th><th>검출</th><th>검출률</th><th>평균 신뢰도</th><th>주요 클래스</th>
+                </tr></thead><tbody>
+                  {trainStatus.eval.map(e => (
+                    <tr key={e.src}><td>{e.src}</td><td>{e.frames}</td><td>{e.detected}</td>
+                      <td><b>{Math.round(e.rate * 100)}%</b></td><td>{e.mean_conf}</td>
+                      <td>{(e.top_classes || []).map(([c, n]) => `${c}(${n})`).join(', ')}</td></tr>
+                  ))}
+                </tbody></table>
+                {trainStatus.eval.map(e => e.samples?.length > 0 && (
+                  <div key={e.src}>
+                    <h4 className="subtable-title">{e.src}</h4>
+                    <div className="al-thumbs">{e.samples.map((u, i) => <img key={i} src={u} alt={`${e.src} ${i}`} />)}</div>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </>}
     </div>
   )
 }
@@ -693,7 +664,7 @@ export default function App() {
         <nav>
           <div className="nav-title">오토라벨</div>
           <button className={view === 'autolabel' ? 'nav-item on' : 'nav-item'}
-                  onClick={() => setView('autolabel')}>오토라벨 (SAM2 탭)</button>
+                  onClick={() => setView('autolabel')}>부품 라벨링 (SAM2 탭)</button>
           <div className="nav-title">실험 기록</div>
           <button className={view === 'benchmark' ? 'nav-item on' : 'nav-item'}
                   onClick={() => setView('benchmark')}>실험 (벤치마크 · 도메인갭 mAP)</button>

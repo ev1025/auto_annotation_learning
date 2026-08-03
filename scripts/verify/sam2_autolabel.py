@@ -418,3 +418,190 @@ def list_runs(src):
 
 def job_status(jid):
     return JOBS.get(jid, {"error": "unknown job"})
+
+
+# ==================== 멀티클래스 부품 라벨링 (장비별 위저드) ====================
+# 여러 부품 영상을 한 세션 폴더(results/parts/<세션>/)에 누적. 파일명=<영상>_<프레임>.
+# 부품 하나씩: 탭 → 라벨 생성(전파) → 다음 부품. 다 모으면 34클래스로 통합 학습.
+PARTS_ROOT = RESULTS / "parts"
+
+
+def parts_sessions():
+    """results/parts/<세션>/ 목록(최근순) + 세션별 라벨된 영상·라벨수."""
+    out = []
+    if PARTS_ROOT.exists():
+        for d in sorted(PARTS_ROOT.glob("*"), reverse=True):
+            if not d.is_dir():
+                continue
+            mp = d / "labeling.json"
+            m = json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}
+            vids = m.get("videos", {})
+            out.append({"session": d.name, "videos": vids,
+                        "n_videos": len(vids),
+                        "total_labels": sum(v.get("labels", 0) for v in vids.values()),
+                        "updated": m.get("updated", "")})
+    return out
+
+
+def _run_parts_label(job_id, session, video, shots):
+    """부품 영상 하나 → SAM2 전파 → results/parts/<세션>/train 등에 <영상>_<프레임>로 누적."""
+    j = JOBS[job_id]
+    try:
+        sess = PARTS_ROOT / session
+        pi, pl = sess / "train" / "images", sess / "train" / "labels"
+        box_d, ref_d = sess / "train_box", sess / "tap"
+        for d in (pi, pl, box_d, ref_d):
+            d.mkdir(parents=True, exist_ok=True)
+        j.update(stage="propagate", note=f"{video} 라벨 생성 중")
+        # 이 영상의 기존 라벨 있으면 지우고 새로(재탭 반영)
+        for g in (pi.glob(f"{video}_*.jpg"), pl.glob(f"{video}_*.txt"),
+                  box_d.glob(f"{video}_*.jpg"), ref_d.glob(f"{video}_*.jpg")):
+            for f in list(g):
+                f.unlink()
+        n, tot = _propagate_into(video, shots, pi, pl, box_d, ref_d)
+        # 세션 메타 갱신
+        mp = sess / "labeling.json"
+        meta = json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {"session": session, "videos": {}}
+        meta["videos"][video] = {"labels": n, "frames": tot,
+                                 "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+        meta["updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        mp.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        taps = [_b64(_rd(p), w=520) for p in sorted(ref_d.glob(f"{video}_*.jpg"))][:6]
+        j.update(stage="done", running=False, video=video, labels=n, frames=tot,
+                 session=session, taps=taps)
+    except Exception as e:
+        j.update(stage="error", error=f"{type(e).__name__}: {e}", running=False)
+    finally:
+        _BUSY["on"] = False
+        gc.collect(); torch.cuda.empty_cache()
+
+
+def start_parts_label(session, video, shots):
+    with _LOCK:
+        if _BUSY["on"]:
+            return {"error": "이미 실행 중입니다. 끝난 뒤 다시 시도하세요."}
+        if not video or not shots:
+            return {"error": "이 부품에 점(참조샷)이 없습니다."}
+        _BUSY["on"] = True
+    session = session or datetime.now().strftime("%y%m%d_%H%M%S")
+    jid = uuid.uuid4().hex[:8]
+    JOBS[jid] = {"stage": "start", "running": True, "error": None, "session": session, "video": video}
+    threading.Thread(target=_run_parts_label, args=(jid, session, video, shots), daemon=True).start()
+    return {"job": jid, "session": session}
+
+
+def _run_multiclass(job_id, session, epochs, test_srcs):
+    """세션에 누적된 per-part 라벨(class 0) → 영상명→부품→클래스 remap → 34클래스 YOLO 학습 → test 검출 평가."""
+    j = JOBS[job_id]
+    try:
+        sys.path.insert(0, str(config.BASE_DIR / "scripts" / "experiments"))
+        import build_multiclass as bm
+        names, name2idx = bm.load_classes()
+        sess = PARTS_ROOT / session
+        st = sess / "train"
+        if not (st / "images").exists():
+            raise RuntimeError("이 세션에 라벨이 없습니다. 부품을 먼저 탭·라벨 생성하세요.")
+
+        # 1) 클래스 매핑 통합
+        j.update(stage="build", note="라벨 클래스 매핑 통합")
+        out = sess / "multiclass"
+        oi, ol = out / "images", out / "labels"
+        oi.mkdir(parents=True, exist_ok=True); ol.mkdir(parents=True, exist_ok=True)
+        per, miss = {}, {}
+        for ip in sorted((st / "images").glob("*.jpg")):
+            stem = ip.stem
+            cls = bm.stem_to_class(stem)
+            idx = name2idx.get(cls)
+            if idx is None:
+                miss[cls] = miss.get(cls, 0) + 1; continue
+            lp = st / "labels" / f"{stem}.txt"
+            if not lp.exists():
+                continue
+            lines = [f"{idx} {p[1]} {p[2]} {p[3]} {p[4]}"
+                     for p in (l.split() for l in lp.read_text(encoding="utf-8").splitlines()) if len(p) == 5]
+            if not lines:
+                continue
+            shutil.copy(ip, oi / f"{stem}.jpg")
+            (ol / f"{stem}.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+            per[cls] = per.get(cls, 0) + 1
+        n_img = sum(per.values())
+        if n_img < 5:
+            raise RuntimeError(f"통합 라벨 부족({n_img}). 부품을 더 탭하세요. 미매핑: {miss}")
+        yml = out / "data.yaml"
+        nb = "\n".join(f"  {i}: {n}" for i, n in enumerate(names))
+        d = oi.resolve().as_posix()
+        yml.write_text(f"path: {out.resolve().as_posix()}\ntrain:\n  - {d}\nval:\n  - {d}\nnames:\n{nb}\n",
+                       encoding="utf-8")
+
+        # 2) 학습
+        from ultralytics import YOLO
+        j.update(stage="train", note=f"{n_img}장 / {len(per)}클래스", n_images=n_img, n_classes=len(per))
+        model_dir = out / "model"
+        model = YOLO(config.PRETRAINED)
+        model.train(data=str(yml), epochs=epochs, imgsz=640, batch=8, device=0,
+                    project=str(model_dir / "runs"), name="model", exist_ok=True, verbose=False,
+                    plots=False, degrees=15.0)
+        w1 = Path(model.trainer.best)
+        del model; gc.collect(); torch.cuda.empty_cache()
+
+        # 3) test 영상 검출 평가 (정답 라벨 없어 mAP 아님 = 검출률+신뢰도+클래스분포+육안)
+        eval_res = []
+        if test_srcs:
+            j.update(stage="eval", eval_total=len(test_srcs), eval_done=0)
+            det = YOLO(str(w1))
+            for ts in test_srcs:
+                fs = autolabel._frames(ts)
+                outd = model_dir / "eval" / ts
+                outd.mkdir(parents=True, exist_ok=True)
+                hit, confs, cls_cnt = 0, [], {}
+                for p in fs:
+                    im = _rd(p)
+                    r = det.predict(source=im, conf=VAL_CONF, imgsz=640, verbose=False)[0]
+                    if len(r.boxes):
+                        hit += 1
+                        for b, c, cl in zip(r.boxes.xyxy.cpu().numpy(), r.boxes.conf.cpu().numpy(),
+                                            r.boxes.cls.cpu().numpy()):
+                            confs.append(float(c))
+                            nm = names[int(cl)] if int(cl) < len(names) else str(int(cl))
+                            cls_cnt[nm] = cls_cnt.get(nm, 0) + 1
+                            x1, y1, x2, y2 = map(int, b)
+                            cv2.rectangle(im, (x1, y1), (x2, y2), (0, 150, 255), 3)
+                            cv2.putText(im, f"{nm} {float(c):.2f}", (x1, max(y1 - 6, 16)),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 150, 255), 2)
+                    cv2.imwrite(str(outd / f"{p.stem}.jpg"), im)
+                top = sorted(cls_cnt.items(), key=lambda x: -x[1])[:3]
+                eval_res.append({"src": ts, "frames": len(fs), "detected": hit,
+                                 "rate": round(hit / len(fs), 3) if fs else 0.0,
+                                 "mean_conf": round(float(np.mean(confs)), 3) if confs else 0.0,
+                                 "top_classes": top,
+                                 "samples": [_b64(_rd(p), w=300) for p in sorted(outd.glob("*.jpg"))[::max(1, len(fs) // 6)]][:6]})
+                j.update(eval_done=len(eval_res))
+            del det; gc.collect(); torch.cuda.empty_cache()
+
+        meta = {"session": session, "n_images": n_img, "n_classes": len(per), "per_class": per,
+                "classes": names, "weights": str(w1), "miss": miss,
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "eval": [{k: r[k] for k in ("src", "frames", "detected", "rate", "mean_conf", "top_classes")}
+                         for r in eval_res]}
+        (out / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        j.update(stage="done", running=False, session=session, n_images=n_img, n_classes=len(per),
+                 per_class=per, weights=str(w1), eval=eval_res, miss=miss)
+    except Exception as e:
+        j.update(stage="error", error=f"{type(e).__name__}: {e}", running=False)
+    finally:
+        _BUSY["on"] = False
+        gc.collect(); torch.cuda.empty_cache()
+
+
+def start_multiclass(session, epochs, test_srcs):
+    with _LOCK:
+        if _BUSY["on"]:
+            return {"error": "이미 실행 중입니다."}
+        if not session:
+            return {"error": "세션이 없습니다. 부품을 먼저 라벨 생성하세요."}
+        _BUSY["on"] = True
+    jid = uuid.uuid4().hex[:8]
+    JOBS[jid] = {"stage": "start", "running": True, "error": None}
+    threading.Thread(target=_run_multiclass, args=(jid, session, int(epochs or EPOCHS), test_srcs or []),
+                     daemon=True).start()
+    return {"job": jid}

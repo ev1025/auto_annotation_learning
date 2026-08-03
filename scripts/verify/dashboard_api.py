@@ -132,6 +132,21 @@ def api_sam2_session(payload: dict = Body(...)):
     return sa.start_session(payload.get("part"), payload.get("train_shots", {}), payload.get("test_srcs", []))
 
 
+@app.get("/api/sam2/parts_sessions")
+def api_parts_sessions():
+    return sa.parts_sessions()
+
+
+@app.post("/api/sam2/parts_label")
+def api_parts_label(payload: dict = Body(...)):
+    return sa.start_parts_label(payload.get("session"), payload.get("video"), payload.get("shots", []))
+
+
+@app.post("/api/sam2/multiclass")
+def api_multiclass(payload: dict = Body(...)):
+    return sa.start_multiclass(payload.get("session"), payload.get("epochs"), payload.get("test_srcs", []))
+
+
 @app.get("/api/sam2/runs")
 def api_sam2_runs(src: str):
     return sa.list_runs(src)

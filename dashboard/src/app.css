@@ -296,3 +296,65 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .al-triptych img { width: 100%; border-radius: 8px; border: 1px solid var(--line); display: block; }
 .al-triptych figcaption { margin-top: 4px; text-align: center; }
 @media (max-width: 720px) { .al-triptych { grid-template-columns: 1fr; } }
+
+/* ---------- 부품 라벨링 위저드 ---------- */
+.wiz-session {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin: 14px 0 6px; padding: 8px 12px;
+  background: #f8fafc; border: 1px solid var(--line); border-radius: 10px;
+}
+.wiz-session b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* 부품 진행 레일: 가로 스크롤, 상태색 */
+.part-rail {
+  display: flex; gap: 6px; overflow-x: auto; padding: 8px;
+  background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; margin: 8px 0 4px;
+}
+.part-chip {
+  flex: 0 0 auto; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 5px 11px; border: 1px solid var(--line); border-radius: 16px;
+  background: #fff; color: var(--ink); font-family: inherit; font-size: 12.5px; cursor: pointer;
+}
+.part-chip:hover:not(:disabled) { border-color: var(--accent); }
+.part-chip.tapped { border-color: #fcd34d; background: #fffbeb; }
+.part-chip.done { border-color: #86efac; background: #f0fdf4; }
+.part-chip.done::before { content: '✓ '; color: #16a34a; font-weight: 700; }
+.part-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.part-chip.on.done::before { color: #dcfce7; }
+.part-chip:disabled { opacity: 0.55; cursor: default; }
+
+/* 현재 부품 헤더 */
+.wiz-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 18px 0 6px; }
+.wiz-title { font-size: 18px; font-weight: 700; color: var(--ink); word-break: break-all; }
+.wiz-idx { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* 입력 마스크 크게 확인 (주요 콘텐츠) */
+.al-maskbig {
+  margin: 14px 0 4px; border: 1px solid var(--line); border-radius: 12px;
+  overflow: hidden; background: #0f172a;
+}
+.al-maskbig img { width: 100%; display: block; }
+.al-maskbig-cap {
+  font-size: 12.5px; color: #cbd5e1; padding: 8px 12px;
+  border-bottom: 1px solid #1e293b; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+}
+.al-maskbig-cap .mk-g { color: #4ade80; }
+.al-maskbig-cap .mk-o { color: #fb923c; }
+.al-maskbig-cap .mk-b { color: #60a5fa; }
+.al-maskbig-cap .mk-r { color: #f87171; }
+
+/* 위저드 버튼 */
+.al-primary {
+  padding: 10px 22px; border: 0; border-radius: 10px; background: var(--accent);
+  color: #fff; font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
+}
+.al-primary:hover:not(:disabled) { filter: brightness(1.08); }
+.al-primary:disabled { opacity: 0.45; cursor: default; }
+.al-primary.next { background: #16a34a; }
+.al-secondary {
+  padding: 9px 16px; border: 1px solid var(--line); border-radius: 10px;
+  background: #fff; color: var(--ink); font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.al-secondary.sm { padding: 5px 12px; font-size: 13px; }
+.al-secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.al-secondary:disabled { opacity: 0.45; cursor: default; }
