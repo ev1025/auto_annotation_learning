@@ -44,7 +44,10 @@ def _videos():
     vids = []
     for ext in VIDEO_EXT:
         vids += config.DATA_DIR.rglob(f"*{ext}")   # data/ 어느 주제 폴더든 재귀 탐색
-    return sorted(p for p in vids if p.is_file() and "_frame_cache" not in p.parts)
+    base = config.DATA_DIR.resolve()
+    # data/ 아래에서 '_' 로 시작하는 폴더(_frame_cache·보관용 _gearbox 등)는 제외
+    return sorted(p for p in vids if p.is_file()
+                  and not any(part.startswith("_") for part in p.resolve().relative_to(base).parts[:-1]))
 
 
 def _cached_frames(stem):

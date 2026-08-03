@@ -284,8 +284,7 @@ const takeRoles = (videos) => {
 // 부품 라벨링(SAM2): 데이터셋(그룹)→부품(폴더) 순회. 부품마다 학습 테이크 탭 → 입력 마스크 확인 → 라벨 생성 → 다음 부품 → 멀티클래스 학습
 function AutoLabelView() {
   const [folders, setFolders] = useState([])        // [{folder,label,videos:[{name,count,ready}]}]
-  const [group, setGroup] = useState(null)          // 데이터셋 그룹(parts / gearbox / ...)
-  const [partIdx, setPartIdx] = useState(0)         // 그룹 안 부품(폴더) 인덱스
+  const [partIdx, setPartIdx] = useState(0)         // 부품(폴더) 인덱스
   const [takeIdx, setTakeIdx] = useState(0)         // 부품 안 학습 테이크 인덱스(보통 0)
   const [count, setCount] = useState(0)             // 현재 테이크 프레임 수
   const [idx, setIdx] = useState(0)                 // 현재 프레임
@@ -309,8 +308,9 @@ function AutoLabelView() {
 
   const running = !!labelStatus?.running || !!trainStatus?.running
 
-  const groups = [...new Set(folders.map(f => groupOf(f.folder)))]
-  const partFolders = folders.filter(f => groupOf(f.folder) === group)   // 그룹 안 부품(폴더)들
+  const isPartFolder = (rel) => rel.replace(/\/videos$/, '').split('/').length >= 3   // bell412/<컨테이너>/<부품> = 중첩 = 부품
+  const nestedParts = folders.filter(f => isPartFolder(f.folder))
+  const partFolders = nestedParts.length ? nestedParts : folders          // 부품 폴더들(중첩 없으면 전체)
   const curPartFolder = partFolders[partIdx]
   const folderVideos = curPartFolder?.videos || []                       // 이 부품의 테이크들
   const roles = takeRoles(folderVideos)
@@ -338,31 +338,25 @@ function AutoLabelView() {
   }
 
   const loadFolders = useCallback(() => {
-    fetch('/api/autolabel/folders').then(r => r.json()).then(d => {
-      setFolders(d)
-      setGroup(cur => {
-        if (cur || !d.length) return cur
-        const counts = {}; d.forEach(f => { const g = groupOf(f.folder); counts[g] = (counts[g] || 0) + 1 })
-        return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || null   // 부품 많은 그룹(parts) 기본
-      })
-    })
+    fetch('/api/autolabel/folders').then(r => r.json()).then(d => setFolders(d))
   }, [])
   const loadSessions = useCallback(() => {
     fetch('/api/sam2/parts_sessions').then(r => r.json()).then(list => {
       const saved = localStorage.getItem('parts_session_v1')
-      const found = list.find(s => s.session === saved) || list[0]
+      const found = list.find(s => s.session === saved)   // 내가 쓰던 세션만 복원(자동탭 baseline 등 남의 세션 자동 채택 안 함)
       if (found) { setSession(found.session); setLabeledMap(found.videos || {}) }
     }).catch(() => {})
   }, [])
   useEffect(() => { loadFolders() }, [loadFolders])
   useEffect(() => { loadSessions() }, [loadSessions])
 
-  useEffect(() => {   // 그룹 선택 시 전체 프레임 미리 컷(1회, 백그라운드) — 탭 전에 미리 준비
-    if (!group || !folders.length || preppedRef.current.has(group)) return
-    preppedRef.current.add(group)
-    prepareAll(folders.filter(f => groupOf(f.folder) === group))
+  useEffect(() => {   // 폴더 로드되면 부품 전체 프레임 미리 컷(1회, 백그라운드) — 탭 전에 자동 준비
+    if (!folders.length || preppedRef.current.has('all')) return
+    preppedRef.current.add('all')
+    const nf = folders.filter(f => f.folder.replace(/\/videos$/, '').split('/').length >= 3)
+    prepareAll(nf.length ? nf : folders)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [group, folders])
+  }, [folders])
 
   useEffect(() => {   // 부품(테이크) 바뀌면 그 영상 프레임 준비
     if (!src) { setCount(0); return }
@@ -462,11 +456,6 @@ function AutoLabelView() {
   }, [labelJob, labelStatus?.running])
 
   const goPart = (i) => { setPartIdx(Math.max(0, Math.min(i, partFolders.length - 1))); setTakeIdx(0) }
-  const selectGroup = (g) => { setGroup(g); setPartIdx(0); setTakeIdx(0); setTrainStatus(null); setTrainJob(null) }
-  const newSession = () => {
-    setSession(null); setLabeledMap({}); localStorage.removeItem('parts_session_v1')
-    setTrainStatus(null); setTrainJob(null)
-  }
 
   // 멀티클래스 학습: 세션 누적 라벨 → 클래스 통합 → YOLO 학습 → 부품별 테스트 테이크 검출 평가
   const testSrcs = () => {   // 라벨된 부품마다 테스트 테이크(끝수 "2" 또는 학습영상 자체)
@@ -502,25 +491,10 @@ function AutoLabelView() {
     <div>
       <h2>부품 라벨링 (SAM2)</h2>
 
-      <h3 className="section-h">데이터셋 선택</h3>
-      <div className="chips">
-        {groups.map(g => (
-          <button key={g} className={g === group ? 'chip on' : 'chip'}
-                  onClick={() => selectGroup(g)} disabled={running}>
-            {g} <span className="al-hint">{folders.filter(f => groupOf(f.folder) === g).length}부품</span>
-          </button>
-        ))}
-        <button className="chip" onClick={loadFolders} disabled={running} title="data 폴더 다시 스캔">↻ 새로고침</button>
-      </div>
-
-      {/* 세션 + 전체 진행 */}
-      <div className="wiz-session">
-        <span className="al-hint">세션 <b>{session || '(첫 라벨 생성 시 자동)'}</b></span>
-        <span className="al-hint">라벨 완료 <b>{nLabeled}</b> / {partFolders.length} 부품</span>
-        {prepProg && <span className="al-hint">⏳ {prepProg}</span>}
-        <button className="al-secondary sm" onClick={newSession} disabled={running}>새 세션</button>
-      </div>
-      <div className="al-progress"><i style={{ width: `${partFolders.length ? nLabeled / partFolders.length * 100 : 0}%` }} /></div>
+      <h3 className="section-h">부품 선택 <span className="al-hint" style={{ fontWeight: 400 }}>{nLabeled}/{partFolders.length}</span>
+        <button className="al-secondary sm" style={{ marginLeft: 10 }} onClick={loadFolders} disabled={running} title="data 폴더 다시 스캔">↻ 새로고침</button>
+        {prepProg && <span className="al-hint" style={{ fontWeight: 400, marginLeft: 10 }}>⏳ {prepProg}</span>}
+      </h3>
 
       {/* 부품 진행 레일: 클릭하면 그 부품으로 이동 */}
       <div className="part-rail">
@@ -532,34 +506,22 @@ function AutoLabelView() {
         ))}
       </div>
 
-      {!src ? <p className="al-hint">데이터셋을 선택하세요.</p> : <>
+      {!src ? <p className="al-hint">부품 폴더가 없습니다. (data/bell412/parts/&lt;부품&gt;/videos)</p> : <>
         {/* 현재 부품 */}
         <div className="wiz-head">
           <span className="wiz-title">{partName}</span>
-          <span className="wiz-idx">부품 {partIdx + 1} / {partFolders.length}</span>
-          {isLabeled(src) && <span className="badge adopt">✓ 라벨 {labeledMap[src].labels}장</span>}
-          <span className="al-hint">학습 <b>{src}</b> · 테스트 {testIsSelf ? '학습영상 자체' : <b>{testTake}</b>}</span>
-          {roles.train.length > 1 && (
-            <span className="al-hint">테이크:
-              {roles.train.map((t, ti) => (
-                <button key={t} className="al-secondary sm" onClick={() => setTakeIdx(ti)}
-                        style={{ marginLeft: 4, opacity: ti === takeIdx ? 1 : 0.45 }}>{t}</button>
-              ))}
-            </span>
-          )}
+          <span className="wiz-idx">{partIdx + 1} / {partFolders.length}</span>
           <span style={{ marginLeft: 'auto' }} />
-          <button className="al-secondary sm" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}>◀ 이전 부품</button>
-          <button className="al-secondary sm" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1}>다음 부품 ▶</button>
+          <button className="al-secondary sm" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}>◀ 이전</button>
+          <button className="al-secondary sm" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1}>다음 ▶</button>
         </div>
 
-        <p className="al-hint">부품을 <b>좌클릭</b>(포함점), 배경 오채택되면 <b>우클릭</b>(제외점). 여러 각도가 필요하면 프레임을 넘겨 한 번 더 탭.</p>
-
         {preparing
-          ? <div className="al-frame" style={{ padding: 44, textAlign: 'center', cursor: 'default' }}>
-              <span className="al-hint" style={{ color: '#e2e8f0' }}>프레임 컷 중... (몇 초~수십 초)</span>
+          ? <div className="al-frame" style={{ maxWidth: 560, padding: 44, textAlign: 'center', cursor: 'default' }}>
+              <span className="al-hint" style={{ color: '#e2e8f0' }}>프레임 컷 중...</span>
             </div>
-          : <div className="al-frame" onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
-              {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=${idx}&w=960`} alt={`frame ${idx}`} draggable={false} />}
+          : <div className="al-frame" style={{ maxWidth: 560 }} onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
+              {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false} />}
               {cur.map((p, i) => (
                 <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
                       style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />
@@ -600,11 +562,9 @@ function AutoLabelView() {
                   disabled={running || curShots.length === 0}>
             {labelStatus?.running ? '라벨 생성 중...' : (isLabeled(src) ? '↻ 라벨 다시 생성' : '라벨 생성')}
           </button>
-          {(genDone || isLabeled(src)) && partIdx < partFolders.length - 1 &&
-            <button className="al-primary next" onClick={() => goPart(partIdx + 1)} disabled={running}>다음 부품 ▶</button>}
           {labelStatus && !labelStatus.error && labelStatus.video === src &&
             <span className="al-hint">
-              {labelStatus.running ? `${src} 영상 전파 중...` : (labelStatus.stage === 'done' ? `✓ 라벨 ${labelStatus.labels}장 / ${labelStatus.frames}프레임` : '')}
+              {labelStatus.running ? '전파 중...' : (labelStatus.stage === 'done' ? `✓ 라벨 ${labelStatus.labels}장` : '')}
             </span>}
         </div>
         {labelStatus?.error && <p className="fn" style={{ color: '#b91c1c' }}>오류: {labelStatus.error}</p>}

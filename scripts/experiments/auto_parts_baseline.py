@@ -22,7 +22,7 @@ import argparse
 BASE = os.environ.get("XR_BASE") or os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 sys.path.insert(0, BASE + "/scripts")
 sys.path.insert(0, BASE + "/scripts/verify")
-PARTS = BASE + "/data/bell412/parts"
+PARTS = BASE + "/data/bell412"          # 각 부품 = bell412/<부품>/videos (평탄 구조). '_' 접두 폴더는 제외
 
 CENTER_PTS = [[0.5, 0.5, 1]]     # 화면 중앙 포함점(rx, ry, lab=1)
 REF_FRACS = [0.35, 0.5, 0.65]    # 영상 중앙부 3프레임을 참조샷으로
@@ -47,11 +47,13 @@ def take_roles(stems):
 
 
 def scan_parts():
-    """data/bell412/parts/<부품>/videos/*.mp4 → {부품: [영상 stem, ...]}."""
+    """data/bell412/<부품>/videos/*.mp4 → {부품: [영상 stem, ...]}. '_' 접두 폴더(_gearbox 등 보관용) 제외."""
     parts = {}
     for vp in glob.glob(PARTS + "/*/videos/*.mp4"):
         vp2 = vp.replace("\\", "/")
         part = vp2.split("/")[-3]
+        if part.startswith("_"):
+            continue
         stem = os.path.splitext(os.path.basename(vp2))[0]
         parts.setdefault(part, []).append(stem)
     return parts
