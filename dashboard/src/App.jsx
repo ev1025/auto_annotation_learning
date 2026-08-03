@@ -551,16 +551,16 @@ function AutoLabelView() {
                 <span className="al-hint">{labelStatus.running ? '전파 중...' : (labelStatus.stage === 'done' ? `✓ 라벨 ${labelStatus.labels}장` : '')}</span>}
             </div>
 
-            {/* 탭 이미지 · 입력 마스크 결과 (같은 크기) */}
-            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            {/* 탭 이미지 · 입력 마스크 결과 (가로로 나란히, 같은 크기) */}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'nowrap', overflowX: 'auto' }}>
               {preparing
                 ? <div className="al-frame" style={{ display: 'inline-block', padding: 30, textAlign: 'center', cursor: 'default' }}>
                     <span className="al-hint" style={{ color: '#e2e8f0' }}>프레임 컷 중...</span>
                   </div>
-                : <div className="al-frame" style={{ display: 'inline-block', width: 'auto', maxWidth: '100%' }}
+                : <div className="al-frame" style={{ display: 'inline-block', flex: '0 0 auto', width: 'auto', maxWidth: '100%' }}
                        onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
                     {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false}
-                                 style={{ width: 'auto', maxHeight: 420, maxWidth: 380 }} />}
+                                 style={{ width: 'auto', maxHeight: 360, maxWidth: 330 }} />}
                     {cur.map((p, i) => (
                       <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
                             style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />
