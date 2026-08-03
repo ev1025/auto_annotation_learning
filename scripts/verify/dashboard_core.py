@@ -2,20 +2,33 @@
 """dashboard_core.py - 대시보드 공용 로직 (UI 프레임워크 무관).
 
 verify/dashboard_api.py(FastAPI)와 verify/build_report.py(HTML 내보내기)가 공유하는
-데이터 계층: 실험 결과 json 로더, 오토라벨링 방법 레지스트리, 즉석 비교 추론.
+데이터 계층. **콘텐츠(방법 설명·flow·코드조각·정적표·용어·실험)는 코드에 박지 않고
+dashboard_content.yaml 에 둔다.** 이 파일은 그 콘텐츠를 읽어 렌더하고, 결과 json 파싱·
+즉석 비교 추론 같은 '로직'만 담는다. 콘텐츠만 바꾸면 다른 프로젝트에도 재사용 가능.
 """
 import base64
 import json
 from pathlib import Path
 
 import cv2
+import yaml
 
 import config
 
-PREV_DIR = config.BASE_DIR / "docs" / "method_previews"
-TEST_IMG = config.DATA_DIR / "robo_yolo" / "test" / "images"
-TEST_LBL = config.DATA_DIR / "robo_yolo" / "test" / "labels"
-GT_CLASSES = ["bearing", "bolt", "gear", "nut"]
+CONTENT = yaml.safe_load((Path(__file__).resolve().parent / "dashboard_content.yaml").read_text(encoding="utf-8"))
+
+# 프로젝트별 경로·상수도 콘텐츠에서 (코드 재사용 위해)
+_P = CONTENT.get("paths", {})
+PREV_DIR = config.BASE_DIR / _P.get("previews", "dashboard/previews")
+TEST_IMG = config.BASE_DIR / _P.get("test_images", "data/robo/yolo/test/images")
+TEST_LBL = config.BASE_DIR / _P.get("test_labels", "data/robo/yolo/test/labels")
+GT_CLASSES = CONTENT.get("gt_classes", [])
+CLASS_COLORS = {k: tuple(v) for k, v in CONTENT.get("class_colors", {}).items()}
+TECH_DEFS = CONTENT.get("tech_defs", {})
+METHODS = CONTENT.get("methods", [])
+GLOSSARY = CONTENT.get("glossary", [])
+EXPERIMENTS = CONTENT.get("experiments", {})
+_AUTOLEARN_CONDS = CONTENT.get("autolearn_conditions", [])
 
 
 def jload(rel):
@@ -23,7 +36,7 @@ def jload(rel):
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
-# ==================== 지표 로더 ====================
+# ==================== 지표 로더 (결과 json → 표) ====================
 def load_autolearn(rel):
     d = jload(rel)
     if not d:
@@ -36,7 +49,7 @@ def load_autolearn(rel):
 
     # 표 1: 데이터·자동 라벨 (설정과 자동 라벨 품질)
     data_rows = [
-        ["데이터 구성", f"초기 라벨셋 {sp.get('seed')}장 / 미라벨 풀 {sp.get('pool')}장 / 평가셋 {sp.get('test')}장"],
+        ["데이터 구성", f"1차 라벨 {sp.get('seed')}장 / 무라벨 {sp.get('pool')}장 / 평가셋 {sp.get('test')}장"],
         ["자동 라벨 생성", f"{ps.get('labeled_images')}장 (박스 {ps.get('boxes')}개)"],
         ["자동 라벨 정밀도 / 재현율", f"{ps.get('precision')} / {ps.get('recall')}"],
     ]
@@ -54,7 +67,12 @@ def load_autolearn(rel):
     if cls_rows:
         subtables.append({"title": "클래스별 정확도 (mAP50-95)",
                           "headers": ["클래스", "1차 모델", "2차 모델", "변화율"], "rows": cls_rows})
-    return (["항목", "값"], data_rows, "", subtables)
+    d50 = delta(r0.get("map50"), r1.get("map50"))
+    summary = "\n".join([
+        f"자동 생성된 2차 라벨 {ps.get('labeled_images')}장, 정밀도 {ps.get('precision')} / 재현율 {ps.get('recall')}",
+        f"1차 모델 mAP50 {r0.get('map50')} → 2차 모델 {r1.get('map50')} ({d50 or '변화 미미'})",
+    ])
+    return (["항목", "값"], data_rows, summary, subtables)
 
 
 def load_zeroshot(rel):
@@ -83,48 +101,38 @@ def load_sweep(rel):
     p = bp.get("precision", 0)
     ok = "충족" if p >= 0.87 else "미달"
     summary = "\n".join([
-        "**맞바꿈**: 유사도 임계값 ↑ → 정밀도(맞은 라벨 비율) ↑, 재현율(찾아낸 비율) ↓",
-        f"**최고 정밀도**: {p} (임계값 {bp.get('tau')})",
-        f"**판정**: 사람 검수 없이 쓸 기준(정밀도 0.87) → {ok}",
+        "유사도 임계값을 높이면 정밀도(맞은 라벨 비율)는 오르고 재현율(찾아낸 비율)은 내려간다",
+        f"최고 정밀도는 {p} (임계값 {bp.get('tau')})",
+        f"사람 검수 없이 쓸 기준(정밀도 0.87)에는 {ok}",
     ])
     return (["유사도 임계값", "정밀도", "재현율"], rows, summary)
 
 
-def static_metrics(rows, summary):
-    return lambda _: (["항목", "결과"], rows, summary)
-
-
-def load_bench(_):
-    d = jload("bench_results/benchmark.json")
+def load_bench(rel, summary):
+    d = jload(rel)
     if not d:
         return None
     rows = [[r["model"], r["imgsz"], r["map50"], r["map50_95"], r["latency_ms"], r["fps"],
              r["weight_MB"], r["train_min"]] for r in d]
-    return (["모델", "입력", "mAP50", "mAP50-95", "지연(ms)", "FPS", "크기(MB)", "학습(분)"], rows,
-            "선정 = yolo26s@640 (정확도 동급 + 시드 분산 최소 + 지연 최단)")
+    return (["모델", "입력", "mAP50", "mAP50-95", "지연(ms)", "FPS", "크기(MB)", "학습(분)"], rows, summary)
 
 
-def load_followup(_):
-    d = jload("bench_results/exp_epochs.json")
+def load_followup(rel, summary):
+    d = jload(rel)
     if not d:
         return None
     rows = [[r.get("name"), r.get("base"), f"{r.get('epochs_run')}/{r.get('epochs_set')}",
              r.get("map50"), r.get("map50_95"), r.get("train_min")] for r in d]
-    return (["실험", "기반 모델", "epochs(실행/설정)", "mAP50", "mAP50-95", "학습(분)"], rows,
-            "300ep 연장 무의미 / 26n 레시피 역효과 / 시드 3반복으로 v8s 1위는 시드 운 판명")
+    return (["실험", "기반 모델", "epochs(실행/설정)", "mAP50", "mAP50-95", "학습(분)"], rows, summary)
 
 
-# 기술 정의: 어떤 방법에서 쓰이든 '무슨 작업을 하는 모델인지'는 동일하게 기술한다.
-TECH_DEFS = {
-    "YOLO (yolo26s)": "실시간 객체 탐지 모델. 이미지에서 물체의 위치(박스)와 클래스를 예측한다",
-    "self-training": "모델이 스스로 만든 예측을 임시 라벨로 삼아 다시 학습에 쓰는 준지도학습 기법",
-    "Grounding DINO": "글(프롬프트)로 지정한 물체를 이미지에서 찾는 개방어휘 객체 탐지기. 텍스트·이미지 매칭이라 별도 학습이 필요 없다",
-    "SAM": "이미지 속 물체를 픽셀 단위로 분할하는 모델. 물체 후보 영역(마스크)을 만든다",
-    "CLIP": "이미지·텍스트를 같은 공간의 벡터로 바꾸는 임베딩 모델. 크롭 간 유사도 비교에 쓴다",
-    "DINOv2": "이미지를 질감·형상 특징 벡터로 바꾸는 자기지도 임베딩 모델. 크롭 간 유사도 비교에 쓴다",
-}
+# 방법 지표용 로더(파일 → 표). static 은 아래 resolve_metrics 에서 직접 처리.
+METHOD_LOADERS = {"autolearn": load_autolearn, "zeroshot": load_zeroshot, "sweep": load_sweep}
+# 실험 지표용 로더(파일 + 요약문 → 표).
+EXP_LOADERS = {"bench": load_bench, "followup": load_followup}
 
 
+# ==================== 기술 정의 ====================
 def resolve_tech(m):
     """(이름[, 용도]) 목록 -> [{name, desc(공통 정의), usage(이 방법에서의 쓰임)}]."""
     out = []
@@ -135,244 +143,7 @@ def resolve_tech(m):
     return out
 
 
-# ==================== 오토라벨링 방법 레지스트리 ====================
-# badge: adopt(채택) / drop(탈락) / partial(부분 성공)
-METHODS = [
-    dict(
-        id="m1", no=1, title="Pseudo-labeling", badge="adopt", badge_label="채택 (운영 루프)",
-        subtitle="의사 라벨링(Pseudo-labeling)은 라벨이 없는 데이터에 모델이 예측한 값을 임시 라벨로 지정해 학습에 재활용하는 준지도학습 기법입니다.",
-        bullets=[],
-        tech=[("YOLO (yolo26s)",), ("self-training",)],
-        flow=[
-            {"step": "입력", "text": "공개 기계부품 데이터 (bolt·nut·gear·bearing). 초기 라벨셋 10~15%만 라벨을 남기고 나머지는 라벨을 숨김"},
-            {"step": "1차", "text": "**1차 모델 학습** — 순수 YOLO(COCO 사전학습)에 초기 라벨셋 149장만 학습"},
-            {"step": "2", "text": "**임시 학습 데이터 생성** — 1차 모델이 미라벨 데이터 647장을 예측, 신뢰도(confidence) 0.6 이상만 라벨로 채택 (622장)"},
-            {"step": "2차", "text": "**2차 모델 학습** — 순수 YOLO 에 [초기 라벨 + 임시 라벨]을 합쳐 처음부터 재학습"},
-            {"step": "검증", "text": "**효과 검증** — 어느 학습에도 안 쓴 평가셋 199장에서 1차 vs 2차 성능 비교 → mAP50 0.8354 → 0.8586 상승 → **채택**"},
-        ],
-        gallery=None, live=True,
-        code=[dict(
-            file="scripts/labeling/pseudo_utils.py - predict_boxes()",
-            note="예측 + conf 필터. 1차 모델이 미라벨 이미지를 추론하고 신뢰도 0.6 이상만 통과시킴 (읽기 쉽게 풀어 쓴 것)",
-            src="""results = model.predict(source=unlabeled_images, stream=True)
-for image, result in zip(unlabeled_images, results):
-    accepted = [(cls, box) for cls, box, conf in result.boxes
-                if conf >= 0.6]           # 신뢰도 0.6 미만 예측은 버림
-    yield image, accepted"""),
-              dict(
-            file="scripts/labeling/auto_labeling.py",
-            note="저장. predict_boxes 가 통과시킨 박스를 YOLO 라벨(.txt)로 기록",
-            src="""for image, accepted in predict_boxes(model, unlabeled_images, conf=0.6):
-    # 이미지와 같은 파일명 .txt 가 YOLO 의 짝 규칙
-    save_label(labels_dir / f"{image.stem}.txt", accepted)"""),
-              dict(
-            file="scripts/training/train_pipeline.py",
-            note="재학습. 1차 모델 가중치가 아니라 순수 YOLO 에서 다시 시작",
-            src="""model = YOLO("yolo26s.pt")            # 순수(COCO 사전학습) 가중치에서 시작
-model.train(data=시드_라벨 + 자동_라벨,  # 사람 라벨과 자동 라벨을 합쳐 학습
-            epochs=100)
-# 게이트: 새 모델 mAP50 가 기존보다 낮으면 배포하지 않고 폐기"""),],
-        metrics=("exp_results/report_2cls_seed15.json", load_autolearn),
-    ),
-    dict(
-        id="m2", no=2, title="텍스트 제로샷 (Grounding DINO)", badge="drop", badge_label="탈락",
-        subtitle="학습되지 않은 객체를 설명 문구만으로 찾는 방법으로, 이미지의 객체와 프롬프트의 유사도를 판단하여 클래스를 부여하는 방식.",
-        bullets=[],
-        tech=[("Grounding DINO",)],
-        flow=[
-            {"step": "입력", "text": "이미지 1장 + 고정 영어 프롬프트 4개 (metal hex bolt screw → bolt 등, 매 이미지 동일)"},
-            {"step": "1", "text": "**영역·텍스트 인코딩** — 이미지에서 물체가 있을 법한 영역 후보를 뽑고, 프롬프트 4개를 각각 숫자 벡터로 변환"},
-            {"step": "2", "text": "**유사도 매칭** — 각 영역 후보와 프롬프트의 유사도를 계산해 0.35 이상만 남기고, 가장 닮은 프롬프트를 그 박스의 클래스로 결정"},
-            {"step": "3", "text": "**후처리** — 겹친 중복 박스(NMS)와 화면을 덮는 거대 박스 제거"},
-            {"step": "출력", "text": "**자동 라벨** — 탐지된 객체마다 박스 1개 + 클래스 1개 (프롬프트 4개는 '가능한 클래스 목록'일 뿐, 박스 수 = 이미지 속 통과한 객체 수. 볼트 5개면 bolt 박스 5개)"},
-            {"step": "채점", "text": "정답을 숨긴 평가셋 204장에 적용, 숨긴 정답과 IoU 0.5 대조 → 정밀도 0.238 / 재현율 0.415"},
-            {"step": "탈락", "text": "**탈락 사유** — 물체 위치는 곧잘 찾지만(재현율 0.42) hex bolt·hex nut 같은 유사 부품의 클래스를 자주 틀려, 오탐이 맞춘 것의 3배. 무검수 라벨 기준(정밀도 0.87)에 크게 미달."},
-        ],
-        gallery="dino_text", live=False,
-        metrics=("exp_results/zeroshot/zeroshot_eval_post.json", load_zeroshot),
-    ),
-    dict(
-        id="m3", no=3, title="Grounded-SAM 타이트박스", badge="drop", badge_label="탈락",
-        subtitle="방법 2의 틀린 라벨이 '박스가 헐렁해서'인지 검증한 방식. SAM 으로 박스를 물체 경계까지 좁혀도(위치 개선) 성능이 그대로라면, 문제는 위치가 아니라 클래스라는 뜻.",
-        bullets=[],
-        tech=[("Grounding DINO",), ("SAM", "여기선 생성된 박스를 물체 경계까지 좁히는 데 사용")],
-        flow=[
-            {"step": "입력", "text": "이미지 + 영어 프롬프트 4개 (방법 2와 동일)"},
-            {"step": "1", "text": "**박스 생성** — Grounding DINO 로 프롬프트에 맞는 박스 생성 (방법 2와 동일). 박스가 물체보다 헐렁하게 나옴"},
-            {"step": "2", "text": "**타이트닝** — SAM 마스크로 각 박스의 네 변(좌표)을 물체의 픽셀 경계까지 좁힘. 위치·크기만 바뀌고 클래스는 그대로"},
-            {"step": "채점", "text": "평가셋 204장, 숨긴 정답과 IoU 0.5 대조 → 정밀도 0.239 (방법 2의 0.238과 사실상 동일)"},
-            {"step": "탈락", "text": "**탈락 사유 — 위치는 맞혔지만 '무슨 객체인지'를 못 맞힘.** 박스를 아무리 타이트하게 해도 성능이 안 오른다는 것은, 틀린 원인이 박스 여백(위치)이 아니라 클래스 오분류라는 뜻. (맞은 박스 IoU 는 DINO 원본 0.908 > SAM 0.876 로 오히려 과수축) → 다음은 클래스 판별력을 높이는 시각 매칭(방법 4·5)으로"},
-        ],
-        gallery=None, live=False,
-        metrics=("exp_results/zeroshot/zeroshot_eval_gsam_tight.json", load_zeroshot),
-    ),
-    dict(
-        id="m4", no=4, title="SAM + CLIP 갤러리", badge="drop", badge_label="탈락",
-        subtitle="텍스트 대신 '참조 이미지'와 비교하는 방식. SAM 이 자른 후보를 CLIP 임베딩으로 참조 갤러리와 유사도 매칭해 클래스를 부여.",
-        bullets=[],
-        tech=[("SAM",), ("CLIP",)],
-        flow=[
-            {"step": "준비", "text": "**참조 갤러리 구축** — train 정답에서 클래스마다 견본 크롭을 10장씩 오려 모음 (사람 손·사전 라벨이 필요한 사전 작업)"},
-            {"step": "입력", "text": "라벨을 붙일 이미지 (라벨링 대상에는 정답 미사용)"},
-            {"step": "1", "text": "**후보 분할** — SAM 이 이미지의 물체 후보를 전부 분할"},
-            {"step": "2", "text": "**임베딩** — 각 후보 크롭을 CLIP 으로 숫자 벡터화"},
-            {"step": "3", "text": "**갤러리 매칭** — 후보 벡터를 참조 갤러리 견본들과 유사도 비교, 가장 닮은 클래스 부여"},
-            {"step": "채점", "text": "평가셋 204장, IoU 0.5 → 최고 정밀도 0.60"},
-            {"step": "탈락", "text": "**탈락 사유** — 기준(0.87) 미달. 다만 텍스트→시각 매칭 전환으로 정밀도 2.5배 도약(0.24 → 0.60) → 방법 5로 이어짐"},
-        ],
-        gallery=None, live=False,
-        metrics=("exp_results/zeroshot/gallery_eval_clip.json", load_sweep),
-    ),
-    dict(
-        id="m5", no=5, title="SAM + DINOv2 갤러리", badge="adopt", badge_label="고정밀 달성",
-        subtitle="방법 4의 임베딩만 CLIP 에서 DINOv2(질감·형상 특징)로 바꾼 방식. 미세한 부품 구분 능력이 올라 무검수 기준을 최초로 넘김.",
-        bullets=[],
-        tech=[("SAM",), ("DINOv2",)],
-        flow=[
-            {"step": "준비", "text": "**참조 갤러리 구축** — 방법 4와 동일 (클래스마다 견본 10장씩 오려 모음, 사람 손·사전 라벨 필요)"},
-            {"step": "입력", "text": "라벨을 붙일 이미지"},
-            {"step": "1", "text": "**후보 분할** — SAM 이 물체 후보를 전부 분할"},
-            {"step": "2", "text": "**임베딩** — 각 후보를 **DINOv2**(질감·형상 특징)로 벡터화 (CLIP 에서 교체)"},
-            {"step": "3", "text": "**갤러리 매칭** — 참조 갤러리 견본들과 유사도 비교, 임계값 0.85"},
-            {"step": "결과", "text": "정밀도 0.927 = 무검수 기준(0.87) **최초 충족** → 고정밀 달성"},
-            {"step": "한계", "text": "**남은 공수** — 다만 클래스마다 견본 10장을 사람이 오려 준비해야 함(사전 라벨 필요). 이 준비 공수를 '점 1개 지정'으로 줄인 것이 방법 7 → 방법 5는 방법 7의 이론적 기반"},
-        ],
-        gallery=None, live=False,
-        metrics=("exp_results/zeroshot/gallery_eval_dinov2.json", load_sweep),
-    ),
-    dict(
-        id="m6", no=6, title="상호 일관성 매칭", badge="partial", badge_label="사진 성공 / 영상 실패",
-        subtitle="참조 갤러리 없이, '등록한 모든 사진에 공통으로 나오는 물체 = 그 부품'이라고 보고 라벨링하는 방식. 클래스 분류 자체를 없앰.",
-        bullets=[],
-        tech=[("SAM",), ("DINOv2",)],
-        flow=[
-            {"step": "입력", "text": "등록 폴더 (부품 1종, 사진 여러 장). 폴더당 부품 1종"},
-            {"step": "1", "text": "**후보 분할** — SAM 이 각 사진의 물체 후보를 분할"},
-            {"step": "2", "text": "**임베딩** — 각 후보를 DINOv2 로 벡터화"},
-            {"step": "3", "text": "**공통 물체 탐색** — '다른 모든 사진에도 닮은 것이 있는 후보'를 점수화(임계값 0.55) → 공통 등장 물체 = 그 부품"},
-            {"step": "출력", "text": "공통 물체만 라벨"},
-            {"step": "결과", "text": "**부분 성공** — 사진 묶음 시뮬은 채택률 100%. 그러나 실사 영상은 배경(매트·드릴·사람)도 매 프레임 등장해 오채택 (채택률 98%였지만 육안 검증이 실패 적발) → 영상 등록은 방법 7로 대체"},
-        ],
-        gallery="mutual", live=False,
-        code=[dict(
-            file="scripts/labeling/register_part.py - label_one_part()",
-            note="상호 일관성 점수 - 읽기 쉽게 풀어 쓴 것. 실패 원인이 이 수식 자체에 있음",
-            src="""# 사진 i 의 후보 하나하나에 대해:
-# "다른 모든 사진에도 이것과 닮은 물체가 있는가" 를 점수로 만든다
-score = 0
-for j in range(len(all_photos)):
-    if j == i:
-        continue
-    best = max(similarity(candidate, other) for other in photo_j.candidates)
-    score += best                        # 사진 j 에서 가장 닮은 후보와의 유사도
-score = score / (len(all_photos) - 1)    # 전체 평균
-
-if score >= 0.55:                        # 임계값 통과 -> 부품으로 채택
-    keep(candidate)
-
-# 함정: 배경(매트·드릴·사람)도 모든 프레임에 등장한다
-# -> 배경 후보도 score 가 높게 나와 오채택 (한 장면 영상에서 실패한 이유)"""),],
-        metrics=static_metrics(
-            [["사진 묶음 시뮬 (볼트·너트 15장씩)", "채택률 100%, 부품만 정확히 라벨"],
-             ["실사 영상 (기어박스 49프레임)", "채택률 98%였으나 배경(매트·드릴·사람) 오채택 -> 폐기"],
-             ["폐기 사유", "'배경은 사진마다 바뀐다'는 가정이 한 장면 영상에서 성립하지 않음"]],
-            "판정: 배경이 바뀌는 사진 묶음에서만 유효. 영상 등록에는 부적합 -> 포인트 참조(방법 7)로 대체"),
-    ),
-    dict(
-        id="m7", no=7, title="포인트 참조 매칭", badge="adopt", badge_label="최종 채택",
-        subtitle="부품 위치를 점 1개로 지정하면, 그 점의 물체를 '기준'으로 삼아 전 프레임에서 닮은 것을 찾아 라벨링하는 방식. 배경은 기준과 안 닮아 오채택이 원천 차단된다. (운영에선 화면 탭 1번, 이번 실험에선 프레임에서 부품 좌표를 직접 골라 지정)",
-        bullets=[],
-        tech=[("SAM", "여기선 지정한 점(포인트) 하나로 분할해 참조 크롭도 확보"), ("DINOv2",)],
-        flow=[
-            {"step": "입력", "text": "등록 영상/사진 + 부품 위치를 **점 1개로 지정** (운영: 화면 탭 1번 / 이번 실험: 프레임에서 부품 좌표를 골라 ref.txt 에 기입)"},
-            {"step": "1", "text": "**참조 확보** — SAM 포인트 분할로 지정한 점이 속한 물체를 오려 '기준 사진' 확보"},
-            {"step": "2", "text": "**임베딩** — 모든 프레임의 SAM 후보를 DINOv2 로 벡터화"},
-            {"step": "3", "text": "**참조 매칭** — 기준 사진과 유사도 0.70 이상만 채택 + NMS·포함 억제로 중복 제거"},
-            {"step": "출력", "text": "부품만 라벨 (기준과 안 닮은 배경은 원천 배제 → 오채택 0)"},
-            {"step": "검증", "text": "생성 라벨로 학습 → 미학습 영상 재현율 20장=31% / 114장=88% → **최종 채택** (라벨 수량이 성능 좌우)"},
-        ],
-        gallery="one_tap", live=False,
-        code=[dict(
-            file="scripts/labeling/register_part.py - build_ref_embedding()",
-            note="1단계: 탭 한 번 -> 부품의 '기준 사진' 확보",
-            src="""point = read("ref.txt")            # 지정한 좌표 1개 (운영: 화면 탭 / 실험: ref.txt 기입)
-mask = sam.predict(point)           # SAM: 그 점이 속한 물체 영역을 돌려줌
-reference = image[mask]             # 그 영역을 오려냄 = 부품의 기준 사진
-save("_preview/ref_check.jpg")      # 탭이 엉뚱한 물체를 잡았는지 육안 확인용"""),
-              dict(
-            file="scripts/labeling/register_part.py - label_one_part()",
-            note="2단계: 모든 프레임의 후보를 기준 사진과 생김새 비교",
-            src="""for frame in all_frames:
-    for candidate in sam_candidates(frame):      # SAM 이 찾은 물체 후보들
-        sim = similarity(candidate, reference)    # 기준 사진과 얼마나 닮았나 (DINOv2)
-        if sim >= 0.70:                           # 0.70 이상은 전부 채택
-            keep(candidate)                       #   (한 프레임에 여러 개 가능)
-    remove_duplicates()                           # 겹침(NMS) + 부분-전체 중복 제거
-
-# 방법 6과의 차이: 비교 대상이 '다른 사진들'이 아니라 '사용자가 찍어준 기준'
-# -> 배경은 기준과 안 닮았으므로 오채택이 원천 차단됨 (오채택 0 실측)"""),],
-        metrics=static_metrics(
-            [["라벨 생성 (1차, 33프레임)", "20장 채택, 배경 오채택 0"],
-             ["라벨 생성 (완결, 193프레임)", "114장 채택 (59%)"],
-             ["학습 후 검증 (라벨 20장 학습)", "미학습 영상 탐지 5/16장 (31%, conf 0.4)"],
-             ["학습 후 검증 (라벨 114장 학습)", "미학습 영상 탐지 14/16장 (88%, conf 0.4), 오탐 0"],
-             ["결론", "라벨 수량이 성능 직접 좌우 (20장=31% vs 114장=88%)"]],
-            "판정: 최종 채택. 사람 개입은 점 1개 지정뿐, 영상만 충분히 길면 성능 확보"),
-    ),
-    dict(
-        id="m8", no=8, title="포인트 참조 + self-training", badge="adopt", badge_label="영상 자가증식 (실측)",
-        subtitle="우리 목적(라벨 없는 영상 1개 → 라벨 데이터)에 맞춘 최종 파이프라인. 포인트 참조(방법 7)로 첫 라벨을 만들어 학습한 뒤, 그 모델이 '방법 7이 놓친 나머지 프레임'을 예측해 신뢰도 높은 것만 다시 학습(self-training)한다. 미라벨 데이터 추가 공급 없이 같은 영상 안에서 성능을 끌어올린다.",
-        bullets=[],
-        tech=[("YOLO (yolo26s)",), ("self-training",),
-              ("SAM", "여기선 지정한 점으로 참조 크롭 확보 + 프레임 후보 분할"), ("DINOv2",)],
-        flow=[
-            {"step": "입력", "text": "라벨 없는 영상 1개 + 부품 위치를 **점 1개로 지정**"},
-            {"step": "1", "text": "**포인트 참조 라벨 생성(방법 7)** — 프레임별로 라벨 생성 → 채택 프레임(seed) / 미채택 프레임(pool)로 나뉨"},
-            {"step": "2", "text": "**round1 학습** — 순수 YOLO 에 seed 라벨만 학습"},
-            {"step": "3", "text": "**self-training(방법 1)** — round1 모델이 pool(방법 7이 놓친 프레임)을 예측, 신뢰도 0.6 이상만 임시 라벨로 채택"},
-            {"step": "4", "text": "**round2 학습** — 순수 YOLO 에 [seed + 임시 라벨]을 합쳐 재학습"},
-            {"step": "검증", "text": "**미학습 영상에서 비교** — round1 83.7% → round2 95.9% (+12.3%p) → **채택**. 방법 7 단독의 상한을 넘김"},
-        ],
-        gallery="selftrain", live=False,
-        metrics=static_metrics(
-            [["데이터", "gearbox2 영상 193프레임 (검증: 미학습 영상 gearbox1 49프레임)"],
-             ["포인트 참조 라벨(방법 7)", "seed 113장 채택 / pool 80장 미채택"],
-             ["self-training 채택", "pool 80장 중 54장 (신뢰도 0.6 이상)"],
-             ["round1 (seed 113장)", "검증 재현율 41/49 = 83.7%"],
-             ["round2 (seed+임시 167장)", "검증 재현율 47/49 = 95.9%"],
-             ["효과", "재현율 +12.3%p (미라벨 데이터 추가 없이)"]],
-            "\n".join([
-                "**결론**: 영상 1개 안에서 포인트 참조로 부트스트랩 후 나머지 프레임을 self-training 하면, 미라벨 데이터 추가 없이 재현율 84% → 96%",
-                "**의의**: 우리 목적(라벨 없는 영상 1개 → 라벨)에 부합하는 최종 파이프라인. 방법 7 단독 상한을 넘김",
-                "**주의**: 단일 영상·1회 실행, 재현율은 검출 프레임 비율(박스 품질 mAP 아님). 로컬 RTX 4060 재현",
-            ])),
-    ),
-]
-
-GLOSSARY = [
-    ["라벨 / 바운딩박스", "이미지 속 부품 위치를 표시한 네모 상자. AI 학습의 '정답지'"],
-    ["정밀도", "만든 라벨 중 맞은 비율 (오답 라벨이 적을수록 높음)"],
-    ["재현율", "실제 부품 중 찾아낸 비율 (놓친 것이 적을수록 높음)"],
-    ["mAP50", "탐지 성능 종합 점수 (0~1, 높을수록 좋음)"],
-    ["conf (신뢰도)", "모델이 스스로 확신하는 정도. 0.6 이상만 라벨로 채택"],
-    ["평가셋", "학습에 쓰지 않고 채점에만 쓰는 별도 문제지"],
-]
-
-EXPERIMENTS = {
-    "모델 벤치마크": {
-        "7모델 × 2크기 = 14조합": ("", load_bench),
-        "후속 검증 (300ep·레시피·시드)": ("", load_followup),
-    },
-    "오토러닝 실증 (조건별)": {
-        "2클래스 · 초기 라벨 10%": ("exp_results/report_2cls_seed10.json", load_autolearn),
-        "2클래스 · 초기 라벨 15%": ("exp_results/report_2cls_seed15.json", load_autolearn),
-        "2클래스 · TTA 필터": ("exp_results/report_2cls_tta.json", load_autolearn),
-        "3클래스": ("exp_results/report_3cls.json", load_autolearn),
-        "4클래스": ("exp_results/report_4cls.json", load_autolearn),
-    },
-}
-
-
+# ==================== 방법 레지스트리 조회 ====================
 def method_by_id(mid):
     for m in METHODS:
         if m["id"] == mid:
@@ -380,14 +151,55 @@ def method_by_id(mid):
     return None
 
 
+def resolve_metrics(spec):
+    """콘텐츠의 metrics 스펙 -> (headers, rows, summary[, subtables]).
+
+    spec = {loader: static, headers?, rows, summary, subtables?}  또는
+           {loader: autolearn|zeroshot|sweep, file: <상대경로>}
+    """
+    if not spec:
+        return None
+    kind = spec.get("loader")
+    if kind == "static":
+        return (spec.get("headers", ["항목", "결과"]), spec.get("rows", []),
+                spec.get("summary", ""), spec.get("subtables", []))
+    fn = METHOD_LOADERS.get(kind)
+    return fn(spec.get("file")) if fn else None
+
+
 def method_metrics(m):
-    rel_loader = m["metrics"]
-    res = rel_loader(None) if callable(rel_loader) else rel_loader[1](rel_loader[0])
+    res = resolve_metrics(m.get("metrics"))
     if res is None:
         return {"headers": ["항목"], "rows": [], "summary": "결과 파일 없음", "subtables": []}
     headers, rows, summary = res[:3]
     subtables = res[3] if len(res) > 3 else []
     return {"headers": headers, "rows": rows, "summary": summary, "subtables": subtables}
+
+
+def autolearn_conditions_table():
+    """방법 1 콜아웃: 조건(부품 수·1차 라벨 비율·TTA)별 오토러닝 결과 요약표."""
+    rows = []
+    for name, rel in _AUTOLEARN_CONDS:
+        d = jload(rel)
+        if not d:
+            continue
+        ps, r0, r1 = d.get("pseudo", {}), d.get("round0", {}), d.get("round1", {})
+        a, b = r0.get("map50"), r1.get("map50")
+        dl = f"+{round((b - a) * 100, 1)}%p" if a is not None and b is not None else ""
+        rows.append([name, ps.get("precision"), a, b, dl])
+    return {"headers": ["조건", "자동 라벨 정밀도", "1차 모델 mAP50", "2차 모델 mAP50", "변화"], "rows": rows}
+
+
+# 방법 결과 뒤에 붙일 관련 표를 이름으로 만드는 함수 맵 (콘텐츠의 extras_table 로 지정)
+EXTRA_TABLES = {"autolearn_conditions": autolearn_conditions_table}
+
+
+def method_extras(m):
+    """방법 결과 뒤에 콜아웃으로 붙일 관련 실험들. [{title, desc, table}]"""
+    key = m.get("extras_table")
+    if key and key in EXTRA_TABLES:
+        return [{"title": "조건별 오토러닝 결과", "desc": "", "table": EXTRA_TABLES[key]()}]
+    return m.get("extras", [])
 
 
 def method_gallery(m):
@@ -416,15 +228,6 @@ def _b64(im, max_w=900, q=85):
         im = cv2.resize(im, (max_w, int(h * max_w / w)))
     ok, buf = cv2.imencode(".jpg", im, [cv2.IMWRITE_JPEG_QUALITY, q])
     return "data:image/jpeg;base64," + base64.b64encode(buf).decode()
-
-
-# 클래스 이름 기준 고정 색(BGR). 예측·정답에서 같은 부품은 항상 같은 색으로 표기.
-CLASS_COLORS = {
-    "bearing": (0, 190, 0),     # 초록
-    "bolt": (0, 150, 255),      # 주황
-    "gear": (255, 130, 0),      # 파랑
-    "nut": (200, 0, 200),       # 자홍
-}
 
 
 def color_for(name):
@@ -485,7 +288,7 @@ def compare(idx=0, conf=0.6):
         return {"error": "서빙 모델 없음 (models/new_model.pt)"}
     imgs = test_images()
     if not imgs:
-        return {"error": "테스트 이미지 없음 (data/robo_yolo/test)"}
+        return {"error": "테스트 이미지 없음 (data/robo/yolo/test)"}
     idx = int(idx) % len(imgs)
     p = imgs[idx]
     src = cv2.imread(str(p))
@@ -529,14 +332,19 @@ def compare(idx=0, conf=0.6):
 def experiment_metrics(cat, topic):
     entry = EXPERIMENTS.get(cat, {}).get(topic)
     if not entry:
-        return {"headers": [], "rows": [], "summary": "선택하세요."}
-    rel, loader = entry
-    res = loader(rel)
+        return {"headers": [], "rows": [], "summary": "선택하세요.", "desc": ""}
+    desc = entry.get("desc", "")
+    if entry.get("loader") == "static":            # 파일 없이 rows 직접(정적 표)
+        res = resolve_metrics(entry)
+    else:
+        fn = EXP_LOADERS.get(entry.get("loader"))
+        res = fn(entry.get("file"), entry.get("summary", "")) if fn else None
     if res is None:
-        return {"headers": [], "rows": [], "summary": f"결과 파일 없음: {rel}", "subtables": []}
+        return {"headers": [], "rows": [], "summary": f"결과 파일 없음: {entry.get('file')}",
+                "subtables": [], "desc": desc}
     headers, rows, summary = res[:3]
     subtables = res[3] if len(res) > 3 else []
-    return {"headers": headers, "rows": rows, "summary": summary, "subtables": subtables}
+    return {"headers": headers, "rows": rows, "summary": summary, "subtables": subtables, "desc": desc}
 
 
 def export_report():

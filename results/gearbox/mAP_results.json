@@ -1,0 +1,863 @@
+[
+  {
+    "experiment": "cp_mix_aug_retap_s2",
+    "run": "cp_mix_aug_retap_s2",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260731_102307/model/cp_mix_aug_retap_s2/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.994,
+      "mAP50_95": 0.812,
+      "P": 0.975,
+      "R": 0.975,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.977,
+      "P": 0.909,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.958,
+      "P": 1.0,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.558,
+      "P": 1.0,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.748,
+      "P": 1.0,
+      "R": 0.9,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "cp_mix",
+    "run": "cp_mix",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260730_154856/model/cp_mix/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.887,
+      "mAP50_95": 0.741,
+      "P": 0.969,
+      "R": 0.775,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.98,
+      "P": 1.0,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.955,
+      "P": 1.0,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.785,
+      "mAP50_95": 0.447,
+      "P": 0.889,
+      "R": 0.8,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.8,
+      "mAP50_95": 0.626,
+      "P": 1.0,
+      "R": 0.3,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "cp_mix_aug_retap",
+    "run": "cp_mix_aug_retap",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260731_102307/model/cp_mix_aug_retap/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.997,
+      "mAP50_95": 0.688,
+      "P": 0.889,
+      "R": 1.0,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.821,
+      "P": 0.909,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.786,
+      "P": 0.909,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.476,
+      "P": 0.769,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.688,
+      "P": 1.0,
+      "R": 1.0,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "cp_mix_aug_retap_s1",
+    "run": "cp_mix_aug_retap_s1",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260731_102307/model/cp_mix_aug_retap_s1/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.987,
+      "mAP50_95": 0.616,
+      "P": 0.78,
+      "R": 0.975,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.728,
+      "P": 0.769,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.681,
+      "P": 0.833,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.464,
+      "P": 0.625,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.624,
+      "P": 1.0,
+      "R": 0.9,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "09_mixup_erasing",
+    "run": "09_mixup_erasing",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260730_154856/model/09_mixup_erasing/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.758,
+      "mAP50_95": 0.51,
+      "P": 0.285,
+      "R": 0.875,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 0.942,
+      "mAP50_95": 0.646,
+      "P": 0.286,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 0.967,
+      "mAP50_95": 0.792,
+      "P": 0.357,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.114,
+      "mAP50_95": 0.024,
+      "P": 0.128,
+      "R": 0.5,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.926,
+      "mAP50_95": 0.639,
+      "P": 0.476,
+      "R": 1.0,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "cp_mix_aug",
+    "run": "cp_mix_aug",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260730_154856/model/cp_mix_aug/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.981,
+      "mAP50_95": 0.502,
+      "P": 0.864,
+      "R": 0.95,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.638,
+      "P": 0.833,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 0.991,
+      "mAP50_95": 0.565,
+      "P": 0.909,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.375,
+      "P": 0.769,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.982,
+      "mAP50_95": 0.511,
+      "P": 1.0,
+      "R": 0.8,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "real_occ_aug",
+    "run": "real_occ_aug",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260730_154856/model/real_occ_aug/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.676,
+      "mAP50_95": 0.438,
+      "P": 0.349,
+      "R": 0.725,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 0.982,
+      "mAP50_95": 0.798,
+      "P": 0.385,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 0.9,
+      "mAP50_95": 0.711,
+      "P": 0.409,
+      "R": 0.9,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.002,
+      "mAP50_95": 0.0,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.943,
+      "mAP50_95": 0.278,
+      "P": 0.714,
+      "R": 1.0,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "cp_synth_only",
+    "run": "cp_synth_only",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260730_154856/model/cp_synth_only/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.787,
+      "mAP50_95": 0.437,
+      "P": 0.806,
+      "R": 0.725,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.759,
+      "P": 0.909,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.544,
+      "P": 0.714,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.65,
+      "mAP50_95": 0.29,
+      "P": 0.75,
+      "R": 0.6,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.5,
+      "mAP50_95": 0.223,
+      "P": 1.0,
+      "R": 0.3,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "cp_mix_retap",
+    "run": "cp_mix_retap",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260731_102307/model/cp_mix_retap/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.887,
+      "mAP50_95": 0.431,
+      "P": 1.0,
+      "R": 0.75,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.565,
+      "P": 1.0,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.47,
+      "P": 1.0,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.7,
+      "mAP50_95": 0.362,
+      "P": 1.0,
+      "R": 0.5,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.904,
+      "mAP50_95": 0.458,
+      "P": 1.0,
+      "R": 0.5,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "05_model_26n",
+    "run": "05_model_26n",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260730_154856/model/05_model_26n/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.539,
+      "mAP50_95": 0.423,
+      "P": 0.583,
+      "R": 0.525,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 0.945,
+      "mAP50_95": 0.78,
+      "P": 0.625,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 0.991,
+      "mAP50_95": 0.891,
+      "P": 0.714,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.055,
+      "mAP50_95": 0.005,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.133,
+      "mAP50_95": 0.03,
+      "P": 0.2,
+      "R": 0.1,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "plain_dashboard",
+    "run": "plain_dashboard",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260731_102307/model/plain_dashboard/runs\\yolo26s\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.479,
+      "mAP50_95": 0.404,
+      "P": 0.944,
+      "R": 0.425,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.827,
+      "P": 1.0,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 0.957,
+      "mAP50_95": 0.821,
+      "P": 1.0,
+      "R": 0.7,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.0,
+      "mAP50_95": 0.0,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.0,
+      "mAP50_95": 0.0,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "01_baseline_26s_640_100ep",
+    "run": "01_baseline_26s_640_100ep",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260730_154856/model/01_baseline_26s_640_100ep/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.507,
+      "mAP50_95": 0.396,
+      "P": 0.882,
+      "R": 0.375,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 0.963,
+      "mAP50_95": 0.762,
+      "P": 0.9,
+      "R": 0.9,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 0.991,
+      "mAP50_95": 0.875,
+      "P": 1.0,
+      "R": 0.6,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.014,
+      "mAP50_95": 0.004,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.05,
+      "mAP50_95": 0.007,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "final",
+    "run": "final",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260730_154856/model/final/runs\\yolo26s\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.507,
+      "mAP50_95": 0.396,
+      "P": 0.882,
+      "R": 0.375,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 0.963,
+      "mAP50_95": 0.762,
+      "P": 0.9,
+      "R": 0.9,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 0.991,
+      "mAP50_95": 0.875,
+      "P": 1.0,
+      "R": 0.6,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.014,
+      "mAP50_95": 0.004,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.05,
+      "mAP50_95": 0.007,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "07_model_v8s",
+    "run": "07_model_v8s",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260730_154856/model/07_model_v8s/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.548,
+      "mAP50_95": 0.358,
+      "P": 0.818,
+      "R": 0.45,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 0.955,
+      "mAP50_95": 0.656,
+      "P": 0.833,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 0.871,
+      "mAP50_95": 0.725,
+      "P": 1.0,
+      "R": 0.7,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.0,
+      "mAP50_95": 0.0,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.472,
+      "mAP50_95": 0.1,
+      "P": 1.0,
+      "R": 0.1,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "08_epochs_150",
+    "run": "08_epochs_150",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260730_154856/model/08_epochs_150/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.467,
+      "mAP50_95": 0.351,
+      "P": 0.655,
+      "R": 0.475,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.797,
+      "P": 0.769,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 0.977,
+      "mAP50_95": 0.659,
+      "P": 1.0,
+      "R": 0.9,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.0,
+      "mAP50_95": 0.0,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.0,
+      "mAP50_95": 0.0,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "06_model_26m",
+    "run": "06_model_26m",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260730_154856/model/06_model_26m/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.422,
+      "mAP50_95": 0.329,
+      "P": 0.75,
+      "R": 0.375,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.799,
+      "P": 0.833,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 0.789,
+      "mAP50_95": 0.632,
+      "P": 1.0,
+      "R": 0.5,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.0,
+      "mAP50_95": 0.0,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.1,
+      "mAP50_95": 0.01,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "10_train1_only",
+    "run": "10_train1_only",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260730_154856/model/10_train1_only/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.491,
+      "mAP50_95": 0.329,
+      "P": 0.783,
+      "R": 0.45,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 0.991,
+      "mAP50_95": 0.706,
+      "P": 0.909,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 0.88,
+      "mAP50_95": 0.612,
+      "P": 0.875,
+      "R": 0.7,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.0,
+      "mAP50_95": 0.0,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.167,
+      "mAP50_95": 0.029,
+      "P": 1.0,
+      "R": 0.1,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "11_train2_only",
+    "run": "11_train2_only",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260730_154856/model/11_train2_only/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.432,
+      "mAP50_95": 0.273,
+      "P": 0.789,
+      "R": 0.375,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 0.991,
+      "mAP50_95": 0.54,
+      "P": 0.909,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 0.88,
+      "mAP50_95": 0.613,
+      "P": 1.0,
+      "R": 0.5,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.0,
+      "mAP50_95": 0.0,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.0,
+      "mAP50_95": 0.0,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "04_imgsz_1280",
+    "run": "04_imgsz_1280",
+    "imgsz": 1280,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260730_154856/model/04_imgsz_1280/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.403,
+      "mAP50_95": 0.262,
+      "P": 0.739,
+      "R": 0.425,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 0.973,
+      "mAP50_95": 0.622,
+      "P": 0.769,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 0.7,
+      "mAP50_95": 0.476,
+      "P": 1.0,
+      "R": 0.7,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.0,
+      "mAP50_95": 0.0,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.0,
+      "mAP50_95": 0.0,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "12_dedup10_step_matched",
+    "run": "12_dedup10_step_matched",
+    "imgsz": 640,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260730_154856/model/12_dedup10_step_matched/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.38,
+      "mAP50_95": 0.245,
+      "P": 0.421,
+      "R": 0.4,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 1.0,
+      "mAP50_95": 0.64,
+      "P": 0.909,
+      "R": 1.0,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 0.632,
+      "mAP50_95": 0.366,
+      "P": 1.0,
+      "R": 0.6,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.0,
+      "mAP50_95": 0.0,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.004,
+      "mAP50_95": 0.0,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    }
+  },
+  {
+    "experiment": "03_imgsz_960",
+    "run": "03_imgsz_960",
+    "imgsz": 960,
+    "weights": "c:/Users/eg287/OneDrive/바탕 화면/project/수리온/xr_autolearning/results/gearbox/260730_154856/model/03_imgsz_960/runs\\m\\weights\\best.pt",
+    "overall": {
+      "mAP50": 0.329,
+      "mAP50_95": 0.158,
+      "P": 0.652,
+      "R": 0.375,
+      "ngt": 40
+    },
+    "test1": {
+      "mAP50": 0.901,
+      "mAP50_95": 0.433,
+      "P": 0.9,
+      "R": 0.9,
+      "ngt": 10
+    },
+    "test2": {
+      "mAP50": 0.724,
+      "mAP50_95": 0.359,
+      "P": 1.0,
+      "R": 0.6,
+      "ngt": 10
+    },
+    "test3": {
+      "mAP50": 0.0,
+      "mAP50_95": 0.0,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    },
+    "test4": {
+      "mAP50": 0.0,
+      "mAP50_95": 0.0,
+      "P": 0.0,
+      "R": 0.0,
+      "ngt": 10
+    }
+  }
+]

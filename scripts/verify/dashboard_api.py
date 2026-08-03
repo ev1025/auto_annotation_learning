@@ -15,12 +15,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import uvicorn
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import Body, FastAPI
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import config
 import dashboard_core as core
+import autolabel
+import sam2_autolabel as sa
 
 PORT = 7862
 DIST = config.BASE_DIR / "dashboard" / "dist"
@@ -46,7 +48,8 @@ def api_method(mid: str):
             "tech": core.resolve_tech(m), "flow": m.get("flow", []),
             "bullets": m["bullets"], "code": m.get("code", []),
             "gallery": core.method_gallery(m),
-            "metrics": core.method_metrics(m)}
+            "metrics": core.method_metrics(m),
+            "extras": core.method_extras(m)}
 
 
 @app.get("/api/compare")
@@ -72,6 +75,76 @@ def api_experiment(cat: str, topic: str):
 @app.post("/api/export")
 def api_export():
     return {"path": core.export_report()}
+
+
+@app.get("/api/autolabel/sources")
+def api_autolabel_sources():
+    return autolabel.list_sources()
+
+
+@app.get("/api/autolabel/folders")
+def api_autolabel_folders():
+    return autolabel.list_folders()
+
+
+@app.get("/api/autolabel/frame")
+def api_autolabel_frame(src: str, idx: int, w: int = 960):
+    b = autolabel.frame_jpeg(src, idx, w)
+    if b is None:
+        return JSONResponse({"error": "frame not found"}, status_code=404)
+    return Response(content=b, media_type="image/jpeg")
+
+
+@app.get("/api/autolabel/prepare")
+def api_autolabel_prepare(src: str):
+    return autolabel.prepare(src)
+
+
+@app.post("/api/autolabel/run")
+def api_autolabel_run(payload: dict = Body(...)):
+    return autolabel.start_job(payload.get("src"), payload.get("shots", []),
+                               payload.get("tau", 0.70))
+
+
+@app.get("/api/autolabel/status")
+def api_autolabel_status(job: str):
+    return autolabel.job_status(job)
+
+
+# ---- SAM2 단계형 오토라벨 ----
+@app.post("/api/sam2/mask")
+def api_sam2_mask(payload: dict = Body(...)):
+    return sa.mask_preview(payload.get("src"), int(payload.get("frame", 0)), payload.get("points", []))
+
+
+@app.post("/api/sam2/propagate")
+def api_sam2_propagate(payload: dict = Body(...)):
+    return sa.start_propagate(payload.get("src"), payload.get("shots", []))
+
+
+@app.post("/api/sam2/train_eval")
+def api_sam2_train_eval(payload: dict = Body(...)):
+    return sa.start_train_eval(payload.get("train_runs", []), payload.get("test_srcs", []))
+
+
+@app.post("/api/sam2/session")
+def api_sam2_session(payload: dict = Body(...)):
+    return sa.start_session(payload.get("part"), payload.get("train_shots", {}), payload.get("test_srcs", []))
+
+
+@app.get("/api/sam2/runs")
+def api_sam2_runs(src: str):
+    return sa.list_runs(src)
+
+
+@app.get("/api/sam2/labeled")
+def api_sam2_labeled():
+    return sa.list_labeled()
+
+
+@app.get("/api/sam2/status")
+def api_sam2_status(job: str):
+    return sa.job_status(job)
 
 
 @app.get("/previews/{sub}/{name}")

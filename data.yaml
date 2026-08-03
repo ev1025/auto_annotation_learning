@@ -3,7 +3,7 @@
 # - 라벨(.txt)은 ultralytics 가 경로의 'images' -> 'labels' 치환으로 자동 탐색한다.
 #   (예: data/training_pool/images/train/a.jpg  ->  data/training_pool/labels/train/a.txt)
 
-path: ./data/training_pool        # 데이터셋 루트(이 yaml 파일 위치 기준 상대경로)
+path: ./data/robo/training_pool        # 데이터셋 루트(이 yaml 파일 위치 기준 상대경로)
 train: images/train     # 학습 이미지 폴더
 val: images/val         # 검증 이미지 폴더
 

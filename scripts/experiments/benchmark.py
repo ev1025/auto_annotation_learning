@@ -7,7 +7,7 @@
   - 데이터만 바꿔 끼우면 바로 재실행: --src 에 Roboflow YOLO 레이아웃
     (train/valid/test + data.yaml) 폴더를 주면 어떤 데이터셋이든 동일하게 돈다.
   - 모델/입력크기는 리스트 인자: --models ... --imgsz 640 1280
-  - 결과는 조합마다 즉시 bench_results/benchmark.json 에 누적 저장(중단돼도 부분 결과 보존),
+  - 결과는 조합마다 즉시 results/benchmark/benchmark.json 에 누적 저장(중단돼도 부분 결과 보존),
     종료 시 markdown 비교표 출력.
 
 측정 항목(조합당):
@@ -18,7 +18,7 @@
     같은 명령을 다시 실행하면 된다(스크립트는 장비 독립적).
 
 실행:
-  python scripts/experiments/benchmark.py --src ./data/robo_yolo \
+  python scripts/experiments/benchmark.py --src ./data/robo/yolo \
       --models yolov8n.pt yolov8s.pt yolov8m.pt yolo11n.pt yolo26n.pt yolo26s.pt yolo26m.pt \
       --imgsz 640 1280 --epochs 100 --device 0
 
@@ -42,7 +42,7 @@ import config
 from data_import.dataset_utils import normalize_names, write_yaml
 from gpu_utils import free_cuda
 
-BENCH_DIR = config.BASE_DIR / "bench_results"
+BENCH_DIR = config.BASE_DIR / "results/benchmark"
 
 
 def build_data_yaml(src):

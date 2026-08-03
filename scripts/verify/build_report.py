@@ -25,10 +25,10 @@ import config
 import dashboard_core as core
 import html as _html
 
-OUT = config.BASE_DIR / "docs" / "report.html"
-PREV = config.BASE_DIR / "docs" / "method_previews"
-TEST_IMG = config.DATA_DIR / "robo_yolo" / "test" / "images"
-TEST_LBL = config.DATA_DIR / "robo_yolo" / "test" / "labels"
+OUT = config.BASE_DIR / "dashboard" / "report.html"
+PREV = config.BASE_DIR / "dashboard" / "previews"
+TEST_IMG = config.DATA_DIR / "robo" / "yolo" / "test" / "images"
+TEST_LBL = config.DATA_DIR / "robo" / "yolo" / "test" / "labels"
 GT_CLASSES = ["bearing", "bolt", "gear", "nut"]
 
 
@@ -113,7 +113,7 @@ def autolearn_rows(rel):
     d = jload(rel)
     sp, ps = d["split"], d["pseudo"]
     return [
-        ["데이터 구성", f"초기 라벨셋 {sp['seed']}장 / 미라벨 풀 {sp['pool']}장 / 평가셋 {sp['test']}장"],
+        ["데이터 구성", f"1차 라벨 {sp['seed']}장 / 무라벨 {sp['pool']}장 / 평가셋 {sp['test']}장"],
         ["자동 라벨 생성", f"{ps['labeled_images']}장 (박스 {ps['boxes']}개)"],
         ["자동 라벨 정밀도 / 재현율", f"{ps['precision']} / {ps['recall']}"],
     ]
@@ -273,11 +273,11 @@ def bar_row(name, value, note="", adopt=None):
 
 # ---------------- 본문 구성 ----------------
 def build():
-    al = jload("exp_results/report_2cls_seed15.json")
-    zs_rows, zs_p = zeroshot_rows("exp_results/zeroshot/zeroshot_eval_post.json")
-    gs_rows, gs_p = zeroshot_rows("exp_results/zeroshot/zeroshot_eval_gsam_tight.json")
-    clip_rows, _ = sweep_rows("exp_results/zeroshot/gallery_eval_clip.json")
-    dino_rows, dino_hp = sweep_rows("exp_results/zeroshot/gallery_eval_dinov2.json")
+    al = jload("results/exp_results/report_2cls_seed15.json")
+    zs_rows, zs_p = zeroshot_rows("results/exp_results/zeroshot/zeroshot_eval_post.json")
+    gs_rows, gs_p = zeroshot_rows("results/exp_results/zeroshot/zeroshot_eval_gsam_tight.json")
+    clip_rows, _ = sweep_rows("results/exp_results/zeroshot/gallery_eval_clip.json")
+    dino_rows, dino_hp = sweep_rows("results/exp_results/zeroshot/gallery_eval_dinov2.json")
     pairs, pair_note = gen_selftrain_pairs()
 
     # ---- 결과 한눈에 ----
@@ -291,7 +291,7 @@ def build():
         bar_row("7. 포인트 참조 매칭", None, "오채택 0 · 학습 후 미학습 영상 재현율 88% **", "adopt"),
         bar_row("8. 포인트 참조 + self-training", None, "영상 자가증식 · 재현율 84% → 96% (+12%p) **", "adopt"),
     ])
-    overview += ('<p class="fn">* 1번은 자체 실증 데이터(미라벨 풀 647장) 기준, 2~5번은 동일 평가셋 204장 기준. '
+    overview += ('<p class="fn">* 1번은 자체 실증 데이터(무라벨 647장) 기준, 2~5번은 동일 평가셋 204장 기준. '
                  '** 7번은 영상 등록 실험이라 라벨 정밀도 대신 오채택·최종 탐지 성능으로 평가.</p>')
 
     # ---- 방법 1 ----
@@ -310,16 +310,16 @@ def build():
         code_html("m1") +
         sub("실제 입출력 결과") + pair_html +
         sub("실험 결과") +
-        table(["항목", "값"], autolearn_rows("exp_results/report_2cls_seed15.json")) +
+        table(["항목", "값"], autolearn_rows("results/exp_results/report_2cls_seed15.json")) +
         '<p class="subtable-title">모델 성능 (1차 → 2차)</p>' +
-        table(["지표", "1차 모델", "2차 모델", "변화율"], perf_rows("exp_results/report_2cls_seed15.json")) +
+        table(["지표", "1차 모델", "2차 모델", "변화율"], perf_rows("results/exp_results/report_2cls_seed15.json")) +
         '<p class="subtable-title">클래스별 정확도 (mAP50-95)</p>' +
-        table(["클래스", "1차 모델", "2차 모델", "변화율"], per_class_rows("exp_results/report_2cls_seed15.json")))
+        table(["클래스", "1차 모델", "2차 모델", "변화율"], per_class_rows("results/exp_results/report_2cls_seed15.json")))
 
     # ---- 방법 2 ----
     m2 = section("m2", "텍스트 제로샷 (Grounding DINO)", badge("drop"),
         desc_html("m2") + tech_html("m2") + flow_of("m2") +
-        sub("실제 입출력 결과") + gallery_html("dino_text") +
+        sub("실제 입출력 결과") + gallery_html("2_dino_text") +
         '<p class="fn">초록 = 모델 박스, 빨강 = 정답 라벨 (한 이미지에 겹쳐 표시)</p>' +
         sub("실험 결과") +
         verdict(f"정밀도 {zs_p} → 무검수 라벨 기준(0.87) 미달로 탈락") +
@@ -356,7 +356,7 @@ def build():
     m6 = section("m6", "상호 일관성 매칭", badge("partial"),
         desc_html("m6") + tech_html("m6") + flow_of("m6") +
         code_html("m6") +
-        sub("실제 입출력 결과") + gallery_html("mutual") +
+        sub("실제 입출력 결과") + gallery_html("6_mutual") +
         sub("실험 결과") +
         verdict("배경이 바뀌는 사진 묶음에서만 유효. 영상 등록에는 부적합 → 방법 7(포인트 참조)로 대체") +
         table(["항목", "결과"], [
@@ -367,7 +367,7 @@ def build():
     m7 = section("m7", "포인트 참조 매칭", badge("adopt"),
         desc_html("m7") + tech_html("m7") + flow_of("m7") +
         code_html("m7") +
-        sub("실제 입출력 결과") + gallery_html("one_tap") +
+        sub("실제 입출력 결과") + gallery_html("7_one_tap") +
         sub("실험 결과") +
         verdict("최종 채택. 사람 개입은 점 1개 지정뿐이며, 라벨 수량이 성능을 직접 좌우 (20장=31% vs 114장=88%) → 등록 영상만 충분히 길면 성능 확보") +
         table(["항목", "결과"], [
@@ -380,19 +380,19 @@ def build():
     m8_m = core.method_metrics(core.method_by_id("m8"))
     m8 = section("m8", "포인트 참조 + self-training", badge("adopt"),
         desc_html("m8") + tech_html("m8") + flow_of("m8") +
-        sub("실제 입출력 결과") + gallery_html("selftrain") +
+        sub("실제 입출력 결과") + gallery_html("8_selftrain") +
         sub("실험 결과") +
         verdict_ml(m8_m["summary"]) +
         table(m8_m["headers"], m8_m["rows"]))
 
     # ---- 부록 ----
-    bench = jload("bench_results/benchmark.json")
+    bench = jload("results/benchmark/benchmark.json")
     bench_rows = [[r["model"], r["imgsz"], r["map50"], r["map50_95"],
                    f"{r['latency_ms']}ms", r["fps"], f"{r['weight_MB']}MB"] for r in bench]
-    conds = [("2클래스 · 초기 라벨 10%", "exp_results/report_2cls_seed10.json"),
-             ("2클래스 · 초기 라벨 15%", "exp_results/report_2cls_seed15.json"),
-             ("3클래스", "exp_results/report_3cls.json"),
-             ("4클래스", "exp_results/report_4cls.json")]
+    conds = [("2클래스 · 1차 라벨 10%", "results/exp_results/report_2cls_seed10.json"),
+             ("2클래스 · 1차 라벨 15%", "results/exp_results/report_2cls_seed15.json"),
+             ("3클래스", "results/exp_results/report_3cls.json"),
+             ("4클래스", "results/exp_results/report_4cls.json")]
     cond_rows = []
     for name, rel in conds:
         d = jload(rel)
@@ -513,7 +513,7 @@ figcaption{font-size:13px;color:var(--muted);margin-top:4px;text-align:center}
 <h1>오토라벨링 검증 리포트</h1>
 <p class="subtitle">사람 대신 AI 학습 라벨을 자동 생성하는 8가지 방법의 실험 기록 · XR 오토러닝 프로젝트</p>
 {intro}{overview_sec}{m1}{m2}{m3}{m4}{m5}{m6}{m7}{m8}{appendix}
-<p class="fn" style="text-align:center;margin:10px 0 30px">본 리포트는 scripts/verify/build_report.py 가 실험 결과 파일에서 자동 생성 · 수치 원본: exp_results/, bench_results/, exp_results/zeroshot/</p>
+<p class="fn" style="text-align:center;margin:10px 0 30px">본 리포트는 scripts/verify/build_report.py 가 실험 결과 파일에서 자동 생성 · 수치 원본: results/exp_results/, results/benchmark/, results/exp_results/zeroshot/</p>
 </main></div></body></html>"""
     OUT.write_text(html, encoding="utf-8")
     size = OUT.stat().st_size / 1e6

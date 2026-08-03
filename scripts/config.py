@@ -20,7 +20,7 @@ NEW_MODEL_ONNX = MODELS_DIR / "new_model.onnx"  # ONNX 변환 산출물(Unity/C#
 
 # --- 데이터셋 경로 ---
 DATA_DIR = BASE_DIR / "data"          # 모든 데이터(원본·데이터셋·등록영상)의 단일 루트
-TRAINING_POOL_DIR = DATA_DIR / "training_pool"  # 운영 학습 풀(등록 부품 누적)
+TRAINING_POOL_DIR = DATA_DIR / "robo" / "training_pool"  # 운영 학습 풀(등록 부품 누적)
 UNLABELED_DIR = TRAINING_POOL_DIR / "unlabeled_images"  # 자동 라벨링 입력(원본)
 IMAGES_DIR = TRAINING_POOL_DIR / "images"   # 라벨링된 이미지(ultralytics 가 labels 와 짝지음)
 LABELS_DIR = TRAINING_POOL_DIR / "labels"   # YOLO 포맷 .txt 정답
@@ -37,7 +37,7 @@ KEEP_RELEASES = 10       # 보관할 릴리스 수(초과분은 오래된 것부
 PROMOTE_MIN_DROP = 0.0   # 배포 게이트: 직전 배포본 대비 mAP50 하락 허용폭(0 = 하락하면 미채택)
 
 # --- 학습 하이퍼파라미터 기본값 ---
-# 벤치마크(bench_results/, 7모델x2크기 + 시드 3반복)로 선정: 정확도 동급 최고
+# 벤치마크(results/benchmark/, 7모델x2크기 + 시드 3반복)로 선정: 정확도 동급 최고
 # (mAP50-95 평균 1위), 시드 분산 최소, 지연 최단(NMS-free), Thor TensorRT 적합
 PRETRAINED = "yolo26s.pt"  # base_model 이 없을 때 전이학습 시작점(자동 다운로드)
 EPOCHS = 100

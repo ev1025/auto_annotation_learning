@@ -41,7 +41,7 @@ def append_class(name):
             return k
     new_id = max(names.keys(), default=-1) + 1
     names[new_id] = name
-    cfg.setdefault("path", "./data/training_pool")
+    cfg.setdefault("path", "./data/robo/training_pool")
     cfg.setdefault("train", "images/train")
     cfg.setdefault("val", "images/val")
     cfg["names"] = {int(k): names[k] for k in sorted(names)}
@@ -66,7 +66,7 @@ def register_classes(class_names):
                 f"      기존: {list(old.values())}\n"
                 f"      반입: {list(class_names.values())}\n"
                 f"      기존 데이터셋과 섞이면 라벨 번호가 꼬입니다. data.yaml/training_pool 을 정리 후 재실행하세요.")
-    cfg.setdefault("path", "./data/training_pool")
+    cfg.setdefault("path", "./data/robo/training_pool")
     cfg.setdefault("train", "images/train")
     cfg.setdefault("val", "images/val")
     cfg["names"] = class_names

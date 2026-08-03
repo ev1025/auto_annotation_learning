@@ -89,17 +89,6 @@ h3.section-h {
   margin: 30px 0 16px;
 }
 .method-desc + h3.section-h { margin-top: 10px; }
-.verdict {
-  font-size: 15px; color: var(--ink); margin: 4px 0 12px; line-height: 1.6;
-}
-.verdict-list { list-style: none; padding: 0; margin: 4px 0 12px; }
-.verdict-list li {
-  font-size: 14.5px; color: var(--ink); line-height: 1.6; margin: 4px 0;
-  padding-left: 14px; border-left: 3px solid var(--line);
-}
-.callout-list { list-style: none; padding: 12px 14px; margin: 8px 0 12px;
-  border-left: 4px solid var(--accent); background: #f8fafc; border-radius: 0 8px 8px 0; }
-.callout-list li { font-size: 14.5px; line-height: 1.6; margin: 4px 0; font-weight: 500; }
 .tech-list { margin: 4px 0 6px; }
 .tech-row { display: flex; gap: 10px; align-items: baseline; margin: 6px 0; flex-wrap: wrap; }
 .tech-name {
@@ -140,11 +129,6 @@ p { margin: 6px 0; }
 .badge.drop { background: #f1f5f9; color: #64748b; border: 1px solid var(--line); }
 .badge.partial { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
 
-.callout {
-  border-left: 4px solid var(--accent); background: #f8fafc;
-  padding: 10px 14px; border-radius: 0 8px 8px 0;
-  font-weight: 600; margin: 8px 0 12px;
-}
 
 table {
   width: 100%; border-collapse: collapse; font-size: 14.5px;
@@ -262,3 +246,53 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
   color: #e2e8f0; line-height: 1.55; white-space: pre;
 }
 .sec-gap { border-top: 1px solid var(--line); margin: 20px 0 16px; }
+
+/* ---------- 오토라벨 (포인트 참조) ---------- */
+.al-frame {
+  position: relative; display: block; width: 100%;
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  cursor: crosshair; user-select: none; background: #0f172a; line-height: 0;
+}
+.al-frame img { width: 100%; display: block; }
+.al-dot {
+  position: absolute; width: 16px; height: 16px; border-radius: 50%;
+  transform: translate(-50%, -50%); border: 2px solid #fff;
+  box-shadow: 0 0 0 1.5px rgba(0,0,0,0.45); pointer-events: none;
+}
+.al-dot.pos { background: #2563eb; }
+.al-dot.neg { background: #ef4444; }
+.al-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+.al-slider { flex: 1; min-width: 160px; accent-color: var(--accent); }
+.al-hint { font-size: 12.5px; color: var(--muted); }
+.al-shots { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.al-shot-wrap { position: relative; display: inline-block; }
+.al-shot-x {
+  position: absolute; top: -5px; right: -5px; width: 13px; height: 13px;
+  border-radius: 50%; background: #fff; color: #111; font-size: 10px;
+  line-height: 12px; text-align: center; cursor: pointer; font-weight: 700;
+  border: 1px solid var(--line);
+}
+.al-shot-x:hover { background: #f1f5f9; }
+.al-shot {
+  padding: 5px 12px; border: 1px solid var(--line); border-radius: 20px;
+  background: #fff; color: var(--ink); font-family: inherit; font-size: 13px;
+  cursor: pointer; font-variant-numeric: tabular-nums;
+}
+.al-shot:hover:not(:disabled) { border-color: var(--accent); }
+.al-shot.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.al-shot.bad { border-color: #fca5a5; color: #b91c1c; }
+.al-progress { height: 10px; background: var(--line); border-radius: 6px; overflow: hidden; margin: 8px 0; }
+.al-progress > i { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
+.al-thumbs {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px; margin: 8px 0 4px;
+}
+.al-thumbs img { width: 100%; border-radius: 8px; border: 1px solid var(--line); display: block; }
+.al-result { margin-top: 8px; }
+.al-triptych {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 8px 0 4px;
+}
+.al-triptych figure { margin: 0; }
+.al-triptych img { width: 100%; border-radius: 8px; border: 1px solid var(--line); display: block; }
+.al-triptych figcaption { margin-top: 4px; text-align: center; }
+@media (max-width: 720px) { .al-triptych { grid-template-columns: 1fr; } }

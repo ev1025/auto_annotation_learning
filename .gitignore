@@ -48,3 +48,24 @@ dashboard/dist/
 # self-training 영상 실험 산출물 (models/runs/frames 대용량)
 exp_selftrain/
 models/sam/
+
+# ===== 밤샘/SAM2 실험 산출물 (로컬 전용, 대용량. report.json·evidence만 별도 보존) =====
+exp_variance/
+exp_variance_aug/
+exp_variance_abc/
+exp_overnight/
+exp_sam2_test/
+models/sam2/
+# evidence/ 와 docs/ 는 추적 (큐레이션한 증거·문서)
+
+# 실험 결과·프레임 캐시 (data/는 이미 무시됨). 무거운 산출물(모델·이미지·runs)은 제외,
+# 실험 기록(수치 JSON·요약 MD)만 추적 = 대시보드 데이터 소스 + git 기록용
+results/*
+!results/exp_results
+results/exp_results/*.pt
+results/exp_results/*.onnx
+!results/benchmark
+!results/gearbox
+results/gearbox/*
+!results/gearbox/mAP_summary.md
+!results/gearbox/mAP_results.json
