@@ -492,7 +492,6 @@ function AutoLabelView() {
       <h2>부품 라벨링 (SAM2)</h2>
 
       <h3 className="section-h">부품 선택 <span className="al-hint" style={{ fontWeight: 400 }}>{nLabeled}/{partFolders.length}</span>
-        <button className="al-secondary sm" style={{ marginLeft: 10 }} onClick={loadFolders} disabled={running} title="data 폴더 다시 스캔">↻ 새로고침</button>
         {prepProg && <span className="al-hint" style={{ fontWeight: 400, marginLeft: 10 }}>⏳ {prepProg}</span>}
       </h3>
 
@@ -517,11 +516,13 @@ function AutoLabelView() {
         </div>
 
         {preparing
-          ? <div className="al-frame" style={{ maxWidth: 560, padding: 44, textAlign: 'center', cursor: 'default' }}>
+          ? <div className="al-frame" style={{ display: 'inline-block', padding: 30, textAlign: 'center', cursor: 'default' }}>
               <span className="al-hint" style={{ color: '#e2e8f0' }}>프레임 컷 중...</span>
             </div>
-          : <div className="al-frame" style={{ maxWidth: 560 }} onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
-              {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false} />}
+          : <div className="al-frame" style={{ display: 'inline-block', width: 'auto', maxWidth: '100%' }}
+                 onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
+              {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false}
+                           style={{ width: 'auto', maxHeight: 420, maxWidth: 560 }} />}
               {cur.map((p, i) => (
                 <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
                       style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />
@@ -529,20 +530,18 @@ function AutoLabelView() {
             </div>}
 
         <div className="al-controls">
-          <button className="chip" onClick={() => setIdx(i => Math.max(i - 10, 0))} disabled={running}>◀◀ 10</button>
+          <button className="chip" onClick={() => setIdx(i => Math.max(i - 10, 0))} disabled={running}>◀◀10</button>
           <button className="chip" onClick={() => setIdx(i => Math.max(i - 1, 0))} disabled={running}>◀</button>
           <input className="al-slider" type="range" min={0} max={Math.max(count - 1, 0)} value={idx}
                  onChange={(e) => setIdx(+e.target.value)} disabled={running} />
           <button className="chip" onClick={() => setIdx(i => Math.min(i + 1, count - 1))} disabled={running}>▶</button>
-          <button className="chip" onClick={() => setIdx(i => Math.min(i + 10, count - 1))} disabled={running}>10 ▶▶</button>
-          <span className="al-hint">frame {idx + 1} / {count} · 이 프레임 점 {cur.length}개 · 참조샷 {curShots.length}</span>
-        </div>
-        <div className="al-controls">
+          <button className="chip" onClick={() => setIdx(i => Math.min(i + 10, count - 1))} disabled={running}>10▶▶</button>
           <button className="chip" onClick={undo} disabled={running || !cur.length}>점 취소</button>
-          <button className="chip" onClick={clearFrame} disabled={running || !cur.length}>이 프레임 지우기</button>
+          <button className="chip" onClick={clearFrame} disabled={running || !cur.length}>지우기</button>
           <button className="cmp-random" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
-            {maskBusy ? '마스크 생성 중...' : '입력 마스크 확인'}
+            {maskBusy ? '생성 중...' : '입력 마스크 확인'}
           </button>
+          <span className="al-hint">{idx + 1}/{count} · 점 {cur.length}</span>
         </div>
 
         {/* 입력 마스크 크게 확인 (주요 콘텐츠) */}
