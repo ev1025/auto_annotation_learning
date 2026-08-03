@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 
 // **굵게** 마커를 <b>로 변환
 function md(text) {
@@ -264,36 +264,59 @@ function BenchmarkView() {
   )
 }
 
-// 부품 라벨링(SAM2): 장비(부품)마다 탭 → 입력 마스크 확인 → 라벨 생성 → 다음 부품 → 다 모으면 멀티클래스 학습
+// data/bell412/<그룹>/<부품>/videos → 그룹·부품 파싱. 폴더=부품, 폴더 안 영상=그 부품의 train/test 테이크
+const groupOf = (rel) => (rel.split('/')[1] || rel)
+const partOf = (rel) => { const p = rel.replace(/\/videos$/, '').split('/'); return p.length > 2 ? p.slice(2).join('/') : (p[1] || rel) }
+const trailNum = (s) => { const m = String(s).match(/(\d+)\s*$/); return m ? +m[1] : 0 }
+// 부품 폴더의 테이크 → {train:[...], test} : test* 있으면 그게 테스트, 없고 2개+면 끝수 최대("2")가 테스트, 단일이면 학습영상으로 테스트
+const takeRoles = (videos) => {
+  const names = (videos || []).map(v => v.name)
+  if (!names.length) return { train: [], test: null }
+  const explicit = names.filter(n => /test/i.test(n))
+  if (explicit.length) return { train: names.filter(n => !/test/i.test(n)), test: explicit[explicit.length - 1] }
+  if (names.length >= 2) {
+    const sorted = [...names].sort((a, b) => trailNum(a) - trailNum(b))
+    return { train: sorted.slice(0, -1), test: sorted[sorted.length - 1] }
+  }
+  return { train: names, test: names[0] }   // 단일 테이크 → 학습영상으로 테스트
+}
+
+// 부품 라벨링(SAM2): 데이터셋(그룹)→부품(폴더) 순회. 부품마다 학습 테이크 탭 → 입력 마스크 확인 → 라벨 생성 → 다음 부품 → 멀티클래스 학습
 function AutoLabelView() {
   const [folders, setFolders] = useState([])        // [{folder,label,videos:[{name,count,ready}]}]
-  const [folder, setFolder] = useState(null)        // 선택한 폴더(data 기준 rel 경로)
-  const [partIdx, setPartIdx] = useState(0)         // 폴더 안 현재 부품(영상) 인덱스
-  const [count, setCount] = useState(0)             // 현재 부품 프레임 수
+  const [group, setGroup] = useState(null)          // 데이터셋 그룹(parts / gearbox / ...)
+  const [partIdx, setPartIdx] = useState(0)         // 그룹 안 부품(폴더) 인덱스
+  const [takeIdx, setTakeIdx] = useState(0)         // 부품 안 학습 테이크 인덱스(보통 0)
+  const [count, setCount] = useState(0)             // 현재 테이크 프레임 수
   const [idx, setIdx] = useState(0)                 // 현재 프레임
   const [ptsBySrc, setPtsBySrc] = useState(() => {  // { 영상: { 프레임: [{rx,ry,lab}] } } 영상별 보관
     try { return JSON.parse(localStorage.getItem('autolabel_shots_v1') || '{}') } catch { return {} }
   })
   const [preparing, setPreparing] = useState(false)
+  const [prepProg, setPrepProg] = useState('')      // 전체 프레임 미리 컷 진행표시
   const [masks, setMasks] = useState({})            // {"영상:프레임": {combo,area_frac,bbox}}
   const [activeShot, setActiveShot] = useState(null)// 크게 보고 있는 마스크 참조샷 키
   const [maskBusy, setMaskBusy] = useState(false)
 
   const [session, setSession] = useState(() => localStorage.getItem('parts_session_v1') || null)
-  const [labeledMap, setLabeledMap] = useState({})  // {영상: {labels,frames}} 현재 세션에 라벨된 부품
+  const [labeledMap, setLabeledMap] = useState({})  // {영상: {labels,frames}} 현재 세션에 라벨된 테이크
   const [labelJob, setLabelJob] = useState(null)
   const [labelStatus, setLabelStatus] = useState(null)
 
-  const [evalSel, setEvalSel] = useState([])        // 평가(test) 영상
   const [trainJob, setTrainJob] = useState(null)
   const [trainStatus, setTrainStatus] = useState(null)
+  const preppedRef = useRef(new Set())              // 그룹별 '전체 프레임 미리 컷' 1회만
 
   const running = !!labelStatus?.running || !!trainStatus?.running
 
-  const folderObj = folders.find(f => f.folder === folder)
-  const folderVideos = folderObj?.videos || []
-  const curPart = folderVideos[partIdx]
-  const src = curPart?.name || null
+  const groups = [...new Set(folders.map(f => groupOf(f.folder)))]
+  const partFolders = folders.filter(f => groupOf(f.folder) === group)   // 그룹 안 부품(폴더)들
+  const curPartFolder = partFolders[partIdx]
+  const folderVideos = curPartFolder?.videos || []                       // 이 부품의 테이크들
+  const roles = takeRoles(folderVideos)
+  const src = roles.train[takeIdx] || roles.train[0] || null             // 지금 탭할 학습 테이크
+  const testTake = roles.test                                            // 이 부품 테스트 테이크(2 또는 학습영상 자체)
+  const testIsSelf = testTake && roles.train.includes(testTake)
 
   const markReady = (name, cnt) => setFolders(prev => prev.map(f => ({
     ...f, videos: f.videos.map(v => v.name === name ? { ...v, ready: true, count: cnt } : v)
@@ -303,14 +326,24 @@ function AutoLabelView() {
     const d = await fetch(`/api/autolabel/prepare?src=${encodeURIComponent(name)}`).then(r => r.json())
     setPreparing(false); setCount(d.count || 0); markReady(name, d.count || 0)
   }
+  const prepareAll = async (pfs) => {   // 그룹 전체 프레임 미리 컷(탭 전에 자동, 백그라운드)
+    for (const pf of pfs) {
+      for (const v of pf.videos) {
+        if (v.ready) continue
+        setPrepProg(`프레임 미리 컷: ${v.name}`)
+        try { const d = await fetch(`/api/autolabel/prepare?src=${encodeURIComponent(v.name)}`).then(r => r.json()); markReady(v.name, d.count || 0) } catch { /* skip */ }
+      }
+    }
+    setPrepProg('')
+  }
 
   const loadFolders = useCallback(() => {
     fetch('/api/autolabel/folders').then(r => r.json()).then(d => {
       setFolders(d)
-      setFolder(cur => {
-        if (cur || !d[0]) return cur
-        setEvalSel(d[0].videos.filter(v => /test/i.test(v.name)).map(v => v.name))
-        return d[0].folder
+      setGroup(cur => {
+        if (cur || !d.length) return cur
+        const counts = {}; d.forEach(f => { const g = groupOf(f.folder); counts[g] = (counts[g] || 0) + 1 })
+        return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || null   // 부품 많은 그룹(parts) 기본
       })
     })
   }, [])
@@ -324,7 +357,14 @@ function AutoLabelView() {
   useEffect(() => { loadFolders() }, [loadFolders])
   useEffect(() => { loadSessions() }, [loadSessions])
 
-  useEffect(() => {   // 부품 바뀌면 그 영상 프레임 준비
+  useEffect(() => {   // 그룹 선택 시 전체 프레임 미리 컷(1회, 백그라운드) — 탭 전에 미리 준비
+    if (!group || !folders.length || preppedRef.current.has(group)) return
+    preppedRef.current.add(group)
+    prepareAll(folders.filter(f => groupOf(f.folder) === group))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [group, folders])
+
+  useEffect(() => {   // 부품(테이크) 바뀌면 그 영상 프레임 준비
     if (!src) { setCount(0); return }
     setIdx(0); setActiveShot(null); setLabelStatus(null); setLabelJob(null)
     const v = folderVideos.find(x => x.name === src)
@@ -371,9 +411,15 @@ function AutoLabelView() {
   }
   const hasTaps = (name) => Object.values(ptsBySrc[name] || {}).some(a => a.length)
   const isLabeled = (name) => !!labeledMap[name]
-  const partStatus = (name) => isLabeled(name) ? 'done' : (hasTaps(name) ? 'tapped' : 'todo')
-  const nLabeled = folderVideos.filter(v => isLabeled(v.name)).length
-  const curShots = buildShots(src)                 // 현재 부품의 유효 참조샷
+  const pfTrain = (pf) => takeRoles(pf.videos).train                     // 부품 폴더의 학습 테이크들
+  const pfStatus = (pf) => {                                             // 부품 상태(학습 테이크 기준)
+    const tr = pfTrain(pf)
+    if (tr.some(isLabeled)) return 'done'
+    if (tr.some(hasTaps)) return 'tapped'
+    return 'todo'
+  }
+  const nLabeled = partFolders.filter(pf => pfTrain(pf).some(isLabeled)).length
+  const curShots = buildShots(src)                 // 현재 학습 테이크의 유효 참조샷
 
   // 현재 프레임 마스크 확인(가볍게, 단일 프레임) → 크게 표시
   const previewMask = async () => {
@@ -415,26 +461,23 @@ function AutoLabelView() {
     return () => clearInterval(t)
   }, [labelJob, labelStatus?.running])
 
-  const goPart = (i) => {
-    const n = Math.max(0, Math.min(i, folderVideos.length - 1))
-    setPartIdx(n)
-  }
-  const chooseFolder = (rel) => {
-    const fo = folders.find(f => f.folder === rel); if (!fo) return
-    setFolder(rel); setPartIdx(0); setTrainStatus(null); setTrainJob(null)
-    setEvalSel(fo.videos.filter(v => /test/i.test(v.name)).map(v => v.name))
-  }
+  const goPart = (i) => { setPartIdx(Math.max(0, Math.min(i, partFolders.length - 1))); setTakeIdx(0) }
+  const selectGroup = (g) => { setGroup(g); setPartIdx(0); setTakeIdx(0); setTrainStatus(null); setTrainJob(null) }
   const newSession = () => {
     setSession(null); setLabeledMap({}); localStorage.removeItem('parts_session_v1')
     setTrainStatus(null); setTrainJob(null)
   }
 
-  // 멀티클래스 학습: 세션 누적 라벨 → 34클래스 통합 → YOLO 학습 → test 검출 평가
-  const toggleEval = (n) => setEvalSel(c => c.includes(n) ? c.filter(x => x !== n) : [...c, n])
+  // 멀티클래스 학습: 세션 누적 라벨 → 클래스 통합 → YOLO 학습 → 부품별 테스트 테이크 검출 평가
+  const testSrcs = () => {   // 라벨된 부품마다 테스트 테이크(끝수 "2" 또는 학습영상 자체)
+    const s = []
+    partFolders.forEach(pf => { const r = takeRoles(pf.videos); if (r.train.some(isLabeled) && r.test && !s.includes(r.test)) s.push(r.test) })
+    return s
+  }
   const runTrain = async () => {
     const r = await fetch('/api/sam2/multiclass', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session, epochs: 100, test_srcs: evalSel })
+      body: JSON.stringify({ session, epochs: 100, test_srcs: testSrcs() })
     }).then(x => x.json())
     if (r.error) { setTrainStatus({ error: r.error }); return }
     setTrainJob(r.job); setTrainStatus({ stage: 'start', running: true })
@@ -452,51 +495,61 @@ function AutoLabelView() {
 
   const activeMask = activeShot ? masks[activeShot] : null
   const genDone = labelStatus?.stage === 'done' && labelStatus?.video === src
-  const testVideos = folderVideos.filter(v => /test/i.test(v.name))
+  const partName = curPartFolder ? partOf(curPartFolder.folder) : ''
+  const evalList = testSrcs()
 
   return (
     <div>
       <h2>부품 라벨링 (SAM2)</h2>
 
-      <h3 className="section-h">폴더 선택</h3>
+      <h3 className="section-h">데이터셋 선택</h3>
       <div className="chips">
-        {folders.map(f => (
-          <button key={f.folder} className={f.folder === folder ? 'chip on' : 'chip'}
-                  onClick={() => chooseFolder(f.folder)} disabled={running || preparing}>
-            {f.label.split('/').pop()}
+        {groups.map(g => (
+          <button key={g} className={g === group ? 'chip on' : 'chip'}
+                  onClick={() => selectGroup(g)} disabled={running}>
+            {g} <span className="al-hint">{folders.filter(f => groupOf(f.folder) === g).length}부품</span>
           </button>
         ))}
-        <button className="chip" onClick={loadFolders} disabled={running || preparing}
-                title="data 폴더 다시 스캔">↻ 새로고침</button>
+        <button className="chip" onClick={loadFolders} disabled={running} title="data 폴더 다시 스캔">↻ 새로고침</button>
       </div>
 
       {/* 세션 + 전체 진행 */}
       <div className="wiz-session">
         <span className="al-hint">세션 <b>{session || '(첫 라벨 생성 시 자동)'}</b></span>
-        <span className="al-hint">라벨 완료 <b>{nLabeled}</b> / {folderVideos.length} 부품</span>
+        <span className="al-hint">라벨 완료 <b>{nLabeled}</b> / {partFolders.length} 부품</span>
+        {prepProg && <span className="al-hint">⏳ {prepProg}</span>}
         <button className="al-secondary sm" onClick={newSession} disabled={running}>새 세션</button>
       </div>
-      <div className="al-progress"><i style={{ width: `${folderVideos.length ? nLabeled / folderVideos.length * 100 : 0}%` }} /></div>
+      <div className="al-progress"><i style={{ width: `${partFolders.length ? nLabeled / partFolders.length * 100 : 0}%` }} /></div>
 
       {/* 부품 진행 레일: 클릭하면 그 부품으로 이동 */}
       <div className="part-rail">
-        {folderVideos.map((v, i) => (
-          <button key={v.name} className={`part-chip ${partStatus(v.name)} ${i === partIdx ? 'on' : ''}`}
-                  onClick={() => goPart(i)} disabled={running} title={v.name}>
-            {v.name}
+        {partFolders.map((pf, i) => (
+          <button key={pf.folder} className={`part-chip ${pfStatus(pf)} ${i === partIdx ? 'on' : ''}`}
+                  onClick={() => goPart(i)} disabled={running} title={partOf(pf.folder)}>
+            {partOf(pf.folder)}
           </button>
         ))}
       </div>
 
-      {!src ? <p className="al-hint">폴더를 선택하세요.</p> : <>
+      {!src ? <p className="al-hint">데이터셋을 선택하세요.</p> : <>
         {/* 현재 부품 */}
         <div className="wiz-head">
-          <span className="wiz-title">{src}</span>
-          <span className="wiz-idx">부품 {partIdx + 1} / {folderVideos.length}</span>
+          <span className="wiz-title">{partName}</span>
+          <span className="wiz-idx">부품 {partIdx + 1} / {partFolders.length}</span>
           {isLabeled(src) && <span className="badge adopt">✓ 라벨 {labeledMap[src].labels}장</span>}
+          <span className="al-hint">학습 <b>{src}</b> · 테스트 {testIsSelf ? '학습영상 자체' : <b>{testTake}</b>}</span>
+          {roles.train.length > 1 && (
+            <span className="al-hint">테이크:
+              {roles.train.map((t, ti) => (
+                <button key={t} className="al-secondary sm" onClick={() => setTakeIdx(ti)}
+                        style={{ marginLeft: 4, opacity: ti === takeIdx ? 1 : 0.45 }}>{t}</button>
+              ))}
+            </span>
+          )}
           <span style={{ marginLeft: 'auto' }} />
           <button className="al-secondary sm" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}>◀ 이전 부품</button>
-          <button className="al-secondary sm" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= folderVideos.length - 1}>다음 부품 ▶</button>
+          <button className="al-secondary sm" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1}>다음 부품 ▶</button>
         </div>
 
         <p className="al-hint">부품을 <b>좌클릭</b>(포함점), 배경 오채택되면 <b>우클릭</b>(제외점). 여러 각도가 필요하면 프레임을 넘겨 한 번 더 탭.</p>
@@ -547,7 +600,7 @@ function AutoLabelView() {
                   disabled={running || curShots.length === 0}>
             {labelStatus?.running ? '라벨 생성 중...' : (isLabeled(src) ? '↻ 라벨 다시 생성' : '라벨 생성')}
           </button>
-          {(genDone || isLabeled(src)) && partIdx < folderVideos.length - 1 &&
+          {(genDone || isLabeled(src)) && partIdx < partFolders.length - 1 &&
             <button className="al-primary next" onClick={() => goPart(partIdx + 1)} disabled={running}>다음 부품 ▶</button>}
           {labelStatus && !labelStatus.error && labelStatus.video === src &&
             <span className="al-hint">
@@ -562,19 +615,12 @@ function AutoLabelView() {
       {/* 멀티클래스 학습 */}
       {nLabeled > 0 && <>
         <h3 className="section-h">멀티클래스 학습</h3>
-        <p className="al-hint">라벨 완료 부품 <b>{nLabeled}</b>개를 클래스별로 통합해 YOLO 학습. 평가는 아래 test 영상(정답 라벨 없어 검출률·신뢰도·클래스 분포).</p>
+        <p className="al-hint">라벨 완료 부품 <b>{nLabeled}</b>개를 클래스별로 통합해 YOLO 학습. 평가는 부품마다 <b>"2" 테이크</b>(있으면) 또는 <b>학습영상 자체</b>로 검출률·신뢰도·클래스 분포(정답 라벨 없음).</p>
 
-        <h4 className="subtable-title">평가(test) 영상</h4>
+        <h4 className="subtable-title">자동 평가 대상 ({evalList.length})</h4>
         <div className="chips">
-          {testVideos.length === 0 && <span className="al-hint">이 폴더에 test 영상이 없습니다.</span>}
-          {testVideos.map(v => {
-            const on = evalSel.includes(v.name)
-            return (
-              <button key={v.name} className={on ? 'chip on' : 'chip'} disabled={running} onClick={() => toggleEval(v.name)}>
-                {on ? '☑ ' : '☐ '}{v.name}
-              </button>
-            )
-          })}
+          {evalList.length === 0 && <span className="al-hint">라벨된 부품이 없습니다.</span>}
+          {evalList.map(n => <span key={n} className="chip" style={{ cursor: 'default' }}>{n}</span>)}
         </div>
 
         <div className="al-controls" style={{ marginTop: 10 }}>
