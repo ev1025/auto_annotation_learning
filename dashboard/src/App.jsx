@@ -528,15 +528,15 @@ function AutoLabelView() {
             })}
           </div>
 
-          {/* 오른쪽: 액션 + 이미지 + 마스크 + 프레임 */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="wiz-head">
               <span className="wiz-title">{partName}</span>
-              <span className="al-hint">부품을 좌클릭(포함점)·우클릭(제외점) 후 <b>입력 마스크 확인</b> → 오른쪽에 마스크가 나옵니다.</span>
+              <span className="al-hint">좌클릭(포함점)·우클릭(제외점) 후 <b>입력 마스크 확인</b> → 오른쪽에 마스크.</span>
             </div>
+            {/* 상단 버튼줄: 점취소·지우기·마스크확인·라벨생성·학습 */}
             <div className="al-controls">
-              <button className="al-secondary sm" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}>◀ 이전</button>
-              <button className="al-secondary sm" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1}>다음 ▶</button>
+              <button className="chip" onClick={undo} disabled={running || !cur.length}>점 취소</button>
+              <button className="chip" onClick={clearFrame} disabled={running || !cur.length}>지우기</button>
               <button className="cmp-random" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
                 {maskBusy ? '생성 중...' : '입력 마스크 확인'}
               </button>
@@ -551,7 +551,7 @@ function AutoLabelView() {
                 <span className="al-hint">{labelStatus.running ? '전파 중...' : (labelStatus.stage === 'done' ? `✓ 라벨 ${labelStatus.labels}장` : '')}</span>}
             </div>
 
-            {/* 탭 이미지 · 입력 마스크 결과 (가로로 나란히, 같은 크기) */}
+            {/* 탭 이미지 · 입력 마스크 (가로 나란히, 같은 스타일·크기) */}
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'nowrap', overflowX: 'auto' }}>
               {preparing
                 ? <div className="al-frame" style={{ display: 'inline-block', padding: 30, textAlign: 'center', cursor: 'default' }}>
@@ -560,7 +560,7 @@ function AutoLabelView() {
                 : <div className="al-frame" style={{ display: 'inline-block', flex: '0 0 auto', width: 'auto', maxWidth: '100%' }}
                        onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
                     {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false}
-                                 style={{ width: 'auto', maxHeight: 360, maxWidth: 330 }} />}
+                                 style={{ width: 'auto', maxHeight: 420, maxWidth: 340 }} />}
                     {cur.map((p, i) => (
                       <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
                             style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />
@@ -568,16 +568,17 @@ function AutoLabelView() {
                   </div>}
               {activeMask && (activeMask.error
                 ? <p className="fn" style={{ color: '#b91c1c' }}>마스크 오류: {activeMask.error}</p>
-                : <div className="al-maskbig">
-                    <div className="al-maskbig-cap">
-                      입력 마스크 · <span className="mk-g">초록=마스크</span> <span className="mk-o">주황=박스</span> <span className="mk-b">파랑=포함점</span> <span className="mk-r">빨강=제외점</span>
-                      {typeof activeMask.area_frac === 'number' && <> · 면적 {(activeMask.area_frac * 100).toFixed(1)}%</>}
-                    </div>
-                    <img src={activeMask.combo} alt="입력 마스크" />
+                : <div className="al-frame" style={{ display: 'inline-block', flex: '0 0 auto', cursor: 'default' }}>
+                    <img src={activeMask.combo} alt="입력 마스크" style={{ width: 'auto', maxHeight: 420, maxWidth: 340 }} />
                   </div>)}
             </div>
+            {activeMask && !activeMask.error &&
+              <p className="al-hint" style={{ marginTop: 6 }}>
+                입력 마스크 · 초록=마스크 · 주황=박스 · 파랑=포함점 · 빨강=제외점
+                {typeof activeMask.area_frac === 'number' && <> · 면적 {(activeMask.area_frac * 100).toFixed(1)}%</>}
+              </p>}
 
-            {/* 프레임 이동 */}
+            {/* 프레임 이동 + 이전/다음 부품 */}
             <div className="al-controls">
               <button className="chip" onClick={() => setIdx(i => Math.max(i - 10, 0))} disabled={running}>◀◀10</button>
               <button className="chip" onClick={() => setIdx(i => Math.max(i - 1, 0))} disabled={running}>◀</button>
@@ -586,8 +587,8 @@ function AutoLabelView() {
               <span className="al-hint" style={{ minWidth: 54, textAlign: 'center' }}>{idx + 1}/{count}</span>
               <button className="chip" onClick={() => setIdx(i => Math.min(i + 1, count - 1))} disabled={running}>▶</button>
               <button className="chip" onClick={() => setIdx(i => Math.min(i + 10, count - 1))} disabled={running}>10▶▶</button>
-              <button className="chip" onClick={undo} disabled={running || !cur.length}>점 취소</button>
-              <button className="chip" onClick={clearFrame} disabled={running || !cur.length}>지우기</button>
+              <button className="al-secondary sm" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}>◀ 이전</button>
+              <button className="al-secondary sm" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1}>다음 ▶</button>
             </div>
 
             {/* 이 영상에서 탭한 프레임(참조샷): 클릭하면 그 프레임으로 이동 확인, ×로 삭제 */}
