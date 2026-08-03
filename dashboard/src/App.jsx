@@ -600,20 +600,15 @@ function AutoLabelView() {
       )}
 
       {/* 멀티클래스 학습 */}
-      {nLabeled > 0 && <>
-        <h3 className="section-h">멀티클래스 학습</h3>
-        <p className="al-hint">라벨 완료 부품 <b>{nLabeled}</b>개를 클래스별로 통합해 YOLO 학습. 평가는 부품마다 <b>"2" 테이크</b>(있으면) 또는 <b>학습영상 자체</b>로 검출률·신뢰도·클래스 분포(정답 라벨 없음).</p>
-
-        <h4 className="subtable-title">자동 평가 대상 ({evalList.length})</h4>
-        <div className="chips">
-          {evalList.length === 0 && <span className="al-hint">라벨된 부품이 없습니다.</span>}
-          {evalList.map(n => <span key={n} className="chip" style={{ cursor: 'default' }}>{n}</span>)}
-        </div>
+      <>
+        <h3 className="section-h">멀티클래스 학습 <span className="al-hint" style={{ fontWeight: 400 }}>라벨 {nLabeled}/{partFolders.length}</span></h3>
+        <p className="al-hint">라벨 완료 부품을 클래스별로 통합해 YOLO 학습. 테스트 영상이 없어 <b>학습에 쓴 영상 그대로</b> 검출률·신뢰도·클래스 분포로 평가(정답 라벨 없음).</p>
 
         <div className="al-controls" style={{ marginTop: 10 }}>
-          <button className="al-primary" onClick={runTrain} disabled={running || !session}>
-            {trainStatus?.running ? '학습 중...' : '멀티클래스 학습 시작'}
+          <button className="al-primary" onClick={runTrain} disabled={running || !session || nLabeled === 0}>
+            {trainStatus?.running ? '학습 중...' : (nLabeled === 0 ? '라벨 먼저 생성' : '멀티클래스 학습 시작')}
           </button>
+          {nLabeled === 0 && <span className="al-hint">부품을 탭·라벨 생성하면 활성화됩니다.</span>}
         </div>
 
         {trainStatus?.error && <p className="fn" style={{ color: '#b91c1c' }}>오류: {trainStatus.error}</p>}
@@ -631,7 +626,7 @@ function AutoLabelView() {
             {trainStatus.eval?.length > 0 && (
               <>
                 <table><thead><tr>
-                  <th>test 영상</th><th>프레임</th><th>검출</th><th>검출률</th><th>평균 신뢰도</th><th>주요 클래스</th>
+                  <th>영상(학습=평가)</th><th>프레임</th><th>검출</th><th>검출률</th><th>평균 신뢰도</th><th>주요 클래스</th>
                 </tr></thead><tbody>
                   {trainStatus.eval.map(e => (
                     <tr key={e.src}><td>{e.src}</td><td>{e.frames}</td><td>{e.detected}</td>
@@ -649,7 +644,7 @@ function AutoLabelView() {
             )}
           </div>
         )}
-      </>}
+      </>
     </div>
   )
 }
