@@ -144,7 +144,8 @@ def api_parts_label(payload: dict = Body(...)):
 
 @app.post("/api/sam2/multiclass")
 def api_multiclass(payload: dict = Body(...)):
-    return sa.start_multiclass(payload.get("session"), payload.get("epochs"), payload.get("test_srcs", []))
+    return sa.start_multiclass(payload.get("session"), payload.get("epochs"), payload.get("test_srcs", []),
+                               payload.get("classes"))
 
 
 @app.get("/api/sam2/runs")

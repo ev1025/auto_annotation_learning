@@ -304,6 +304,7 @@ function AutoLabelView() {
 
   const [trainJob, setTrainJob] = useState(null)
   const [trainStatus, setTrainStatus] = useState(null)
+  const [excluded, setExcluded] = useState([])      // 학습에서 뺀 부품(클래스). 기본=라벨된 것 전부 포함
   const preppedRef = useRef(new Set())              // 그룹별 '전체 프레임 미리 컷' 1회만
 
   const running = !!labelStatus?.running || !!trainStatus?.running
@@ -412,7 +413,10 @@ function AutoLabelView() {
     if (tr.some(hasTaps)) return 'tapped'
     return 'todo'
   }
-  const nLabeled = partFolders.filter(pf => pfTrain(pf).some(isLabeled)).length
+  const labeledParts = partFolders.filter(pf => pfTrain(pf).some(isLabeled)).map(pf => partOf(pf.folder))  // 라벨된 부품(클래스)명
+  const nLabeled = labeledParts.length
+  const selectedClasses = labeledParts.filter(p => !excluded.includes(p))   // 학습에 포함할 클래스
+  const toggleExcluded = (p) => setExcluded(c => c.includes(p) ? c.filter(x => x !== p) : [...c, p])
   const curShots = buildShots(src)                 // 현재 학습 테이크의 유효 참조샷
   const shotFrames = Object.keys(pts).map(Number).filter(i => (pts[i] || []).length).sort((a, b) => a - b)  // 이 영상에서 탭한 프레임들
   const goShot = (i) => { setIdx(i); setActiveShot(shotKey(src, i)) }   // 그 프레임으로 이동 + (캐시 있으면) 마스크 표시
@@ -471,9 +475,13 @@ function AutoLabelView() {
     return s
   }
   const runTrain = async () => {
+    const tests = testSrcs().filter(t => {   // 선택 클래스에 해당하는 테스트 테이크만
+      const pf = partFolders.find(pf => takeRoles(pf.videos).test === t)
+      return pf && selectedClasses.includes(partOf(pf.folder))
+    })
     const r = await fetch('/api/sam2/multiclass', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session, epochs: 100, test_srcs: testSrcs() })
+      body: JSON.stringify({ session, epochs: 100, test_srcs: tests, classes: selectedClasses })
     }).then(x => x.json())
     if (r.error) { setTrainStatus({ error: r.error }); return }
     setTrainJob(r.job); setTrainStatus({ stage: 'start', running: true })
@@ -504,14 +512,20 @@ function AutoLabelView() {
 
       {!src ? <p className="al-hint">부품 폴더가 없습니다. (data/bell412/parts/&lt;부품&gt;/videos)</p> : (
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-          {/* 부품 목록: 세로 스크롤 박스 */}
+          {/* 부품 목록: 세로 스크롤 박스. 라벨된 부품은 체크박스로 학습 포함/제외 */}
           <div className="part-list">
-            {partFolders.map((pf, i) => (
-              <button key={pf.folder} className={`part-item ${pfStatus(pf)} ${i === partIdx ? 'on' : ''}`}
-                      onClick={() => goPart(i)} disabled={running} title={partOf(pf.folder)}>
-                {partOf(pf.folder)}
-              </button>
-            ))}
+            {partFolders.map((pf, i) => {
+              const part = partOf(pf.folder)
+              const labeled = pfTrain(pf).some(isLabeled)
+              return (
+                <div key={pf.folder} className={`part-item ${pfStatus(pf)} ${i === partIdx ? 'on' : ''}`}
+                     onClick={() => !running && goPart(i)} title={part}>
+                  {labeled && <input type="checkbox" className="part-ck" checked={!excluded.includes(part)}
+                                     onClick={e => e.stopPropagation()} onChange={() => toggleExcluded(part)} disabled={running} />}
+                  <span className="part-name">{part}</span>
+                </div>
+              )
+            })}
           </div>
 
           {/* 오른쪽: 액션 + 이미지 + 마스크 + 프레임 */}
@@ -528,6 +542,10 @@ function AutoLabelView() {
               </button>
               <button className="al-primary sm" onClick={genLabel} disabled={running || curShots.length === 0}>
                 {labelStatus?.running ? '라벨 생성 중...' : (isLabeled(src) ? '↻ 라벨 다시 생성' : '라벨 생성')}
+              </button>
+              <button className="al-primary sm" style={{ background: '#0891b2' }} onClick={runTrain}
+                      disabled={running || !session || selectedClasses.length === 0}>
+                {trainStatus?.running ? '학습 중...' : `멀티클래스 학습 (${selectedClasses.length})`}
               </button>
               {labelStatus && !labelStatus.error && labelStatus.video === src &&
                 <span className="al-hint">{labelStatus.running ? '전파 중...' : (labelStatus.stage === 'done' ? `✓ 라벨 ${labelStatus.labels}장` : '')}</span>}
@@ -599,19 +617,9 @@ function AutoLabelView() {
         </div>
       )}
 
-      {/* 멀티클래스 학습 */}
+      {/* 멀티클래스 학습 결과 (버튼은 위 라벨생성 옆) */}
       <>
-        <h3 className="section-h">멀티클래스 학습 <span className="al-hint" style={{ fontWeight: 400 }}>라벨 {nLabeled}/{partFolders.length}</span></h3>
-        <p className="al-hint">라벨 완료 부품을 클래스별로 통합해 YOLO 학습. 테스트 영상이 없어 <b>학습에 쓴 영상 그대로</b> 검출률·신뢰도·클래스 분포로 평가(정답 라벨 없음).</p>
-
-        <div className="al-controls" style={{ marginTop: 10 }}>
-          <button className="al-primary" onClick={runTrain} disabled={running || !session || nLabeled === 0}>
-            {trainStatus?.running ? '학습 중...' : (nLabeled === 0 ? '라벨 먼저 생성' : '멀티클래스 학습 시작')}
-          </button>
-          {nLabeled === 0 && <span className="al-hint">부품을 탭·라벨 생성하면 활성화됩니다.</span>}
-        </div>
-
-        {trainStatus?.error && <p className="fn" style={{ color: '#b91c1c' }}>오류: {trainStatus.error}</p>}
+        {trainStatus?.error && <p className="fn" style={{ color: '#b91c1c' }}>학습 오류: {trainStatus.error}</p>}
         {trainStatus && !trainStatus.error && (
           <div className="al-result">
             <div className="al-controls">

@@ -490,8 +490,9 @@ def start_parts_label(session, video, shots):
     return {"job": jid, "session": session}
 
 
-def _run_multiclass(job_id, session, epochs, test_srcs):
-    """세션에 누적된 per-part 라벨(class 0) → 영상명→부품→클래스 remap → 34클래스 YOLO 학습 → test 검출 평가."""
+def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None):
+    """세션에 누적된 per-part 라벨(class 0) → 영상명→부품→클래스 remap → YOLO 학습 → 검출 평가.
+    only_classes 지정 시 그 클래스만 학습."""
     j = JOBS[job_id]
     try:
         sys.path.insert(0, str(config.BASE_DIR / "scripts" / "experiments"))
@@ -507,10 +508,13 @@ def _run_multiclass(job_id, session, epochs, test_srcs):
         out = sess / "multiclass"
         oi, ol = out / "images", out / "labels"
         oi.mkdir(parents=True, exist_ok=True); ol.mkdir(parents=True, exist_ok=True)
+        sel = set(only_classes) if only_classes else None    # 선택한 클래스만 학습(없으면 전체)
         per, miss = {}, {}
         for ip in sorted((st / "images").glob("*.jpg")):
             stem = ip.stem
             cls = bm.stem_to_class(stem)
+            if sel is not None and cls not in sel:
+                continue
             idx = name2idx.get(cls)
             if idx is None:
                 miss[cls] = miss.get(cls, 0) + 1; continue
@@ -593,7 +597,7 @@ def _run_multiclass(job_id, session, epochs, test_srcs):
         gc.collect(); torch.cuda.empty_cache()
 
 
-def start_multiclass(session, epochs, test_srcs):
+def start_multiclass(session, epochs, test_srcs, only_classes=None):
     with _LOCK:
         if _BUSY["on"]:
             return {"error": "이미 실행 중입니다."}
@@ -602,6 +606,6 @@ def start_multiclass(session, epochs, test_srcs):
         _BUSY["on"] = True
     jid = uuid.uuid4().hex[:8]
     JOBS[jid] = {"stage": "start", "running": True, "error": None}
-    threading.Thread(target=_run_multiclass, args=(jid, session, int(epochs or EPOCHS), test_srcs or []),
+    threading.Thread(target=_run_multiclass, args=(jid, session, int(epochs or EPOCHS), test_srcs or [], only_classes or None),
                      daemon=True).start()
     return {"job": jid}
