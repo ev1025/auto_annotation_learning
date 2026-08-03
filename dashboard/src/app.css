@@ -330,8 +330,9 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
   background: #f8fafc; border: 1px solid var(--line); border-radius: 10px;
 }
 .part-item {
-  text-align: left; padding: 5px 10px; border: 1px solid var(--line); border-radius: 8px;
-  background: #fff; color: var(--ink); font-family: inherit; font-size: 12.5px; cursor: pointer;
+  flex: 0 0 auto;   /* 세로로 눌려 찌부러지지 않게(스크롤로 처리) */
+  text-align: left; padding: 8px 11px; border: 1px solid var(--line); border-radius: 8px;
+  background: #fff; color: var(--ink); font-family: inherit; font-size: 13px; line-height: 1.3; cursor: pointer;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .part-item:hover:not(:disabled) { border-color: var(--accent); }
@@ -371,6 +372,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .al-primary:hover:not(:disabled) { filter: brightness(1.08); }
 .al-primary:disabled { opacity: 0.45; cursor: default; }
 .al-primary.next { background: #16a34a; }
+.al-primary.sm { padding: 6px 14px; font-size: 13.5px; }
 .al-secondary {
   padding: 9px 16px; border: 1px solid var(--line); border-radius: 10px;
   background: #fff; color: var(--ink); font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;

@@ -518,19 +518,22 @@ function AutoLabelView() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="wiz-head">
               <span className="wiz-title">{partName}</span>
+              <span className="al-hint">부품을 좌클릭(포함점)·우클릭(제외점) 후 <b>입력 마스크 확인</b> → 오른쪽에 마스크가 나옵니다.</span>
+            </div>
+            <div className="al-controls">
               <button className="al-secondary sm" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}>◀ 이전</button>
               <button className="al-secondary sm" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1}>다음 ▶</button>
               <button className="cmp-random" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
                 {maskBusy ? '생성 중...' : '입력 마스크 확인'}
               </button>
-              <button className="al-primary" onClick={genLabel} disabled={running || curShots.length === 0}>
+              <button className="al-primary sm" onClick={genLabel} disabled={running || curShots.length === 0}>
                 {labelStatus?.running ? '라벨 생성 중...' : (isLabeled(src) ? '↻ 라벨 다시 생성' : '라벨 생성')}
               </button>
               {labelStatus && !labelStatus.error && labelStatus.video === src &&
                 <span className="al-hint">{labelStatus.running ? '전파 중...' : (labelStatus.stage === 'done' ? `✓ 라벨 ${labelStatus.labels}장` : '')}</span>}
             </div>
 
-            {/* 탭 이미지 · 입력 마스크 결과 */}
+            {/* 탭 이미지 · 입력 마스크 결과 (같은 크기) */}
             <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
               {preparing
                 ? <div className="al-frame" style={{ display: 'inline-block', padding: 30, textAlign: 'center', cursor: 'default' }}>
@@ -539,25 +542,21 @@ function AutoLabelView() {
                 : <div className="al-frame" style={{ display: 'inline-block', width: 'auto', maxWidth: '100%' }}
                        onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
                     {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false}
-                                 style={{ width: 'auto', maxHeight: 420, maxWidth: 500 }} />}
+                                 style={{ width: 'auto', maxHeight: 420, maxWidth: 380 }} />}
                     {cur.map((p, i) => (
                       <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
                             style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />
                     ))}
                   </div>}
-              <div style={{ flex: 1, minWidth: 240 }}>
-                {activeMask
-                  ? (activeMask.error
-                      ? <p className="fn" style={{ color: '#b91c1c' }}>마스크 오류: {activeMask.error}</p>
-                      : <div className="al-maskbig">
-                          <div className="al-maskbig-cap">
-                            입력 마스크 · <span className="mk-g">초록=마스크</span> <span className="mk-o">주황=박스</span> <span className="mk-b">파랑=포함점</span> <span className="mk-r">빨강=제외점</span>
-                            {typeof activeMask.area_frac === 'number' && <> · 면적 {(activeMask.area_frac * 100).toFixed(1)}%</>}
-                          </div>
-                          <img src={activeMask.combo} alt="입력 마스크" />
-                        </div>)
-                  : <p className="al-hint">탭 후 <b>입력 마스크 확인</b>을 누르면 여기에 마스크가 나옵니다.</p>}
-              </div>
+              {activeMask && (activeMask.error
+                ? <p className="fn" style={{ color: '#b91c1c' }}>마스크 오류: {activeMask.error}</p>
+                : <div className="al-maskbig">
+                    <div className="al-maskbig-cap">
+                      입력 마스크 · <span className="mk-g">초록=마스크</span> <span className="mk-o">주황=박스</span> <span className="mk-b">파랑=포함점</span> <span className="mk-r">빨강=제외점</span>
+                      {typeof activeMask.area_frac === 'number' && <> · 면적 {(activeMask.area_frac * 100).toFixed(1)}%</>}
+                    </div>
+                    <img src={activeMask.combo} alt="입력 마스크" />
+                  </div>)}
             </div>
 
             {/* 프레임 이동 */}
