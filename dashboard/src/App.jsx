@@ -527,33 +527,54 @@ function AutoLabelView() {
           </div>
           {/* 상단 액션 버튼줄(전체폭) */}
           <div className="al-controls" style={{ flexShrink: 0 }}>
-                <button className="act-btn neutral" onClick={undo} disabled={running || !cur.length}>점 취소</button>
-                <button className="act-btn neutral" onClick={clearFrame} disabled={running || !cur.length}>지우기</button>
-                <button className="act-btn primary" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
-                  {maskBusy ? '생성 중...' : '입력 마스크 확인'}
-                </button>
-                <button className="act-btn primary" onClick={genLabel} disabled={running || curShots.length === 0}>
-                  {labelStatus?.running ? '라벨 생성 중...' : (isLabeled(src) ? '↻ 라벨 다시 생성' : '라벨 생성')}
-                </button>
-                <button className="act-btn train" onClick={runTrain}
-                        disabled={running || !session || selectedClasses.length === 0}>
-                  {trainStatus?.running ? '학습 중...' : `멀티클래스 학습 (${selectedClasses.length})`}
-                </button>
-                {labelStatus && !labelStatus.error && labelStatus.video === src &&
-                  <span className="al-hint">{labelStatus.running ? '전파 중...' : (labelStatus.stage === 'done' ? `✓ 라벨 ${labelStatus.labels}장` : '')}</span>}
-              </div>
+            <button className="act-btn neutral" onClick={undo} disabled={running || !cur.length}>점 취소</button>
+            <button className="act-btn neutral" onClick={clearFrame} disabled={running || !cur.length}>지우기</button>
+            <button className="act-btn primary" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
+              {maskBusy ? '생성 중...' : '입력 마스크 확인'}
+            </button>
+            <button className="act-btn primary" onClick={genLabel} disabled={running || curShots.length === 0}>
+              {labelStatus?.running ? '라벨 생성 중...' : (isLabeled(src) ? '↻ 라벨 다시 생성' : '라벨 생성')}
+            </button>
+            <button className="act-btn train" onClick={runTrain}
+                    disabled={running || !session || selectedClasses.length === 0}>
+              {trainStatus?.running ? '학습 중...' : `멀티클래스 학습 (${selectedClasses.length})`}
+            </button>
+            {labelStatus && !labelStatus.error && labelStatus.video === src &&
+              <span className="al-hint">{labelStatus.running ? '전파 중...' : (labelStatus.stage === 'done' ? `✓ 라벨 ${labelStatus.labels}장` : '')}</span>}
+          </div>
 
-          {/* 본문: 좌 이미지영역 / 우 리스트 패널. 남는 공간 채우고 각자 내부 스크롤 */}
-          <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0, overflow: 'hidden', marginTop: 10 }}>
-            <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', paddingRight: 4 }}>
-              {/* 듀얼 이미지: 두 pane 정확히 flex:1(동일 폭), 이미지 contain·중앙, 여백 흰색 */}
-              <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
+          {/* 참조샷: 액션 버튼 바로 아래, 가로 칩 리스트 */}
+          {shotFrames.length > 0 && (
+            <div className="al-shots" style={{ flexShrink: 0, marginTop: 4 }}>
+              <span className="al-hint" style={{ marginRight: 2 }}>참조샷</span>
+              {shotFrames.map(i => {
+                const npos = (pts[i] || []).filter(p => p.lab === 1).length
+                const nneg = (pts[i] || []).length - npos
+                const done = !!masks[shotKey(src, i)] && !masks[shotKey(src, i)].error
+                return (
+                  <span key={i} className="al-shot-wrap">
+                    <button className={`al-shot ${idx === i ? 'on' : ''} ${npos >= 1 ? '' : 'bad'}`}
+                            onClick={() => goShot(i)} disabled={running}>
+                      {done ? '✓ ' : ''}#{i} +{npos}{nneg ? `/-${nneg}` : ''}
+                    </button>
+                    <span className="al-shot-x" title="이 프레임 탭 삭제" onClick={() => !running && deleteShotFrame(i)}>×</span>
+                  </span>
+                )
+              })}
+            </div>
+          )}
+
+          {/* 본문: 좌(이미지+범례+재생) / 우(리스트). 남는 공간 채움 */}
+          <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0, overflow: 'hidden', marginTop: 8 }}>
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              {/* 듀얼 이미지: flex:1 동일폭, 화면에 맞춰 축소(스크롤 없음), 여백 흰색 */}
+              <div style={{ display: 'flex', gap: 12, flex: 1, minHeight: 0 }}>
                 <div className="img-pane">
                   {preparing
                     ? <span className="al-hint">프레임 컷 중...</span>
                     : <div className="tap-box" onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
                         {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false}
-                                     style={{ maxHeight: 440 }} />}
+                                     style={{ maxHeight: 'calc(100vh - 400px)', maxWidth: '100%' }} />}
                         {cur.map((p, i) => (
                           <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
                                 style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />
@@ -564,12 +585,14 @@ function AutoLabelView() {
                   {activeMask
                     ? (activeMask.error
                         ? <span className="fn" style={{ color: '#b91c1c' }}>마스크 오류: {activeMask.error}</span>
-                        : <img src={activeMask.combo} alt="입력 마스크" style={{ maxHeight: 440 }} />)
+                        : <img src={activeMask.combo} alt="입력 마스크" style={{ maxHeight: 'calc(100vh - 400px)', maxWidth: '100%' }} />)
                     : <span className="al-hint" style={{ padding: 12, textAlign: 'center' }}>입력 마스크 확인을 누르면 여기에 표시됩니다</span>}
                 </div>
               </div>
+
+              {/* 범례 (얇게) */}
               {activeMask && !activeMask.error &&
-                <div className="mask-legend">
+                <div className="mask-legend" style={{ flexShrink: 0 }}>
                   <span className="lg-title">입력 마스크</span>
                   <span><b style={{ color: '#2563eb' }}>파랑</b> 포함점</span>
                   <span><b style={{ color: '#dc2626' }}>빨강</b> 제외점</span>
@@ -579,29 +602,17 @@ function AutoLabelView() {
                     <span>면적 <b style={{ color: 'var(--ink)' }}>{(activeMask.area_frac * 100).toFixed(1)}%</b></span>}
                 </div>}
 
-              {/* 이 영상에서 탭한 프레임(참조샷): 클릭하면 그 프레임으로 이동 확인, ×로 삭제 */}
-              {shotFrames.length > 0 && (
-                <div className="al-shots">
-                  <span className="al-hint" style={{ marginRight: 4 }}>참조샷:</span>
-                  {shotFrames.map(i => {
-                    const npos = (pts[i] || []).filter(p => p.lab === 1).length
-                    const nneg = (pts[i] || []).length - npos
-                    const done = !!masks[shotKey(src, i)] && !masks[shotKey(src, i)].error
-                    return (
-                      <span key={i} className="al-shot-wrap">
-                        <button className={`al-shot ${idx === i ? 'on' : ''} ${npos >= 1 ? '' : 'bad'}`}
-                                onClick={() => goShot(i)} disabled={running}>
-                          {done ? '✓ ' : ''}#{i} +{npos}{nneg ? `/-${nneg}` : ''}
-                        </button>
-                        <span className="al-shot-x" title="이 프레임 탭 삭제" onClick={() => !running && deleteShotFrame(i)}>×</span>
-                      </span>
-                    )
-                  })}
-                </div>
-              )}
-              {labelStatus?.error && <p className="fn" style={{ color: '#b91c1c' }}>오류: {labelStatus.error}</p>}
-              {genDone && labelStatus.taps?.length > 0 &&
-                <div className="al-thumbs">{labelStatus.taps.map((u, i) => <img key={i} src={u} alt={`tap ${i}`} />)}</div>}
+              {/* 재생 컨트롤 바: 이미지 바로 아래, 이미지 폭에 꽉(비디오 플레이어 느낌) */}
+              <div className="al-controls" style={{ flexShrink: 0, marginTop: 8 }}>
+                <button className="pb-btn" title="10프레임 뒤로" onClick={() => setIdx(i => Math.max(i - 10, 0))} disabled={running}><IcSkipBack /><span>10</span></button>
+                <button className="pb-btn" title="이전 프레임" onClick={() => setIdx(i => Math.max(i - 1, 0))} disabled={running}><IcChevronLeft /></button>
+                <input className="al-slider" type="range" min={0} max={Math.max(count - 1, 0)} value={idx}
+                       onChange={(e) => setIdx(+e.target.value)} disabled={running} />
+                <span className="al-hint" style={{ minWidth: 54, textAlign: 'center' }}>{idx + 1}/{count}</span>
+                <button className="pb-btn" title="다음 프레임" onClick={() => setIdx(i => Math.min(i + 1, count - 1))} disabled={running}><IcChevronRight /></button>
+                <button className="pb-btn" title="10프레임 앞으로" onClick={() => setIdx(i => Math.min(i + 10, count - 1))} disabled={running}><span>10</span><IcSkipForward /></button>
+              </div>
+              {labelStatus?.error && <p className="fn" style={{ color: '#b91c1c', flexShrink: 0 }}>오류: {labelStatus.error}</p>}
             </div>
 
             {/* 오른쪽: 부품 패널 = 상단 고정 이전/다음 헤더 + 스크롤 리스트 */}
@@ -624,19 +635,6 @@ function AutoLabelView() {
                   )
                 })}
               </div>
-            </div>
-          </div>
-
-          {/* 하단 통합 컨트롤 바(전체 폭): 좌=재생 컨트롤, 우=이전/다음. 항상 같은 Y축 */}
-          <div className="wiz-footer">
-            <div className="al-controls" style={{ flex: 1, margin: 0 }}>
-              <button className="pb-btn" title="10프레임 뒤로" onClick={() => setIdx(i => Math.max(i - 10, 0))} disabled={running}><IcSkipBack /><span>10</span></button>
-              <button className="pb-btn" title="이전 프레임" onClick={() => setIdx(i => Math.max(i - 1, 0))} disabled={running}><IcChevronLeft /></button>
-              <input className="al-slider" type="range" min={0} max={Math.max(count - 1, 0)} value={idx}
-                     onChange={(e) => setIdx(+e.target.value)} disabled={running} />
-              <span className="al-hint" style={{ minWidth: 54, textAlign: 'center' }}>{idx + 1}/{count}</span>
-              <button className="pb-btn" title="다음 프레임" onClick={() => setIdx(i => Math.min(i + 1, count - 1))} disabled={running}><IcChevronRight /></button>
-              <button className="pb-btn" title="10프레임 앞으로" onClick={() => setIdx(i => Math.min(i + 10, count - 1))} disabled={running}><span>10</span><IcSkipForward /></button>
             </div>
           </div>
         </div>
