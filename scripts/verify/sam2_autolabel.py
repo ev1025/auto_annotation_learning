@@ -95,12 +95,16 @@ def mask_preview(src, frame_idx, points):
     m = masks[int(np.argmax(scores))].astype(bool)
     bb = _bbox(m)
     # 한 이미지에 전부: 마스크(초록 오버레이) + 박스(주황) + 포인트(초록=부품/빨강=제외)
+    # 점·박스는 원본 해상도라 화면 표시크기에 맞춰 이미지 폭에 비례(왼쪽 CSS 점 8px 과 통일감)
+    r = max(6, round(w / 82))            # 점 반지름
+    bt = max(3, round(w / 95))           # 박스 두께(더 굵게)
+    ew = max(2, round(w / 400))          # 점 흰 테두리
     vis = _overlay(im, m)
     if bb:
-        cv2.rectangle(vis, (bb[0], bb[1]), (bb[2], bb[3]), (0, 165, 255), 3)
+        cv2.rectangle(vis, (bb[0], bb[1]), (bb[2], bb[3]), (0, 165, 255), bt)
     for rx, ry, lab in points:   # 마스크가 초록이라 부품점은 파랑(BGR), 제외점은 빨강
-        cv2.circle(vis, (int(rx * w), int(ry * h)), 9, (255, 60, 0) if lab else (0, 0, 255), -1)
-        cv2.circle(vis, (int(rx * w), int(ry * h)), 9, (255, 255, 255), 2)
+        cv2.circle(vis, (int(rx * w), int(ry * h)), r, (255, 60, 0) if lab else (0, 0, 255), -1)
+        cv2.circle(vis, (int(rx * w), int(ry * h)), r, (255, 255, 255), ew)
     gc.collect(); torch.cuda.empty_cache()
     return {"combo": _b64(vis), "area_frac": round(float(m.sum()) / (w * h), 4), "bbox": bb}
 

@@ -521,14 +521,14 @@ function AutoLabelView() {
       </h3>
 
       {!src ? <p className="al-hint">부품 폴더가 없습니다. (data/bell412/parts/&lt;부품&gt;/videos)</p> : (
-        <div>
+        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 210px)', minHeight: 420, overflow: 'hidden' }}>
           {/* 헤더: 타이틀+안내(전체폭 상단) */}
-          <div className="wiz-head">
+          <div className="wiz-head" style={{ flexShrink: 0 }}>
             <span className="wiz-title">{partName}</span>
             <span className="al-hint">좌클릭(포함점)·우클릭(제외점) 후 <b>입력 마스크 확인</b> → 오른쪽에 마스크.</span>
           </div>
           {/* 상단 액션 버튼줄(전체폭) */}
-          <div className="al-controls">
+          <div className="al-controls" style={{ flexShrink: 0 }}>
                 <button className="act-btn neutral" onClick={undo} disabled={running || !cur.length}>점 취소</button>
                 <button className="act-btn neutral" onClick={clearFrame} disabled={running || !cur.length}>지우기</button>
                 <button className="act-btn primary" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
@@ -545,9 +545,9 @@ function AutoLabelView() {
                   <span className="al-hint">{labelStatus.running ? '전파 중...' : (labelStatus.stage === 'done' ? `✓ 라벨 ${labelStatus.labels}장` : '')}</span>}
               </div>
 
-          {/* 본문: 좌 이미지영역 / 우 리스트 패널 (같은 상단선) */}
-          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
+          {/* 본문: 좌 이미지영역 / 우 리스트 패널. 남는 공간 채우고 각자 내부 스크롤 */}
+          <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0, overflow: 'hidden', marginTop: 10 }}>
+            <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', paddingRight: 4 }}>
               {/* 듀얼 이미지: 두 pane 정확히 flex:1(동일 폭), 이미지 contain·중앙, 여백 흰색 */}
               <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
                 <div className="img-pane">
