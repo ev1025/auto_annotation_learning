@@ -343,11 +343,28 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 /* 헤더: 타이틀 위, 설명 아래(줄바꿈) */
 .wiz-head { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin: 0 0 12px; }
 
-/* 마스크 색 범례: 카드형 배지 */
+/* 마스크 색 범례: 카드형 배지, 이미지 두 개 합친 너비(100%) */
 .mask-legend {
-  display: inline-flex; align-items: center; flex-wrap: wrap; gap: 12px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 14px 22px;
+  width: 100%; justify-content: space-between;
   background: #f8fafc; border: 1px solid var(--line); border-radius: 8px;
-  padding: 7px 13px; margin-top: 8px; font-size: 12.5px; color: var(--muted);
+  padding: 8px 16px; margin-top: 10px; font-size: 12.5px; color: var(--muted);
+}
+
+/* 듀얼 이미지 pane: 정확히 반반(flex:1), 이미지 중앙, 남는 여백 흰색 */
+.img-pane {
+  flex: 1; min-width: 0; display: flex; justify-content: center; align-items: center;
+  background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  min-height: 260px;
+}
+.img-pane > img { display: block; max-width: 100%; object-fit: contain; }
+.tap-box { position: relative; display: inline-block; max-width: 100%; line-height: 0; cursor: crosshair; user-select: none; }
+.tap-box img { display: block; max-width: 100%; }
+
+/* 하단 통합 컨트롤 바: 좌우 컨트롤 항상 같은 Y축 */
+.wiz-footer {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);
 }
 .mask-legend .lg-title { font-weight: 700; color: var(--ink); }
 .mask-legend b { font-weight: 700; }
