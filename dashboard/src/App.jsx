@@ -1,5 +1,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 
+// Lucide 스타일 인라인 SVG 아이콘 (특수문자 ◀▶ 대체)
+const SVG = (children) => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+       strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}>{children}</svg>
+)
+const IcChevronLeft = () => SVG(<polyline points="15 18 9 12 15 6" />)
+const IcChevronRight = () => SVG(<polyline points="9 18 15 12 9 6" />)
+const IcSkipBack = () => SVG(<><polygon points="19 20 9 12 19 4 19 20" /><line x1="5" y1="19" x2="5" y2="5" /></>)
+const IcSkipForward = () => SVG(<><polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" /></>)
+
 // **굵게** 마커를 <b>로 변환
 function md(text) {
   const html = text
@@ -616,17 +626,17 @@ function AutoLabelView() {
           {/* 하단 통합 컨트롤 바(전체 폭): 좌=재생 컨트롤, 우=이전/다음. 항상 같은 Y축 */}
           <div className="wiz-footer">
             <div className="al-controls" style={{ flex: 1, margin: 0 }}>
-              <button className="chip" onClick={() => setIdx(i => Math.max(i - 10, 0))} disabled={running}>◀◀10</button>
-              <button className="chip" onClick={() => setIdx(i => Math.max(i - 1, 0))} disabled={running}>◀</button>
+              <button className="pb-btn" title="10프레임 뒤로" onClick={() => setIdx(i => Math.max(i - 10, 0))} disabled={running}><IcSkipBack /><span>10</span></button>
+              <button className="pb-btn" title="이전 프레임" onClick={() => setIdx(i => Math.max(i - 1, 0))} disabled={running}><IcChevronLeft /></button>
               <input className="al-slider" type="range" min={0} max={Math.max(count - 1, 0)} value={idx}
                      onChange={(e) => setIdx(+e.target.value)} disabled={running} />
               <span className="al-hint" style={{ minWidth: 54, textAlign: 'center' }}>{idx + 1}/{count}</span>
-              <button className="chip" onClick={() => setIdx(i => Math.min(i + 1, count - 1))} disabled={running}>▶</button>
-              <button className="chip" onClick={() => setIdx(i => Math.min(i + 10, count - 1))} disabled={running}>10▶▶</button>
+              <button className="pb-btn" title="다음 프레임" onClick={() => setIdx(i => Math.min(i + 1, count - 1))} disabled={running}><IcChevronRight /></button>
+              <button className="pb-btn" title="10프레임 앞으로" onClick={() => setIdx(i => Math.min(i + 10, count - 1))} disabled={running}><span>10</span><IcSkipForward /></button>
             </div>
             <div className="al-controls" style={{ margin: 0 }}>
-              <button className="al-secondary sm" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}>◀ 이전</button>
-              <button className="al-secondary sm" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1}>다음 ▶</button>
+              <button className="pb-btn" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}><IcChevronLeft /><span>이전</span></button>
+              <button className="pb-btn" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1}><span>다음</span><IcChevronRight /></button>
             </div>
           </div>
         </div>
