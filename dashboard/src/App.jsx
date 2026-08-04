@@ -295,128 +295,6 @@ const takeRoles = (videos) => {
   return { train: names, test: names[0] }   // 단일 테이크 → 학습영상으로 테스트
 }
 
-// 멀티클래스 학습 페이지: 라벨된 부품 선택 → YOLO 학습 → 검출 평가 결과(라벨링과 분리)
-function TrainView() {
-  const [folders, setFolders] = useState([])
-  const [session, setSession] = useState(null)
-  const [labeledMap, setLabeledMap] = useState({})   // {학습영상: {labels,frames}}
-  const [excluded, setExcluded] = useState([])       // 학습에서 뺀 부품
-  const [epochs, setEpochs] = useState(100)
-  const [job, setJob] = useState(null)
-  const [status, setStatus] = useState(null)
-  const running = !!status?.running
-
-  useEffect(() => { fetch('/api/autolabel/folders').then(r => r.json()).then(setFolders).catch(() => {}) }, [])
-  const load = useCallback(() => {
-    fetch('/api/sam2/parts_sessions').then(r => r.json()).then(list => {
-      const saved = localStorage.getItem('parts_session_v1')
-      const found = list.find(s => s.session === saved) || list[0]
-      if (found) { setSession(found.session); setLabeledMap(found.videos || {}) }
-    }).catch(() => {})
-  }, [])
-  useEffect(() => { load() }, [load])
-
-  const folderOf = (video) => folders.find(f => f.videos.some(v => v.name === video))
-  const items = Object.keys(labeledMap).map(video => {
-    const f = folderOf(video)
-    return { video, part: f ? partOf(f.folder) : video, test: f ? takeRoles(f.videos).test : video, labels: labeledMap[video].labels }
-  }).sort((a, b) => a.part.localeCompare(b.part))
-  const selected = items.filter(it => !excluded.includes(it.part))
-  const allOn = items.length > 0 && selected.length === items.length
-  const toggle = (p) => setExcluded(c => c.includes(p) ? c.filter(x => x !== p) : [...c, p])
-  const toggleAll = () => setExcluded(allOn ? items.map(it => it.part) : [])
-
-  const runTrain = async () => {
-    const classes = selected.map(it => it.part)
-    const tests = [...new Set(selected.map(it => it.test).filter(Boolean))]
-    const r = await fetch('/api/sam2/multiclass', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session, epochs, test_srcs: tests, classes })
-    }).then(x => x.json())
-    if (r.error) { setStatus({ error: r.error }); return }
-    setJob(r.job); setStatus({ stage: 'start', running: true })
-  }
-  useEffect(() => {
-    if (!job || !status?.running) return
-    const t = setInterval(async () => {
-      const d = await fetch(`/api/sam2/status?job=${job}`).then(r => r.json())
-      setStatus(d); if (!d.running) clearInterval(t)
-    }, 1500)
-    return () => clearInterval(t)
-  }, [job, status?.running])
-  const stage = { start: '준비 중', build: '라벨 통합(클래스 매핑)', train: 'YOLO 학습 중', eval: '검출 평가 중', done: '완료', error: '오류' }
-
-  return (
-    <div>
-      <h2>멀티클래스 학습 <span className="al-hint" style={{ fontWeight: 400, fontSize: 14 }}>라벨된 부품 {items.length}</span></h2>
-      <p className="al-hint">'부품 라벨링'에서 라벨 생성한 부품을 클래스별로 통합해 YOLO 학습. 테스트 영상이 없으면 학습영상 그대로 검출률·클래스 분포로 평가.</p>
-
-      {items.length === 0
-        ? <p className="al-hint" style={{ marginTop: 12 }}>라벨된 부품이 없습니다. 먼저 <b>부품 라벨링</b> 탭에서 탭·라벨 생성하세요.
-            <button className="pb-btn" onClick={load} style={{ marginLeft: 8 }}>↻ 새로고침</button></p>
-        : <>
-          <div className="al-controls" style={{ marginTop: 14 }}>
-            <button className="pb-btn" onClick={toggleAll} disabled={running}>{allOn ? '전체해제' : '전체선택'}</button>
-            <span className="al-hint">학습 대상 <b>{selected.length}</b>/{items.length}</span>
-            <button className="pb-btn" onClick={load} disabled={running} title="라벨 현황 새로고침">↻</button>
-            <span style={{ marginLeft: 'auto' }} />
-            <span className="al-hint">epoch</span>
-            <input className="ep-in" type="number" min={1} value={epochs} disabled={running}
-                   onChange={(e) => setEpochs(Math.max(1, Math.floor(+e.target.value) || 1))} />
-            <button className="act-btn train" onClick={runTrain} disabled={running || selected.length === 0}>
-              {running ? '학습 중...' : '멀티클래스 학습 시작'}
-            </button>
-          </div>
-
-          <div className="chips" style={{ marginTop: 10 }}>
-            {items.map(it => {
-              const on = !excluded.includes(it.part)
-              return (
-                <button key={it.part} className={on ? 'chip on' : 'chip'} disabled={running} onClick={() => toggle(it.part)}>
-                  {on ? '☑ ' : '☐ '}{it.part} <span className="al-hint">{it.labels}장</span>
-                </button>
-              )
-            })}
-          </div>
-
-          {status?.error && <p className="fn" style={{ color: '#b91c1c', marginTop: 10 }}>학습 오류: {status.error}</p>}
-          {status && !status.error && (
-            <div className="al-result" style={{ marginTop: 14 }}>
-              <div className="al-controls">
-                <b>{stage[status.stage] || status.stage}</b>
-                {status.note && <span className="al-hint">{status.note}</span>}
-                {status.n_images && <span className="al-hint">통합 <b>{status.n_images}</b>장 / {status.n_classes}클래스</span>}
-                {status.stage === 'eval' && <span className="al-hint">평가 {status.eval_done || 0} / {status.eval_total}</span>}
-              </div>
-              {status.stage === 'done' && (
-                <p className="al-hint">모델 <code>results/parts/{status.session}/multiclass/model/</code></p>
-              )}
-              {status.eval?.length > 0 && (
-                <>
-                  <table><thead><tr>
-                    <th>영상(학습=평가)</th><th>프레임</th><th>검출</th><th>검출률</th><th>평균 신뢰도</th><th>주요 클래스</th>
-                  </tr></thead><tbody>
-                    {status.eval.map(e => (
-                      <tr key={e.src}><td>{e.src}</td><td>{e.frames}</td><td>{e.detected}</td>
-                        <td><b>{Math.round(e.rate * 100)}%</b></td><td>{e.mean_conf}</td>
-                        <td>{(e.top_classes || []).map(([c, n]) => `${c}(${n})`).join(', ')}</td></tr>
-                    ))}
-                  </tbody></table>
-                  {status.eval.map(e => e.samples?.length > 0 && (
-                    <div key={e.src}>
-                      <h4 className="subtable-title">{e.src}</h4>
-                      <div className="al-thumbs">{e.samples.map((u, i) => <img key={i} src={u} alt={`${e.src} ${i}`} />)}</div>
-                    </div>
-                  ))}
-                </>
-              )}
-            </div>
-          )}
-        </>}
-    </div>
-  )
-}
-
 // 부품 라벨링(SAM2): 데이터셋(그룹)→부품(폴더) 순회. 부품마다 학습 테이크 탭 → 입력 마스크 확인 → 라벨 생성 → 다음 부품
 function AutoLabelView() {
   const [folders, setFolders] = useState([])        // [{folder,label,videos:[{name,count,ready}]}]
@@ -658,10 +536,8 @@ function AutoLabelView() {
 
   return (
     <div>
-      <h2>부품 라벨링 (SAM2) <span className="al-hint" style={{ fontWeight: 400, fontSize: 14 }}>라벨 {nLabeled}/{partFolders.length}</span></h2>
-
       {!src ? <p className="al-hint">부품 폴더가 없습니다. (data/bell412/parts/&lt;부품&gt;/videos)</p> : (
-        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 182px)', minHeight: 420, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 196px)', minHeight: 420, overflow: 'hidden' }}>
           {/* 헤더: 타이틀+안내(전체폭 상단) */}
           <div className="wiz-head" style={{ flexShrink: 0 }}>
             <span className="wiz-title">{partName}
@@ -716,7 +592,7 @@ function AutoLabelView() {
                     ? <span className="al-hint">프레임 컷 중...</span>
                     : <div className="tap-box" onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
                         {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false}
-                                     style={{ maxHeight: 'calc(100vh - 430px)', maxWidth: '100%' }} />}
+                                     style={{ maxHeight: 'calc(100vh - 444px)', maxWidth: '100%' }} />}
                         {cur.map((p, i) => (
                           <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
                                 style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />
@@ -727,7 +603,7 @@ function AutoLabelView() {
                   {activeMask
                     ? (activeMask.error
                         ? <span className="fn" style={{ color: '#b91c1c' }}>마스크 오류: {activeMask.error}</span>
-                        : <img src={activeMask.combo} alt="입력 마스크" style={{ maxHeight: 'calc(100vh - 430px)', maxWidth: '100%' }} />)
+                        : <img src={activeMask.combo} alt="입력 마스크" style={{ maxHeight: 'calc(100vh - 444px)', maxWidth: '100%' }} />)
                     : <span className="al-hint" style={{ padding: 12, textAlign: 'center' }}>입력 마스크 확인을 누르면 여기에 표시됩니다</span>}
                 </div>
               </div>
@@ -790,6 +666,144 @@ function AutoLabelView() {
   )
 }
 
+// 부품 인식 앱: 라벨 생성 → 학습 → 학습 결과 3단계를 한 화면에서 스텝 전환
+function PartsApp() {
+  const [step, setStep] = useState('label')          // 'label' | 'train' | 'result'
+  const [folders, setFolders] = useState([])
+  const [session, setSession] = useState(null)
+  const [labeledMap, setLabeledMap] = useState({})   // {학습영상: {labels,frames}}
+  const [excluded, setExcluded] = useState([])
+  const [epochs, setEpochs] = useState(100)
+  const [job, setJob] = useState(null)
+  const [status, setStatus] = useState(null)
+  const running = !!status?.running
+
+  const loadTrain = useCallback(() => {   // 학습 단계 진입 시 폴더+라벨 현황 갱신
+    fetch('/api/autolabel/folders').then(r => r.json()).then(setFolders).catch(() => {})
+    fetch('/api/sam2/parts_sessions').then(r => r.json()).then(list => {
+      const saved = localStorage.getItem('parts_session_v1')
+      const found = list.find(s => s.session === saved) || list[0]
+      if (found) { setSession(found.session); setLabeledMap(found.videos || {}) }
+    }).catch(() => {})
+  }, [])
+
+  const folderOf = (video) => folders.find(f => f.videos.some(v => v.name === video))
+  const items = Object.keys(labeledMap).map(video => {
+    const f = folderOf(video)
+    return { video, part: f ? partOf(f.folder) : video, test: f ? takeRoles(f.videos).test : video, labels: labeledMap[video].labels }
+  }).sort((a, b) => a.part.localeCompare(b.part))
+  const selected = items.filter(it => !excluded.includes(it.part))
+  const allOn = items.length > 0 && selected.length === items.length
+  const toggle = (p) => setExcluded(c => c.includes(p) ? c.filter(x => x !== p) : [...c, p])
+  const toggleAll = () => setExcluded(allOn ? items.map(it => it.part) : [])
+
+  const runTrain = async () => {
+    const classes = selected.map(it => it.part)
+    const tests = [...new Set(selected.map(it => it.test).filter(Boolean))]
+    const r = await fetch('/api/sam2/multiclass', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session, epochs, test_srcs: tests, classes })
+    }).then(x => x.json())
+    if (r.error) { setStatus({ error: r.error }); setStep('result'); return }
+    setJob(r.job); setStatus({ stage: 'start', running: true }); setStep('result')   // 학습 시작하면 결과 화면으로
+  }
+  useEffect(() => {
+    if (!job || !status?.running) return
+    const t = setInterval(async () => {
+      const d = await fetch(`/api/sam2/status?job=${job}`).then(r => r.json())
+      setStatus(d); if (!d.running) clearInterval(t)
+    }, 1500)
+    return () => clearInterval(t)
+  }, [job, status?.running])
+  const stage = { start: '준비 중', build: '라벨 통합(클래스 매핑)', train: 'YOLO 학습 중', eval: '검출 평가 중', done: '완료', error: '오류' }
+
+  const go = (s) => { if (s !== 'label') loadTrain(); setStep(s) }
+
+  return (
+    <div>
+      <div className="step-tabs">
+        <button className={`step ${step === 'label' ? 'on' : ''}`} onClick={() => go('label')}>1 · 라벨 생성</button>
+        <span className="step-arrow">→</span>
+        <button className={`step ${step === 'train' ? 'on' : ''}`} onClick={() => go('train')}>2 · 학습</button>
+        <span className="step-arrow">→</span>
+        <button className={`step ${step === 'result' ? 'on' : ''}`} onClick={() => go('result')} disabled={!status}>3 · 학습 결과</button>
+      </div>
+
+      {step === 'label' && <AutoLabelView />}
+
+      {step === 'train' && (
+        <div>
+          <p className="al-hint" style={{ marginBottom: 10 }}>라벨 생성한 부품을 클래스별로 통합해 YOLO 학습. 테스트 영상이 없으면 학습영상 그대로 검출률·클래스 분포로 평가. 학습할 부품을 고르세요.</p>
+          {items.length === 0
+            ? <p className="al-hint">라벨된 부품이 없습니다. <button className="pb-btn" onClick={() => go('label')} style={{ marginLeft: 6 }}>← 라벨 생성으로</button></p>
+            : <>
+              <div className="al-controls">
+                <button className="pb-btn" onClick={toggleAll} disabled={running}>{allOn ? '전체해제' : '전체선택'}</button>
+                <span className="al-hint">학습 대상 <b>{selected.length}</b>/{items.length}</span>
+                <button className="pb-btn" onClick={loadTrain} disabled={running} title="라벨 현황 새로고침">↻</button>
+                <span style={{ marginLeft: 'auto' }} />
+                <span className="al-hint">epoch</span>
+                <input className="ep-in" type="number" min={1} value={epochs} disabled={running}
+                       onChange={(e) => setEpochs(Math.max(1, Math.floor(+e.target.value) || 1))} />
+                <button className="act-btn train" onClick={runTrain} disabled={running || selected.length === 0}>학습 시작 →</button>
+              </div>
+              <div className="chips" style={{ marginTop: 10 }}>
+                {items.map(it => {
+                  const on = !excluded.includes(it.part)
+                  return (
+                    <button key={it.part} className={on ? 'chip on' : 'chip'} disabled={running} onClick={() => toggle(it.part)}>
+                      {on ? '☑ ' : '☐ '}{it.part} <span className="al-hint">{it.labels}장</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </>}
+        </div>
+      )}
+
+      {step === 'result' && (
+        <div>
+          {!status
+            ? <p className="al-hint">아직 학습을 시작하지 않았습니다. <button className="pb-btn" onClick={() => go('train')} style={{ marginLeft: 6 }}>← 학습으로</button></p>
+            : status.error
+              ? <p className="fn" style={{ color: '#b91c1c' }}>학습 오류: {status.error}</p>
+              : <div className="al-result">
+                  <div className="al-controls">
+                    <b style={{ fontSize: 15 }}>{stage[status.stage] || status.stage}</b>
+                    {status.note && <span className="al-hint">{status.note}</span>}
+                    {status.n_images && <span className="al-hint">통합 <b>{status.n_images}</b>장 / {status.n_classes}클래스</span>}
+                    {status.stage === 'eval' && <span className="al-hint">평가 {status.eval_done || 0} / {status.eval_total}</span>}
+                    {status.running && <span className="al-hint">진행 중...</span>}
+                  </div>
+                  {status.stage === 'done' && (
+                    <p className="al-hint">모델 <code>results/parts/{status.session}/multiclass/model/</code></p>
+                  )}
+                  {status.eval?.length > 0 && (
+                    <>
+                      <table><thead><tr>
+                        <th>영상(학습=평가)</th><th>프레임</th><th>검출</th><th>검출률</th><th>평균 신뢰도</th><th>주요 클래스</th>
+                      </tr></thead><tbody>
+                        {status.eval.map(e => (
+                          <tr key={e.src}><td>{e.src}</td><td>{e.frames}</td><td>{e.detected}</td>
+                            <td><b>{Math.round(e.rate * 100)}%</b></td><td>{e.mean_conf}</td>
+                            <td>{(e.top_classes || []).map(([c, n]) => `${c}(${n})`).join(', ')}</td></tr>
+                        ))}
+                      </tbody></table>
+                      {status.eval.map(e => e.samples?.length > 0 && (
+                        <div key={e.src}>
+                          <h4 className="subtable-title">{e.src}</h4>
+                          <div className="al-thumbs">{e.samples.map((u, i) => <img key={i} src={u} alt={`${e.src} ${i}`} />)}</div>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function GlossaryView() {
   const [rows, setRows] = useState([])
   useEffect(() => { fetch('/api/glossary').then(r => r.json()).then(setRows) }, [])
@@ -833,9 +847,7 @@ export default function App() {
         <nav>
           <div className="nav-title">오토라벨</div>
           <button className={view === 'autolabel' ? 'nav-item on' : 'nav-item'}
-                  onClick={() => setView('autolabel')}>부품 라벨링 (SAM2 탭)</button>
-          <button className={view === 'train' ? 'nav-item on' : 'nav-item'}
-                  onClick={() => setView('train')}>멀티클래스 학습</button>
+                  onClick={() => setView('autolabel')}>부품 라벨링 · 학습 (SAM2)</button>
           <div className="nav-title">실험 기록</div>
           <button className={view === 'benchmark' ? 'nav-item on' : 'nav-item'}
                   onClick={() => setView('benchmark')}>실험 (벤치마크 · 도메인갭 mAP)</button>
@@ -862,8 +874,7 @@ export default function App() {
         <div className="card">
           {view === 'benchmark' ? <BenchmarkView />
             : view === 'glossary' ? <GlossaryView />
-            : view === 'autolabel' ? <AutoLabelView />
-            : view === 'train' ? <TrainView />
+            : view === 'autolabel' ? <PartsApp />
             : <MethodView id={view} />}
         </div>
       </main>

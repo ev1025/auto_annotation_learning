@@ -360,6 +360,20 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .part-chip.done { border-color: #86efac; background: #f0fdf4; }
 .part-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 
+/* 스텝 탭: 라벨 생성 → 학습 → 결과 */
+.step-tabs {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 0 0 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line);
+}
+.step {
+  padding: 7px 16px; border: 1px solid var(--line); border-radius: 8px;
+  background: #fff; color: var(--muted); font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.step:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.step.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.step:disabled { opacity: 0.45; cursor: default; }
+.step-arrow { color: #cbd5e1; font-weight: 700; }
+
 /* 부품 패널: 고정 높이(왼쪽 이미지와 무관). 상단 이전/다음 헤더 고정 + 리스트만 스크롤 */
 .part-panel {
   flex: 0 0 auto; width: 180px; height: 100%; align-self: stretch;
