@@ -519,15 +519,15 @@ function AutoLabelView() {
             </div>
             {/* 상단 버튼줄: 점취소·지우기·마스크확인·라벨생성·학습 */}
             <div className="al-controls">
-              <button className="chip" onClick={undo} disabled={running || !cur.length}>점 취소</button>
-              <button className="chip" onClick={clearFrame} disabled={running || !cur.length}>지우기</button>
-              <button className="cmp-random" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
+              <button className="act-btn neutral" onClick={undo} disabled={running || !cur.length}>점 취소</button>
+              <button className="act-btn neutral" onClick={clearFrame} disabled={running || !cur.length}>지우기</button>
+              <button className="act-btn primary" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
                 {maskBusy ? '생성 중...' : '입력 마스크 확인'}
               </button>
-              <button className="al-primary sm" onClick={genLabel} disabled={running || curShots.length === 0}>
+              <button className="act-btn primary" onClick={genLabel} disabled={running || curShots.length === 0}>
                 {labelStatus?.running ? '라벨 생성 중...' : (isLabeled(src) ? '↻ 라벨 다시 생성' : '라벨 생성')}
               </button>
-              <button className="al-primary sm" style={{ background: '#0891b2' }} onClick={runTrain}
+              <button className="act-btn train" onClick={runTrain}
                       disabled={running || !session || selectedClasses.length === 0}>
                 {trainStatus?.running ? '학습 중...' : `멀티클래스 학습 (${selectedClasses.length})`}
               </button>

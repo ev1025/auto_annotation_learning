@@ -379,6 +379,18 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .al-primary:disabled { opacity: 0.45; cursor: default; }
 .al-primary.next { background: #16a34a; }
 .al-primary.sm { padding: 6px 14px; font-size: 13.5px; }
+
+/* 액션 버튼 패밀리: 동일 지오메트리, 색만 역할별 */
+.act-btn {
+  padding: 7px 15px; border-radius: 8px; border: 1px solid transparent;
+  font-family: inherit; font-size: 13.5px; font-weight: 600; line-height: 1.2; cursor: pointer;
+}
+.act-btn:disabled { opacity: 0.45; cursor: default; }
+.act-btn.neutral { background: #fff; color: var(--ink); border-color: var(--line); }
+.act-btn.neutral:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.act-btn.primary { background: var(--accent); color: #fff; }
+.act-btn.train { background: #0891b2; color: #fff; }
+.act-btn.primary:hover:not(:disabled), .act-btn.train:hover:not(:disabled) { filter: brightness(1.08); }
 .al-secondary {
   padding: 9px 16px; border: 1px solid var(--line); border-radius: 10px;
   background: #fff; color: var(--ink); font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
