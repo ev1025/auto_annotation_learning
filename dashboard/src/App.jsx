@@ -549,13 +549,12 @@ function AutoLabelView() {
               <span className="ref-shots-label">참조샷 {shotFrames.length}</span>
               {shotFrames.map(i => {
                 const npos = (pts[i] || []).filter(p => p.lab === 1).length
-                const nneg = (pts[i] || []).length - npos
                 const done = !!masks[shotKey(src, i)] && !masks[shotKey(src, i)].error
                 return (
                   <span key={i} className="al-shot-wrap">
                     <button className={`al-shot ${idx === i ? 'on' : ''} ${npos >= 1 ? '' : 'bad'}`}
                             onClick={() => goShot(i)} disabled={running}>
-                      {done ? '✓ ' : ''}#{i} +{npos}{nneg ? `/-${nneg}` : ''}
+                      {done ? '✓ ' : ''}#{i + 1}
                     </button>
                     <span className="al-shot-x" title="이 프레임 탭 삭제" onClick={() => !running && deleteShotFrame(i)}>×</span>
                   </span>
