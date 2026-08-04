@@ -514,17 +514,15 @@ function AutoLabelView() {
 
   return (
     <div>
-      <h2>부품 라벨링 (SAM2)</h2>
-
-      <h3 className="section-h">부품 선택 <span className="al-hint" style={{ fontWeight: 400 }}>{nLabeled}/{partFolders.length}</span>
-        {prepProg && <span className="al-hint" style={{ fontWeight: 400, marginLeft: 10 }}>⏳ {prepProg}</span>}
-      </h3>
+      <h2>부품 라벨링 (SAM2) <span className="al-hint" style={{ fontWeight: 400, fontSize: 14 }}>라벨 {nLabeled}/{partFolders.length}</span></h2>
 
       {!src ? <p className="al-hint">부품 폴더가 없습니다. (data/bell412/parts/&lt;부품&gt;/videos)</p> : (
-        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 210px)', minHeight: 420, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 150px)', minHeight: 420, overflow: 'hidden' }}>
           {/* 헤더: 타이틀+안내(전체폭 상단) */}
           <div className="wiz-head" style={{ flexShrink: 0 }}>
-            <span className="wiz-title">{partName}</span>
+            <span className="wiz-title">{partName}
+              {prepProg && <span className="al-hint" style={{ marginLeft: 8, fontWeight: 400 }}>⏳ {prepProg}</span>}
+            </span>
             <span className="al-hint">좌클릭(포함점)·우클릭(제외점) 후 <b>입력 마스크 확인</b> → 오른쪽에 마스크.</span>
           </div>
           {/* 상단 액션 버튼줄(전체폭) */}
