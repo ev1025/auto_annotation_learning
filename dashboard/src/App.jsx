@@ -574,8 +574,6 @@ function AutoLabelView() {
               <span className="al-hint" style={{ minWidth: 54, textAlign: 'center' }}>{idx + 1}/{count}</span>
               <button className="chip" onClick={() => setIdx(i => Math.min(i + 1, count - 1))} disabled={running}>▶</button>
               <button className="chip" onClick={() => setIdx(i => Math.min(i + 10, count - 1))} disabled={running}>10▶▶</button>
-              <button className="al-secondary sm" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}>◀ 이전</button>
-              <button className="al-secondary sm" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1}>다음 ▶</button>
             </div>
 
             {/* 이 영상에서 탭한 프레임(참조샷): 클릭하면 그 프레임으로 이동 확인, ×로 삭제 */}
@@ -603,20 +601,26 @@ function AutoLabelView() {
               <div className="al-thumbs">{labelStatus.taps.map((u, i) => <img key={i} src={u} alt={`tap ${i}`} />)}</div>}
           </div>
 
-          {/* 오른쪽: 부품 목록 세로. 라벨된 부품은 체크박스로 학습 포함/제외 */}
-          <div className="part-list">
-            {partFolders.map((pf, i) => {
-              const part = partOf(pf.folder)
-              const labeled = pfTrain(pf).some(isLabeled)
-              return (
-                <div key={pf.folder} className={`part-item ${pfStatus(pf)} ${i === partIdx ? 'on' : ''}`}
-                     onClick={() => !running && goPart(i)} title={part}>
-                  {labeled && <input type="checkbox" className="part-ck" checked={!excluded.includes(part)}
-                                     onClick={e => e.stopPropagation()} onChange={() => toggleExcluded(part)} disabled={running} />}
-                  <span className="part-name">{part}</span>
-                </div>
-              )
-            })}
+          {/* 오른쪽: 부품 목록 세로 + 그 아래 이전/다음. 라벨된 부품은 체크박스로 학습 포함/제외 */}
+          <div style={{ flex: '0 0 auto' }}>
+            <div className="part-list">
+              {partFolders.map((pf, i) => {
+                const part = partOf(pf.folder)
+                const labeled = pfTrain(pf).some(isLabeled)
+                return (
+                  <div key={pf.folder} className={`part-item ${pfStatus(pf)} ${i === partIdx ? 'on' : ''}`}
+                       onClick={() => !running && goPart(i)} title={part}>
+                    {labeled && <input type="checkbox" className="part-ck" checked={!excluded.includes(part)}
+                                       onClick={e => e.stopPropagation()} onChange={() => toggleExcluded(part)} disabled={running} />}
+                    <span className="part-name">{part}</span>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="al-controls" style={{ justifyContent: 'center', marginTop: 8 }}>
+              <button className="al-secondary sm" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}>◀ 이전</button>
+              <button className="al-secondary sm" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1}>다음 ▶</button>
+            </div>
           </div>
         </div>
       )}
