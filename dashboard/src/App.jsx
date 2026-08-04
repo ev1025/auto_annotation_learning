@@ -557,13 +557,15 @@ function AutoLabelView() {
                   </div>)}
             </div>
             {activeMask && !activeMask.error &&
-              <p className="al-hint" style={{ marginTop: 6 }}>
-                입력 마스크 &nbsp;<b style={{ color: '#2563eb' }}>파랑</b>=포함점&nbsp;&nbsp;
-                <b style={{ color: '#dc2626' }}>빨강</b>=제외점&nbsp;&nbsp;
-                <b style={{ color: '#16a34a' }}>초록</b>=마스크&nbsp;&nbsp;
-                <b style={{ color: '#ea580c' }}>주황</b>=박스
-                {typeof activeMask.area_frac === 'number' && <>&nbsp;&nbsp;면적 {(activeMask.area_frac * 100).toFixed(1)}%</>}
-              </p>}
+              <div className="mask-legend">
+                <span className="lg-title">입력 마스크</span>
+                <span><b style={{ color: '#2563eb' }}>파랑</b> 포함점</span>
+                <span><b style={{ color: '#dc2626' }}>빨강</b> 제외점</span>
+                <span><b style={{ color: '#16a34a' }}>초록</b> 마스크</span>
+                <span><b style={{ color: '#ea580c' }}>주황</b> 박스</span>
+                {typeof activeMask.area_frac === 'number' &&
+                  <span>면적 <b style={{ color: 'var(--ink)' }}>{(activeMask.area_frac * 100).toFixed(1)}%</b></span>}
+              </div>}
 
             {/* 프레임 이동 + 이전/다음 부품 */}
             <div className="al-controls">

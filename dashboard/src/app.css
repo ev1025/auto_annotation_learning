@@ -264,18 +264,18 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .al-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
 .al-slider { flex: 1; min-width: 160px; accent-color: var(--accent); }
 .al-hint { font-size: 12.5px; color: var(--muted); }
-.al-shots { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
-.al-shot-wrap { position: relative; display: inline-block; }
+.al-shots { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+.al-shot-wrap { position: relative; display: inline-flex; align-items: center; }
 .al-shot-x {
-  position: absolute; top: -5px; right: -5px; width: 13px; height: 13px;
-  border-radius: 50%; background: #fff; color: #111; font-size: 10px;
-  line-height: 12px; text-align: center; cursor: pointer; font-weight: 700;
-  border: 1px solid var(--line);
+  position: absolute; top: -7px; right: -7px; width: 16px; height: 16px;
+  border-radius: 50%; background: #fff; color: #64748b; font-size: 11px;
+  line-height: 14px; text-align: center; cursor: pointer; font-weight: 700;
+  border: 1px solid var(--line); box-shadow: 0 1px 2px rgba(0,0,0,0.12);
 }
-.al-shot-x:hover { background: #f1f5f9; }
+.al-shot-x:hover { background: #fee2e2; color: #b91c1c; border-color: #fca5a5; }
 .al-shot {
-  padding: 5px 12px; border: 1px solid var(--line); border-radius: 20px;
-  background: #fff; color: var(--ink); font-family: inherit; font-size: 13px;
+  padding: 6px 13px; border: 1px solid var(--line); border-radius: 16px;
+  background: #fff; color: var(--ink); font-family: inherit; font-size: 13px; line-height: 1.3;
   cursor: pointer; font-variant-numeric: tabular-nums;
 }
 .al-shot:hover:not(:disabled) { border-color: var(--accent); }
@@ -340,7 +340,17 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .part-item.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 
 /* 현재 부품 헤더 */
-.wiz-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; }
+/* 헤더: 타이틀 위, 설명 아래(줄바꿈) */
+.wiz-head { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin: 0 0 12px; }
+
+/* 마스크 색 범례: 카드형 배지 */
+.mask-legend {
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: 12px;
+  background: #f8fafc; border: 1px solid var(--line); border-radius: 8px;
+  padding: 7px 13px; margin-top: 8px; font-size: 12.5px; color: var(--muted);
+}
+.mask-legend .lg-title { font-weight: 700; color: var(--ink); }
+.mask-legend b { font-weight: 700; }
 .wiz-title { font-size: 18px; font-weight: 700; color: var(--ink); word-break: break-all; }
 .wiz-idx { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
