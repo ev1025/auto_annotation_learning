@@ -517,7 +517,7 @@ function AutoLabelView() {
       <h2>부품 라벨링 (SAM2) <span className="al-hint" style={{ fontWeight: 400, fontSize: 14 }}>라벨 {nLabeled}/{partFolders.length}</span></h2>
 
       {!src ? <p className="al-hint">부품 폴더가 없습니다. (data/bell412/parts/&lt;부품&gt;/videos)</p> : (
-        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 150px)', minHeight: 420, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 182px)', minHeight: 420, overflow: 'hidden' }}>
           {/* 헤더: 타이틀+안내(전체폭 상단) */}
           <div className="wiz-head" style={{ flexShrink: 0 }}>
             <span className="wiz-title">{partName}
@@ -574,7 +574,7 @@ function AutoLabelView() {
                     ? <span className="al-hint">프레임 컷 중...</span>
                     : <div className="tap-box" onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
                         {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false}
-                                     style={{ maxHeight: 'calc(100vh - 400px)', maxWidth: '100%' }} />}
+                                     style={{ maxHeight: 'calc(100vh - 430px)', maxWidth: '100%' }} />}
                         {cur.map((p, i) => (
                           <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
                                 style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />
@@ -585,7 +585,7 @@ function AutoLabelView() {
                   {activeMask
                     ? (activeMask.error
                         ? <span className="fn" style={{ color: '#b91c1c' }}>마스크 오류: {activeMask.error}</span>
-                        : <img src={activeMask.combo} alt="입력 마스크" style={{ maxHeight: 'calc(100vh - 400px)', maxWidth: '100%' }} />)
+                        : <img src={activeMask.combo} alt="입력 마스크" style={{ maxHeight: 'calc(100vh - 430px)', maxWidth: '100%' }} />)
                     : <span className="al-hint" style={{ padding: 12, textAlign: 'center' }}>입력 마스크 확인을 누르면 여기에 표시됩니다</span>}
                 </div>
               </div>
