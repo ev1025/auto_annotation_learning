@@ -320,11 +320,20 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .part-chip.done { border-color: #86efac; background: #f0fdf4; }
 .part-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 
-/* 부품 목록: 좁은 세로 박스. 왼쪽 이미지 높이와 무관하게 고정 높이·내부 스크롤 */
-.part-list {
-  flex: 0 0 auto; width: 176px; height: 560px; max-height: calc(100vh - 210px); overflow-y: auto;
-  display: flex; flex-direction: column; gap: 4px; padding: 6px;
+/* 부품 패널: 고정 높이(왼쪽 이미지와 무관). 상단 이전/다음 헤더 고정 + 리스트만 스크롤 */
+.part-panel {
+  flex: 0 0 auto; width: 180px; height: 560px; max-height: calc(100vh - 200px);
+  display: flex; flex-direction: column; overflow: hidden;
   background: #f8fafc; border: 1px solid var(--line); border-radius: 10px;
+}
+.part-panel-head {
+  flex: 0 0 auto; display: flex; gap: 6px; padding: 8px;
+  border-bottom: 1px solid var(--line); background: #f8fafc; border-radius: 10px 10px 0 0;
+}
+.part-panel-head .pb-btn { flex: 1; justify-content: center; }
+.part-list {
+  flex: 1; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 4px; padding: 6px;
 }
 .part-list::-webkit-scrollbar { width: 8px; }
 .part-list::-webkit-scrollbar-track { background: transparent; }

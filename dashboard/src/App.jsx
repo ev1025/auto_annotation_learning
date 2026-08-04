@@ -522,14 +522,13 @@ function AutoLabelView() {
 
       {!src ? <p className="al-hint">부품 폴더가 없습니다. (data/bell412/parts/&lt;부품&gt;/videos)</p> : (
         <div>
-          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="wiz-head">
-                <span className="wiz-title">{partName}</span>
-                <span className="al-hint">좌클릭(포함점)·우클릭(제외점) 후 <b>입력 마스크 확인</b> → 오른쪽에 마스크.</span>
-              </div>
-              {/* 상단 버튼줄: 점취소·지우기·마스크확인·라벨생성·학습 */}
-              <div className="al-controls">
+          {/* 헤더: 타이틀+안내(전체폭 상단) */}
+          <div className="wiz-head">
+            <span className="wiz-title">{partName}</span>
+            <span className="al-hint">좌클릭(포함점)·우클릭(제외점) 후 <b>입력 마스크 확인</b> → 오른쪽에 마스크.</span>
+          </div>
+          {/* 상단 액션 버튼줄(전체폭) */}
+          <div className="al-controls">
                 <button className="act-btn neutral" onClick={undo} disabled={running || !cur.length}>점 취소</button>
                 <button className="act-btn neutral" onClick={clearFrame} disabled={running || !cur.length}>지우기</button>
                 <button className="act-btn primary" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
@@ -546,6 +545,9 @@ function AutoLabelView() {
                   <span className="al-hint">{labelStatus.running ? '전파 중...' : (labelStatus.stage === 'done' ? `✓ 라벨 ${labelStatus.labels}장` : '')}</span>}
               </div>
 
+          {/* 본문: 좌 이미지영역 / 우 리스트 패널 (같은 상단선) */}
+          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               {/* 듀얼 이미지: 두 pane 정확히 flex:1(동일 폭), 이미지 contain·중앙, 여백 흰색 */}
               <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
                 <div className="img-pane">
@@ -604,8 +606,12 @@ function AutoLabelView() {
                 <div className="al-thumbs">{labelStatus.taps.map((u, i) => <img key={i} src={u} alt={`tap ${i}`} />)}</div>}
             </div>
 
-            {/* 오른쪽: 부품 목록 세로. 라벨된 부품은 체크박스로 학습 포함/제외 */}
-            <div style={{ flex: '0 0 auto' }}>
+            {/* 오른쪽: 부품 패널 = 상단 고정 이전/다음 헤더 + 스크롤 리스트 */}
+            <div className="part-panel">
+              <div className="part-panel-head">
+                <button className="pb-btn" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}><IcChevronLeft /><span>이전</span></button>
+                <button className="pb-btn" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1}><span>다음</span><IcChevronRight /></button>
+              </div>
               <div className="part-list">
                 {partFolders.map((pf, i) => {
                   const part = partOf(pf.folder)
@@ -633,10 +639,6 @@ function AutoLabelView() {
               <span className="al-hint" style={{ minWidth: 54, textAlign: 'center' }}>{idx + 1}/{count}</span>
               <button className="pb-btn" title="다음 프레임" onClick={() => setIdx(i => Math.min(i + 1, count - 1))} disabled={running}><IcChevronRight /></button>
               <button className="pb-btn" title="10프레임 앞으로" onClick={() => setIdx(i => Math.min(i + 10, count - 1))} disabled={running}><span>10</span><IcSkipForward /></button>
-            </div>
-            <div className="al-controls" style={{ margin: 0 }}>
-              <button className="pb-btn" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}><IcChevronLeft /><span>이전</span></button>
-              <button className="pb-btn" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1}><span>다음</span><IcChevronRight /></button>
             </div>
           </div>
         </div>
