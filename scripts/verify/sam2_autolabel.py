@@ -494,6 +494,56 @@ def start_parts_label(session, video, shots):
     return {"job": jid, "session": session}
 
 
+def _run_parts_label_batch(job_id, session, items):
+    """탭한 부품 여러 개를 한 번에: 각 영상 SAM2 전파 → 세션 폴더 누적. items=[{video,shots},...]."""
+    j = JOBS[job_id]
+    try:
+        sess = PARTS_ROOT / session
+        pi, pl = sess / "train" / "images", sess / "train" / "labels"
+        box_d, ref_d = sess / "train_box", sess / "tap"
+        for d in (pi, pl, box_d, ref_d):
+            d.mkdir(parents=True, exist_ok=True)
+        mp = sess / "labeling.json"
+        meta = json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {"session": session, "videos": {}}
+        results = []
+        total = len(items)
+        for k, it in enumerate(items, 1):
+            video, shots = it.get("video"), it.get("shots")
+            if not video or not shots:
+                continue
+            j.update(stage="propagate", note=f"{k}/{total} · {video}", done=k - 1, total=total)
+            for g in (pi.glob(f"{video}_*.jpg"), pl.glob(f"{video}_*.txt"),
+                      box_d.glob(f"{video}_*.jpg"), ref_d.glob(f"{video}_*.jpg")):
+                for f in list(g):
+                    f.unlink()
+            n, tot = _propagate_into(video, shots, pi, pl, box_d, ref_d)
+            meta["videos"][video] = {"labels": n, "frames": tot, "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+            results.append({"video": video, "labels": n, "frames": tot})
+        meta["updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        mp.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        j.update(stage="done", running=False, session=session, done=total, total=total, results=results)
+    except Exception as e:
+        j.update(stage="error", error=f"{type(e).__name__}: {e}", running=False)
+    finally:
+        _BUSY["on"] = False
+        gc.collect(); torch.cuda.empty_cache()
+
+
+def start_parts_label_batch(session, items):
+    with _LOCK:
+        if _BUSY["on"]:
+            return {"error": "이미 실행 중입니다. 끝난 뒤 다시 시도하세요."}
+        items = [it for it in (items or []) if it.get("video") and it.get("shots")]
+        if not items:
+            return {"error": "탭한 부품이 없습니다."}
+        _BUSY["on"] = True
+    session = session or datetime.now().strftime("%y%m%d_%H%M%S")
+    jid = uuid.uuid4().hex[:8]
+    JOBS[jid] = {"stage": "start", "running": True, "error": None, "session": session}
+    threading.Thread(target=_run_parts_label_batch, args=(jid, session, items), daemon=True).start()
+    return {"job": jid, "session": session}
+
+
 def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None):
     """세션에 누적된 per-part 라벨(class 0) → 영상명→부품→클래스 remap → YOLO 학습 → 검출 평가.
     only_classes 지정 시 그 클래스만 학습."""

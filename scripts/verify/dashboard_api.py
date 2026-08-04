@@ -142,6 +142,11 @@ def api_parts_label(payload: dict = Body(...)):
     return sa.start_parts_label(payload.get("session"), payload.get("video"), payload.get("shots", []))
 
 
+@app.post("/api/sam2/parts_label_batch")
+def api_parts_label_batch(payload: dict = Body(...)):
+    return sa.start_parts_label_batch(payload.get("session"), payload.get("items", []))
+
+
 @app.post("/api/sam2/multiclass")
 def api_multiclass(payload: dict = Body(...)):
     return sa.start_multiclass(payload.get("session"), payload.get("epochs"), payload.get("test_srcs", []),

@@ -433,6 +433,12 @@ function AutoLabelView() {
   const toggleExcluded = (p) => setExcluded(c => c.includes(p) ? c.filter(x => x !== p) : [...c, p])
   const curShots = buildShots(src)                 // 현재 학습 테이크의 유효 참조샷
   const shotFrames = Object.keys(pts).map(Number).filter(i => (pts[i] || []).length).sort((a, b) => a - b)  // 이 영상에서 탭한 프레임들
+  // 탭해둔(참조샷 있는) 학습 테이크 전체 → 한 번에 라벨 생성용
+  const tappedItems = partFolders.map(pf => pfTrain(pf)[0]).filter(Boolean)
+    .filter(v => buildShots(v).length > 0).map(v => ({ video: v, shots: buildShots(v) }))
+  // 학습 체크박스 전체선택/해제
+  const allSelected = labeledParts.length > 0 && labeledParts.every(p => !excluded.includes(p))
+  const toggleAll = () => setExcluded(allSelected ? [...labeledParts] : [])
   const goShot = (i) => { setIdx(i); setActiveShot(shotKey(src, i)) }   // 그 프레임으로 이동 + (캐시 있으면) 마스크 표시
   const deleteShotFrame = (i) => {                  // 그 프레임 탭 삭제
     dropMask(src, i)
@@ -464,6 +470,17 @@ function AutoLabelView() {
     if (r.session) { setSession(r.session); localStorage.setItem('parts_session_v1', r.session) }
     setLabelJob(r.job); setLabelStatus({ stage: 'start', running: true, video: src })
   }
+  // 탭한 부품 전체 한 번에 라벨 생성(배치)
+  const genLabelBatch = async () => {
+    if (!tappedItems.length) return
+    const r = await fetch('/api/sam2/parts_label_batch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session, items: tappedItems })
+    }).then(x => x.json())
+    if (r.error) { setLabelStatus({ error: r.error }); return }
+    if (r.session) { setSession(r.session); localStorage.setItem('parts_session_v1', r.session) }
+    setLabelJob(r.job); setLabelStatus({ stage: 'start', running: true, batch: true })
+  }
   useEffect(() => {
     if (!labelJob || !labelStatus?.running) return
     const t = setInterval(async () => {
@@ -473,7 +490,8 @@ function AutoLabelView() {
         clearInterval(t)
         if (d.stage === 'done') {
           if (d.session) { setSession(d.session); localStorage.setItem('parts_session_v1', d.session) }
-          setLabeledMap(m => ({ ...m, [d.video]: { labels: d.labels, frames: d.frames } }))
+          if (d.results) setLabeledMap(m => { const n = { ...m }; d.results.forEach(x => { n[x.video] = { labels: x.labels, frames: x.frames } }); return n })
+          else if (d.video) setLabeledMap(m => ({ ...m, [d.video]: { labels: d.labels, frames: d.frames } }))
         }
       }
     }, 1200)
@@ -537,7 +555,11 @@ function AutoLabelView() {
               {maskBusy ? '생성 중...' : '입력 마스크 확인'}
             </button>
             <button className="act-btn primary" onClick={genLabel} disabled={running || curShots.length === 0}>
-              {labelStatus?.running ? '라벨 생성 중...' : (isLabeled(src) ? '↻ 라벨 다시 생성' : '라벨 생성')}
+              {labelStatus?.running && !labelStatus?.batch ? '라벨 생성 중...' : (isLabeled(src) ? '↻ 라벨 다시 생성' : '라벨 생성')}
+            </button>
+            <button className="act-btn primary" onClick={genLabelBatch} disabled={running || tappedItems.length === 0}
+                    title="탭해둔 부품 전체를 한 번에 라벨 생성">
+              {labelStatus?.running && labelStatus?.batch ? (labelStatus.note ? `생성 중 ${labelStatus.note}` : '전체 생성 중...') : `전체 라벨 생성 (${tappedItems.length})`}
             </button>
             <button className="act-btn train" onClick={runTrain}
                     disabled={running || !session || selectedClasses.length === 0}>
@@ -625,8 +647,11 @@ function AutoLabelView() {
             {/* 오른쪽: 부품 패널 = 상단 고정 이전/다음 헤더 + 스크롤 리스트 */}
             <div className="part-panel">
               <div className="part-panel-head">
-                <button className="pb-btn" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0}><IcChevronLeft /><span>이전</span></button>
-                <button className="pb-btn" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1}><span>다음</span><IcChevronRight /></button>
+                <button className="pb-btn" onClick={toggleAll} disabled={running || labeledParts.length === 0}
+                        title="학습 대상 전체 선택/해제">{allSelected ? '전체해제' : '전체선택'}</button>
+                <span style={{ flex: 1 }} />
+                <button className="pb-btn ico" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0} title="이전 부품"><IcChevronLeft /></button>
+                <button className="pb-btn ico" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1} title="다음 부품"><IcChevronRight /></button>
               </div>
               <div className="part-list">
                 {partFolders.map((pf, i) => {

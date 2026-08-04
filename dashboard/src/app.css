@@ -353,10 +353,11 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
   background: #f8fafc; border: 1px solid var(--line); border-radius: 10px;
 }
 .part-panel-head {
-  flex: 0 0 auto; display: flex; gap: 6px; padding: 8px;
+  flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 8px;
   border-bottom: 1px solid var(--line); background: #f8fafc; border-radius: 10px 10px 0 0;
 }
-.part-panel-head .pb-btn { flex: 1; justify-content: center; }
+.part-panel-head .pb-btn { font-size: 12px; padding: 6px 9px; }
+.part-panel-head .pb-btn.ico { padding: 6px 7px; }
 .part-list {
   flex: 1; min-height: 0; overflow-y: auto;
   display: flex; flex-direction: column; gap: 4px; padding: 6px;
