@@ -507,7 +507,7 @@ function AutoLabelView() {
   }, [trainJob, trainStatus?.running])
   const trainStage = { start: '준비 중', build: '라벨 통합(클래스 매핑)', train: 'YOLO 학습 중', eval: 'test 영상 평가 중', done: '완료', error: '오류' }
 
-  const activeMask = activeShot ? masks[activeShot] : null
+  const activeMask = masks[shotKey(src, idx)] || null   // 현재 프레임의 마스크만 표시(프레임 바뀌면 자동으로 사라짐)
   const genDone = labelStatus?.stage === 'done' && labelStatus?.video === src
   const partName = curPartFolder ? partOf(curPartFolder.folder) : ''
   const evalList = testSrcs()
@@ -545,8 +545,8 @@ function AutoLabelView() {
 
           {/* 참조샷: 액션 버튼 바로 아래, 가로 칩 리스트 */}
           {shotFrames.length > 0 && (
-            <div className="al-shots" style={{ flexShrink: 0, marginTop: 4 }}>
-              <span className="al-hint" style={{ marginRight: 2 }}>참조샷</span>
+            <div className="al-shots" style={{ flexShrink: 0, marginTop: 6 }}>
+              <span className="ref-shots-label">참조샷 {shotFrames.length}</span>
               {shotFrames.map(i => {
                 const npos = (pts[i] || []).filter(p => p.lab === 1).length
                 const nneg = (pts[i] || []).length - npos

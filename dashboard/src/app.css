@@ -264,7 +264,16 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .al-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
 .al-slider { flex: 1; min-width: 160px; accent-color: var(--accent); }
 .al-hint { font-size: 12.5px; color: var(--muted); }
-.al-shots { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+/* 참조샷: 라벨 + 태그(칩) 리스트 카드 */
+.al-shots {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 10px 0; padding: 7px 10px;
+  background: #f8fafc; border: 1px solid var(--line); border-radius: 10px;
+}
+.ref-shots-label {
+  flex-shrink: 0; font-size: 12px; font-weight: 700; color: var(--muted);
+  padding: 3px 9px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 14px;
+}
 .al-shot-wrap { position: relative; display: inline-flex; align-items: center; }
 .al-shot-x {
   position: absolute; top: -7px; right: -7px; width: 16px; height: 16px;
