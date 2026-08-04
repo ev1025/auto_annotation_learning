@@ -295,7 +295,129 @@ const takeRoles = (videos) => {
   return { train: names, test: names[0] }   // 단일 테이크 → 학습영상으로 테스트
 }
 
-// 부품 라벨링(SAM2): 데이터셋(그룹)→부품(폴더) 순회. 부품마다 학습 테이크 탭 → 입력 마스크 확인 → 라벨 생성 → 다음 부품 → 멀티클래스 학습
+// 멀티클래스 학습 페이지: 라벨된 부품 선택 → YOLO 학습 → 검출 평가 결과(라벨링과 분리)
+function TrainView() {
+  const [folders, setFolders] = useState([])
+  const [session, setSession] = useState(null)
+  const [labeledMap, setLabeledMap] = useState({})   // {학습영상: {labels,frames}}
+  const [excluded, setExcluded] = useState([])       // 학습에서 뺀 부품
+  const [epochs, setEpochs] = useState(100)
+  const [job, setJob] = useState(null)
+  const [status, setStatus] = useState(null)
+  const running = !!status?.running
+
+  useEffect(() => { fetch('/api/autolabel/folders').then(r => r.json()).then(setFolders).catch(() => {}) }, [])
+  const load = useCallback(() => {
+    fetch('/api/sam2/parts_sessions').then(r => r.json()).then(list => {
+      const saved = localStorage.getItem('parts_session_v1')
+      const found = list.find(s => s.session === saved) || list[0]
+      if (found) { setSession(found.session); setLabeledMap(found.videos || {}) }
+    }).catch(() => {})
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const folderOf = (video) => folders.find(f => f.videos.some(v => v.name === video))
+  const items = Object.keys(labeledMap).map(video => {
+    const f = folderOf(video)
+    return { video, part: f ? partOf(f.folder) : video, test: f ? takeRoles(f.videos).test : video, labels: labeledMap[video].labels }
+  }).sort((a, b) => a.part.localeCompare(b.part))
+  const selected = items.filter(it => !excluded.includes(it.part))
+  const allOn = items.length > 0 && selected.length === items.length
+  const toggle = (p) => setExcluded(c => c.includes(p) ? c.filter(x => x !== p) : [...c, p])
+  const toggleAll = () => setExcluded(allOn ? items.map(it => it.part) : [])
+
+  const runTrain = async () => {
+    const classes = selected.map(it => it.part)
+    const tests = [...new Set(selected.map(it => it.test).filter(Boolean))]
+    const r = await fetch('/api/sam2/multiclass', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session, epochs, test_srcs: tests, classes })
+    }).then(x => x.json())
+    if (r.error) { setStatus({ error: r.error }); return }
+    setJob(r.job); setStatus({ stage: 'start', running: true })
+  }
+  useEffect(() => {
+    if (!job || !status?.running) return
+    const t = setInterval(async () => {
+      const d = await fetch(`/api/sam2/status?job=${job}`).then(r => r.json())
+      setStatus(d); if (!d.running) clearInterval(t)
+    }, 1500)
+    return () => clearInterval(t)
+  }, [job, status?.running])
+  const stage = { start: '준비 중', build: '라벨 통합(클래스 매핑)', train: 'YOLO 학습 중', eval: '검출 평가 중', done: '완료', error: '오류' }
+
+  return (
+    <div>
+      <h2>멀티클래스 학습 <span className="al-hint" style={{ fontWeight: 400, fontSize: 14 }}>라벨된 부품 {items.length}</span></h2>
+      <p className="al-hint">'부품 라벨링'에서 라벨 생성한 부품을 클래스별로 통합해 YOLO 학습. 테스트 영상이 없으면 학습영상 그대로 검출률·클래스 분포로 평가.</p>
+
+      {items.length === 0
+        ? <p className="al-hint" style={{ marginTop: 12 }}>라벨된 부품이 없습니다. 먼저 <b>부품 라벨링</b> 탭에서 탭·라벨 생성하세요.
+            <button className="pb-btn" onClick={load} style={{ marginLeft: 8 }}>↻ 새로고침</button></p>
+        : <>
+          <div className="al-controls" style={{ marginTop: 14 }}>
+            <button className="pb-btn" onClick={toggleAll} disabled={running}>{allOn ? '전체해제' : '전체선택'}</button>
+            <span className="al-hint">학습 대상 <b>{selected.length}</b>/{items.length}</span>
+            <button className="pb-btn" onClick={load} disabled={running} title="라벨 현황 새로고침">↻</button>
+            <span style={{ marginLeft: 'auto' }} />
+            <span className="al-hint">epoch</span>
+            <input className="ep-in" type="number" min={1} value={epochs} disabled={running}
+                   onChange={(e) => setEpochs(Math.max(1, Math.floor(+e.target.value) || 1))} />
+            <button className="act-btn train" onClick={runTrain} disabled={running || selected.length === 0}>
+              {running ? '학습 중...' : '멀티클래스 학습 시작'}
+            </button>
+          </div>
+
+          <div className="chips" style={{ marginTop: 10 }}>
+            {items.map(it => {
+              const on = !excluded.includes(it.part)
+              return (
+                <button key={it.part} className={on ? 'chip on' : 'chip'} disabled={running} onClick={() => toggle(it.part)}>
+                  {on ? '☑ ' : '☐ '}{it.part} <span className="al-hint">{it.labels}장</span>
+                </button>
+              )
+            })}
+          </div>
+
+          {status?.error && <p className="fn" style={{ color: '#b91c1c', marginTop: 10 }}>학습 오류: {status.error}</p>}
+          {status && !status.error && (
+            <div className="al-result" style={{ marginTop: 14 }}>
+              <div className="al-controls">
+                <b>{stage[status.stage] || status.stage}</b>
+                {status.note && <span className="al-hint">{status.note}</span>}
+                {status.n_images && <span className="al-hint">통합 <b>{status.n_images}</b>장 / {status.n_classes}클래스</span>}
+                {status.stage === 'eval' && <span className="al-hint">평가 {status.eval_done || 0} / {status.eval_total}</span>}
+              </div>
+              {status.stage === 'done' && (
+                <p className="al-hint">모델 <code>results/parts/{status.session}/multiclass/model/</code></p>
+              )}
+              {status.eval?.length > 0 && (
+                <>
+                  <table><thead><tr>
+                    <th>영상(학습=평가)</th><th>프레임</th><th>검출</th><th>검출률</th><th>평균 신뢰도</th><th>주요 클래스</th>
+                  </tr></thead><tbody>
+                    {status.eval.map(e => (
+                      <tr key={e.src}><td>{e.src}</td><td>{e.frames}</td><td>{e.detected}</td>
+                        <td><b>{Math.round(e.rate * 100)}%</b></td><td>{e.mean_conf}</td>
+                        <td>{(e.top_classes || []).map(([c, n]) => `${c}(${n})`).join(', ')}</td></tr>
+                    ))}
+                  </tbody></table>
+                  {status.eval.map(e => e.samples?.length > 0 && (
+                    <div key={e.src}>
+                      <h4 className="subtable-title">{e.src}</h4>
+                      <div className="al-thumbs">{e.samples.map((u, i) => <img key={i} src={u} alt={`${e.src} ${i}`} />)}</div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+        </>}
+    </div>
+  )
+}
+
+// 부품 라벨링(SAM2): 데이터셋(그룹)→부품(폴더) 순회. 부품마다 학습 테이크 탭 → 입력 마스크 확인 → 라벨 생성 → 다음 부품
 function AutoLabelView() {
   const [folders, setFolders] = useState([])        // [{folder,label,videos:[{name,count,ready}]}]
   const [partIdx, setPartIdx] = useState(0)         // 부품(폴더) 인덱스
@@ -561,10 +683,6 @@ function AutoLabelView() {
                     title="탭해둔 부품 전체를 한 번에 라벨 생성">
               {labelStatus?.running && labelStatus?.batch ? (labelStatus.note ? `생성 중 ${labelStatus.note}` : '전체 생성 중...') : `전체 라벨 생성 (${tappedItems.length})`}
             </button>
-            <button className="act-btn train" onClick={runTrain}
-                    disabled={running || !session || selectedClasses.length === 0}>
-              {trainStatus?.running ? '학습 중...' : `멀티클래스 학습 (${selectedClasses.length})`}
-            </button>
             {labelStatus && !labelStatus.error && labelStatus.video === src &&
               <span className="al-hint">{labelStatus.running ? '전파 중...' : (labelStatus.stage === 'done' ? `✓ 라벨 ${labelStatus.labels}장` : '')}</span>}
           </div>
@@ -647,8 +765,7 @@ function AutoLabelView() {
             {/* 오른쪽: 부품 패널 = 상단 고정 이전/다음 헤더 + 스크롤 리스트 */}
             <div className="part-panel">
               <div className="part-panel-head">
-                <button className="pb-btn" onClick={toggleAll} disabled={running || labeledParts.length === 0}
-                        title="학습 대상 전체 선택/해제">{allSelected ? '전체해제' : '전체선택'}</button>
+                <span className="al-hint" style={{ fontWeight: 600 }}>부품 {nLabeled}/{partFolders.length}</span>
                 <span style={{ flex: 1 }} />
                 <button className="pb-btn ico" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0} title="이전 부품"><IcChevronLeft /></button>
                 <button className="pb-btn ico" onClick={() => goPart(partIdx + 1)} disabled={running || partIdx >= partFolders.length - 1} title="다음 부품"><IcChevronRight /></button>
@@ -656,12 +773,9 @@ function AutoLabelView() {
               <div className="part-list">
                 {partFolders.map((pf, i) => {
                   const part = partOf(pf.folder)
-                  const labeled = pfTrain(pf).some(isLabeled)
                   return (
                     <div key={pf.folder} className={`part-item ${pfStatus(pf)} ${i === partIdx ? 'on' : ''}`}
                          onClick={() => !running && goPart(i)} title={part}>
-                      {labeled && <input type="checkbox" className="part-ck" checked={!excluded.includes(part)}
-                                         onClick={e => e.stopPropagation()} onChange={() => toggleExcluded(part)} disabled={running} />}
                       <span className="part-name">{part}</span>
                     </div>
                   )
@@ -672,42 +786,6 @@ function AutoLabelView() {
         </div>
       )}
 
-      {/* 멀티클래스 학습 결과 (버튼은 위 라벨생성 옆) */}
-      <>
-        {trainStatus?.error && <p className="fn" style={{ color: '#b91c1c' }}>학습 오류: {trainStatus.error}</p>}
-        {trainStatus && !trainStatus.error && (
-          <div className="al-result">
-            <div className="al-controls">
-              <b>{trainStage[trainStatus.stage] || trainStatus.stage}</b>
-              {trainStatus.note && <span className="al-hint">{trainStatus.note}</span>}
-              {trainStatus.n_images && <span className="al-hint">통합 <b>{trainStatus.n_images}</b>장 / {trainStatus.n_classes}클래스</span>}
-              {trainStatus.stage === 'eval' && <span className="al-hint">평가 {trainStatus.eval_done || 0} / {trainStatus.eval_total}</span>}
-            </div>
-            {trainStatus.stage === 'done' && (
-              <p className="al-hint">모델 <code>results/parts/{trainStatus.session}/multiclass/model/</code></p>
-            )}
-            {trainStatus.eval?.length > 0 && (
-              <>
-                <table><thead><tr>
-                  <th>영상(학습=평가)</th><th>프레임</th><th>검출</th><th>검출률</th><th>평균 신뢰도</th><th>주요 클래스</th>
-                </tr></thead><tbody>
-                  {trainStatus.eval.map(e => (
-                    <tr key={e.src}><td>{e.src}</td><td>{e.frames}</td><td>{e.detected}</td>
-                      <td><b>{Math.round(e.rate * 100)}%</b></td><td>{e.mean_conf}</td>
-                      <td>{(e.top_classes || []).map(([c, n]) => `${c}(${n})`).join(', ')}</td></tr>
-                  ))}
-                </tbody></table>
-                {trainStatus.eval.map(e => e.samples?.length > 0 && (
-                  <div key={e.src}>
-                    <h4 className="subtable-title">{e.src}</h4>
-                    <div className="al-thumbs">{e.samples.map((u, i) => <img key={i} src={u} alt={`${e.src} ${i}`} />)}</div>
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-        )}
-      </>
     </div>
   )
 }
@@ -756,6 +834,8 @@ export default function App() {
           <div className="nav-title">오토라벨</div>
           <button className={view === 'autolabel' ? 'nav-item on' : 'nav-item'}
                   onClick={() => setView('autolabel')}>부품 라벨링 (SAM2 탭)</button>
+          <button className={view === 'train' ? 'nav-item on' : 'nav-item'}
+                  onClick={() => setView('train')}>멀티클래스 학습</button>
           <div className="nav-title">실험 기록</div>
           <button className={view === 'benchmark' ? 'nav-item on' : 'nav-item'}
                   onClick={() => setView('benchmark')}>실험 (벤치마크 · 도메인갭 mAP)</button>
@@ -783,6 +863,7 @@ export default function App() {
           {view === 'benchmark' ? <BenchmarkView />
             : view === 'glossary' ? <GlossaryView />
             : view === 'autolabel' ? <AutoLabelView />
+            : view === 'train' ? <TrainView />
             : <MethodView id={view} />}
         </div>
       </main>

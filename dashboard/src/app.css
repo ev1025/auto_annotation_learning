@@ -307,6 +307,20 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .frame-jump input:focus { outline: none; background: #fff; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,0.18); }
 .frame-jump input:disabled { opacity: 0.5; }
 .frame-jump span.al-hint { color: #9ca3af; font-size: 12.5px; }
+
+/* epoch 입력창(학습 페이지) */
+.ep-in {
+  width: 64px; text-align: center; padding: 6px 8px;
+  border: 1px solid #e5e7eb; border-radius: 6px; background: #f3f4f6; color: var(--ink);
+  font-family: inherit; font-size: 13px; font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield; appearance: textfield;
+}
+.ep-in::-webkit-inner-spin-button, .ep-in::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+.ep-in:focus { outline: none; background: #fff; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,0.18); }
+
+/* 라벨 완료 부품 ✓ 표시(체크박스 대체) */
+.part-item.done::before { content: '✓'; color: #16a34a; font-weight: 700; font-size: 12px; }
+.part-item.on.done::before { color: #dcfce7; }
 .al-progress { height: 10px; background: var(--line); border-radius: 6px; overflow: hidden; margin: 8px 0; }
 .al-progress > i { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
 .al-thumbs {
