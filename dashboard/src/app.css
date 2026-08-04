@@ -264,32 +264,44 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .al-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
 .al-slider { flex: 1; min-width: 160px; accent-color: var(--accent); }
 .al-hint { font-size: 12.5px; color: var(--muted); }
-/* 참조샷: 라벨 + 태그(칩) 리스트 카드 */
+/* 참조샷: 제목 라벨 + 태그(칩) 리스트 카드(옅은 회색, 널널한 여백) */
 .al-shots {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  margin: 10px 0; padding: 7px 10px;
-  background: #f8fafc; border: 1px solid var(--line); border-radius: 10px;
+  margin: 10px 0; padding: 10px 14px;
+  background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px;
 }
 .ref-shots-label {
-  flex-shrink: 0; font-size: 12px; font-weight: 700; color: var(--muted);
-  padding: 3px 9px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 14px;
+  flex-shrink: 0; font-size: 13px; font-weight: 600; color: #374151;
+  padding-right: 12px; margin-right: 2px; border-right: 1px solid #e5e7eb;
 }
-.al-shot-wrap { position: relative; display: inline-flex; align-items: center; }
-.al-shot-x {
-  position: absolute; top: -7px; right: -7px; width: 16px; height: 16px;
-  border-radius: 50%; background: #fff; color: #64748b; font-size: 11px;
-  line-height: 14px; text-align: center; cursor: pointer; font-weight: 700;
-  border: 1px solid var(--line); box-shadow: 0 1px 2px rgba(0,0,0,0.12);
-}
-.al-shot-x:hover { background: #fee2e2; color: #b91c1c; border-color: #fca5a5; }
+/* 칩: 번호 라벨 + 내장 닫기 버튼(가로 정렬) */
 .al-shot {
-  padding: 6px 13px; border: 1px solid var(--line); border-radius: 16px;
-  background: #fff; color: var(--ink); font-family: inherit; font-size: 13px; line-height: 1.3;
-  cursor: pointer; font-variant-numeric: tabular-nums;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 6px 4px 11px; border: 1px solid var(--line); border-radius: 16px;
+  background: #fff; color: var(--ink); font-family: inherit; font-size: 13px; line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
-.al-shot:hover:not(:disabled) { border-color: var(--accent); }
+.al-shot:hover { border-color: var(--accent); }
+.al-shot .al-shot-lbl { cursor: pointer; }
 .al-shot.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .al-shot.bad { border-color: #fca5a5; color: #b91c1c; }
+.al-shot-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: #94a3b8; cursor: pointer;
+}
+.al-shot-close:hover { background: #fee2e2; color: #b91c1c; }
+.al-shot.on .al-shot-close { color: rgba(255,255,255,0.7); }
+.al-shot.on .al-shot-close:hover { background: rgba(255,255,255,0.2); color: #fff; }
+
+/* 재생바 프레임 번호 입력(지정 이동) */
+.frame-jump { display: inline-flex; align-items: center; gap: 5px; }
+.frame-jump input {
+  width: 52px; text-align: center; padding: 4px 5px;
+  border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink);
+  font-family: inherit; font-size: 12.5px; font-variant-numeric: tabular-nums;
+}
+.frame-jump input:focus { outline: none; border-color: var(--accent); }
 .al-progress { height: 10px; background: var(--line); border-radius: 6px; overflow: hidden; margin: 8px 0; }
 .al-progress > i { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
 .al-thumbs {

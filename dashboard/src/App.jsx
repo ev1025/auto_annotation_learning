@@ -9,6 +9,10 @@ const IcChevronLeft = () => SVG(<polyline points="15 18 9 12 15 6" />)
 const IcChevronRight = () => SVG(<polyline points="9 18 15 12 9 6" />)
 const IcSkipBack = () => SVG(<><polygon points="19 20 9 12 19 4 19 20" /><line x1="5" y1="19" x2="5" y2="5" /></>)
 const IcSkipForward = () => SVG(<><polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" /></>)
+const IcX = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"
+       strokeLinecap="round" style={{ display: 'block' }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+)
 
 // **굵게** 마커를 <b>로 변환
 function md(text) {
@@ -551,12 +555,9 @@ function AutoLabelView() {
                 const npos = (pts[i] || []).filter(p => p.lab === 1).length
                 const done = !!masks[shotKey(src, i)] && !masks[shotKey(src, i)].error
                 return (
-                  <span key={i} className="al-shot-wrap">
-                    <button className={`al-shot ${idx === i ? 'on' : ''} ${npos >= 1 ? '' : 'bad'}`}
-                            onClick={() => goShot(i)} disabled={running}>
-                      {done ? '✓ ' : ''}#{i + 1}
-                    </button>
-                    <span className="al-shot-x" title="이 프레임 탭 삭제" onClick={() => !running && deleteShotFrame(i)}>×</span>
+                  <span key={i} className={`al-shot ${idx === i ? 'on' : ''} ${npos >= 1 ? '' : 'bad'}`}>
+                    <span className="al-shot-lbl" onClick={() => !running && goShot(i)}>{done ? '✓ ' : ''}#{i + 1}</span>
+                    <button className="al-shot-close" title="이 프레임 탭 삭제" onClick={() => !running && deleteShotFrame(i)}><IcX /></button>
                   </span>
                 )
               })}
@@ -609,7 +610,11 @@ function AutoLabelView() {
                 <button className="pb-btn" title="이전 프레임" onClick={() => setIdx(i => Math.max(i - 1, 0))} disabled={running}><IcChevronLeft /></button>
                 <input className="al-slider" type="range" min={0} max={Math.max(count - 1, 0)} value={idx}
                        onChange={(e) => setIdx(+e.target.value)} disabled={running} />
-                <span className="al-hint" style={{ minWidth: 54, textAlign: 'center' }}>{idx + 1}/{count}</span>
+                <span className="frame-jump">
+                  <input type="number" min={1} max={count || 1} value={idx + 1} disabled={running}
+                         onChange={(e) => { const v = Math.min(Math.max(1, Math.floor(+e.target.value) || 1), count || 1); setIdx(v - 1) }} />
+                  <span className="al-hint">/ {count}</span>
+                </span>
                 <button className="pb-btn" title="다음 프레임" onClick={() => setIdx(i => Math.min(i + 1, count - 1))} disabled={running}><IcChevronRight /></button>
                 <button className="pb-btn" title="10프레임 앞으로" onClick={() => setIdx(i => Math.min(i + 10, count - 1))} disabled={running}><span>10</span><IcSkipForward /></button>
               </div>
