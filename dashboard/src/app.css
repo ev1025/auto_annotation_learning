@@ -376,7 +376,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 
 /* 듀얼 이미지 pane: 정확히 반반(flex:1), 이미지 중앙, 남는 여백 흰색 */
 .img-pane {
-  flex: 1; min-width: 0; min-height: 0; display: flex; justify-content: center; align-items: center;
+  flex: 0 0 340px; width: 340px; min-height: 0; display: flex; justify-content: center; align-items: center;
   background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
 }
 .img-pane > img { display: block; max-width: 100%; object-fit: contain; }

@@ -567,7 +567,9 @@ function AutoLabelView() {
           {/* 본문: 좌(이미지+범례+재생) / 우(리스트). 남는 공간 채움 */}
           <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0, overflow: 'hidden', marginTop: 8 }}>
             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              {/* 듀얼 이미지: flex:1 동일폭, 화면에 맞춰 축소(스크롤 없음), 여백 흰색 */}
+             {/* 이미지+범례+재생 = 고정폭 692(=340+340+12) 비디오 플레이어 묶음 */}
+             <div style={{ width: 692, maxWidth: '100%', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              {/* 듀얼 이미지: 좌우 고정폭(각 340), 화면에 맞춰 축소(스크롤 없음), 여백 흰색 */}
               <div style={{ display: 'flex', gap: 12, flex: 1, minHeight: 0 }}>
                 <div className="img-pane">
                   {preparing
@@ -612,6 +614,7 @@ function AutoLabelView() {
                 <button className="pb-btn" title="다음 프레임" onClick={() => setIdx(i => Math.min(i + 1, count - 1))} disabled={running}><IcChevronRight /></button>
                 <button className="pb-btn" title="10프레임 앞으로" onClick={() => setIdx(i => Math.min(i + 10, count - 1))} disabled={running}><span>10</span><IcSkipForward /></button>
               </div>
+             </div>
               {labelStatus?.error && <p className="fn" style={{ color: '#b91c1c', flexShrink: 0 }}>오류: {labelStatus.error}</p>}
             </div>
 
