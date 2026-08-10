@@ -7,11 +7,27 @@ const SVG = (children) => (
 )
 const IcChevronLeft = () => SVG(<polyline points="15 18 9 12 15 6" />)
 const IcChevronRight = () => SVG(<polyline points="9 18 15 12 9 6" />)
+const IcChevronDown = () => SVG(<polyline points="6 9 12 15 18 9" />)
 const IcSkipBack = () => SVG(<><polygon points="19 20 9 12 19 4 19 20" /><line x1="5" y1="19" x2="5" y2="5" /></>)
 const IcSkipForward = () => SVG(<><polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" /></>)
 const IcX = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"
        strokeLinecap="round" style={{ display: 'block' }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+)
+const IcCheck = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"
+       strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}><polyline points="20 6 9 17 4 12" /></svg>
+)
+const IcWarn = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+       strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}>
+    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+    <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+)
+const IcInfo = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+       strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}>
+    <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
 )
 
 // **굵게** 마커를 <b>로 변환
@@ -310,6 +326,19 @@ function AutoLabelView() {
   const [masks, setMasks] = useState({})            // {"영상:프레임": {combo,area_frac,bbox}}
   const [activeShot, setActiveShot] = useState(null)// 크게 보고 있는 마스크 참조샷 키
   const [maskBusy, setMaskBusy] = useState(false)
+  const [servedSet, setServedSet] = useState(new Set())   // 현재 서비스 모델이 보유한 부품(학습됨 판단 기준)
+  const [labeledAnywhere, setLabeledAnywhere] = useState(new Set())   // train 라벨이 하나라도 있는 부품(세션 무관) — 라벨 검수 활성 판단
+  useEffect(() => {   // 현재 서비스 모델 클래스 + 라벨 보유 부품 로드
+    fetch('/api/sam2/served').then(r => r.json())
+      .then(d => setServedSet(new Set((d && !d.none && d.classes) || [])))
+      .catch(() => {})
+    fetch('/api/sam2/labeled_parts').then(r => r.json())
+      .then(d => setLabeledAnywhere(new Set(d.parts || [])))
+      .catch(() => {})
+  }, [])
+  const [showReview, setShowReview] = useState(false)   // 라벨 검수 모달
+  const [reviewFrames, setReviewFrames] = useState([])
+  const [selParts, setSelParts] = useState(() => new Set())   // 일괄 라벨 생성 대상 부품(체크박스 선택)
 
   const [session, setSession] = useState(() => localStorage.getItem('parts_session_v1') || null)
   const [labeledMap, setLabeledMap] = useState({})  // {영상: {labels,frames}} 현재 세션에 라벨된 테이크
@@ -436,6 +465,14 @@ function AutoLabelView() {
   // 탭해둔(참조샷 있는) 학습 테이크 전체 → 한 번에 라벨 생성용
   const tappedItems = partFolders.map(pf => pfTrain(pf)[0]).filter(Boolean)
     .filter(v => buildShots(v).length > 0).map(v => ({ video: v, shots: buildShots(v) }))
+  // 부품 선택(체크박스) → 선택한 부품 중 참조샷 있는 것들 일괄 라벨 생성 대상
+  const toggleSelPart = (folder) => setSelParts(s => { const n = new Set(s); n.has(folder) ? n.delete(folder) : n.add(folder); return n })
+  const allPartsSelected = partFolders.length > 0 && partFolders.every(pf => selParts.has(pf.folder))
+  const toggleAllParts = () => setSelParts(allPartsSelected ? new Set() : new Set(partFolders.map(pf => pf.folder)))
+  const selItems = partFolders.filter(pf => selParts.has(pf.folder))
+    .map(pf => pfTrain(pf)[0]).filter(Boolean)
+    .filter(v => buildShots(v).length > 0).map(v => ({ video: v, shots: buildShots(v) }))
+  const batchMode = selParts.size > 0
   // 학습 체크박스 전체선택/해제
   const allSelected = labeledParts.length > 0 && labeledParts.every(p => !excluded.includes(p))
   const toggleAll = () => setExcluded(allSelected ? [...labeledParts] : [])
@@ -470,12 +507,13 @@ function AutoLabelView() {
     if (r.session) { setSession(r.session); localStorage.setItem('parts_session_v1', r.session) }
     setLabelJob(r.job); setLabelStatus({ stage: 'start', running: true, video: src })
   }
-  // 탭한 부품 전체 한 번에 라벨 생성(배치)
-  const genLabelBatch = async () => {
-    if (!tappedItems.length) return
+  // 선택한 부품들 한 번에 라벨 생성(배치)
+  const genLabelBatch = async (items) => {
+    const list = items && items.length ? items : selItems
+    if (!list.length) return
     const r = await fetch('/api/sam2/parts_label_batch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session, items: tappedItems })
+      body: JSON.stringify({ session, items: list })
     }).then(x => x.json())
     if (r.error) { setLabelStatus({ error: r.error }); return }
     if (r.session) { setSession(r.session); localStorage.setItem('parts_session_v1', r.session) }
@@ -492,6 +530,7 @@ function AutoLabelView() {
           if (d.session) { setSession(d.session); localStorage.setItem('parts_session_v1', d.session) }
           if (d.results) setLabeledMap(m => { const n = { ...m }; d.results.forEach(x => { n[x.video] = { labels: x.labels, frames: x.frames } }); return n })
           else if (d.video) setLabeledMap(m => ({ ...m, [d.video]: { labels: d.labels, frames: d.frames } }))
+          fetch('/api/sam2/labeled_parts').then(r => r.json()).then(x => setLabeledAnywhere(new Set(x.parts || []))).catch(() => {})   // 검수 활성 목록 갱신
         }
       }
     }, 1200)
@@ -533,32 +572,52 @@ function AutoLabelView() {
   const genDone = labelStatus?.stage === 'done' && labelStatus?.video === src
   const partName = curPartFolder ? partOf(curPartFolder.folder) : ''
   const evalList = testSrcs()
+  const openReview = () => {   // 현재 부품의 생성된 학습 프레임(세션 무관)을 검수 모달로
+    if (!partName) return
+    fetch(`/api/sam2/part_frames?part=${encodeURIComponent(partName)}`).then(r => r.json())
+      .then(d => { setReviewFrames(d.frames || []); setShowReview(true) }).catch(() => {})
+  }
+  const delReviewFrame = async (f) => {   // 잘못된 프레임 삭제(그 프레임이 속한 세션에서 제거)
+    await fetch('/api/sam2/delete_train_frame', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session: f.session, name: f.name })
+    }).catch(() => {})
+    setReviewFrames(fs => fs.filter(x => !(x.session === f.session && x.name === f.name)))
+  }
 
   return (
     <div>
       {!src ? <p className="al-hint">부품 폴더가 없습니다. (data/bell412/parts/&lt;부품&gt;/videos)</p> : (
         <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 196px)', minHeight: 420, overflow: 'hidden' }}>
-          {/* 헤더: 타이틀+안내(전체폭 상단) */}
+          {/* 헤더: 안내만(장비명 미표시) */}
           <div className="wiz-head" style={{ flexShrink: 0 }}>
-            <span className="wiz-title">{partName}
-              {prepProg && <span className="al-hint" style={{ marginLeft: 8, fontWeight: 400 }}>⏳ {prepProg}</span>}
-            </span>
-            <span className="al-hint">좌클릭(포함점)·우클릭(제외점) 후 <b>입력 마스크 확인</b> → 오른쪽에 마스크.</span>
+            <div className="mask-panel" style={{ marginTop: 0 }}>
+              <div className="mask-legend">
+                <span className="lg-title">사용법</span>
+                <span className="lg-item"><i className="lg-dot" style={{ background: '#3b82f6' }} />좌클릭 포함점</span>
+                <span className="lg-item"><i className="lg-dot" style={{ background: '#f87171' }} />우클릭 제외점</span>
+                <span className="lg-item"><i className="lg-dot" style={{ background: '#34d399' }} />마스크</span>
+                <span className="lg-item"><i className="lg-dot" style={{ background: '#fb923c' }} />박스</span>
+                {prepProg && <span className="al-hint" style={{ marginLeft: 'auto' }}>⏳ {prepProg}</span>}
+              </div>
+            </div>
           </div>
-          {/* 상단 액션 버튼줄(전체폭) */}
+          {/* 상단 액션 버튼줄 */}
           <div className="al-controls" style={{ flexShrink: 0 }}>
             <button className="act-btn neutral" onClick={undo} disabled={running || !cur.length}>점 취소</button>
             <button className="act-btn neutral" onClick={clearFrame} disabled={running || !cur.length}>지우기</button>
             <button className="act-btn primary" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
               {maskBusy ? '생성 중...' : '입력 마스크 확인'}
             </button>
-            <button className="act-btn primary" onClick={genLabel} disabled={running || curShots.length === 0}>
-              {labelStatus?.running && !labelStatus?.batch ? '라벨 생성 중...' : (isLabeled(src) ? '↻ 라벨 다시 생성' : '라벨 생성')}
+            <button className="act-btn primary"
+                    onClick={batchMode ? () => genLabelBatch() : genLabel}
+                    disabled={running || (batchMode ? selItems.length === 0 : curShots.length === 0)}
+                    title={batchMode ? '선택한 부품들의 참조샷으로 한 번에 라벨 생성' : ''}>
+              {labelStatus?.running ? '라벨 생성 중...'
+                : batchMode ? `선택 부품 라벨 생성 (${selItems.length})`
+                : ((isLabeled(src) || servedSet.has(partName)) ? '↻ 라벨 다시 생성' : '라벨 생성')}
             </button>
-            <button className="act-btn primary" onClick={genLabelBatch} disabled={running || tappedItems.length === 0}
-                    title="탭해둔 부품 전체를 한 번에 라벨 생성">
-              {labelStatus?.running && labelStatus?.batch ? (labelStatus.note ? `생성 중 ${labelStatus.note}` : '전체 생성 중...') : `전체 라벨 생성 (${tappedItems.length})`}
-            </button>
+            <button className="act-btn neutral" onClick={openReview} disabled={running || !(isLabeled(src) || labeledAnywhere.has(partName))}
+                    title="현재 부품에 생성된 학습 라벨 프레임을 확인하고 잘못된 사진을 삭제">라벨 검수</button>
             {labelStatus && !labelStatus.error && labelStatus.video === src &&
               <span className="al-hint">{labelStatus.running ? '전파 중...' : (labelStatus.stage === 'done' ? `✓ 라벨 ${labelStatus.labels}장` : '')}</span>}
           </div>
@@ -583,9 +642,15 @@ function AutoLabelView() {
           {/* 본문: 좌(이미지+범례+재생) / 우(리스트). 남는 공간 채움 */}
           <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0, overflow: 'hidden', marginTop: 8 }}>
             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-             {/* 이미지+범례+재생 = 고정폭 692(=340+340+12) 비디오 플레이어 묶음 */}
-             <div style={{ width: 692, maxWidth: '100%', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-              {/* 듀얼 이미지: 좌우 고정폭(각 340), 화면에 맞춰 축소(스크롤 없음), 여백 흰색 */}
+             {/* 이미지+범례+재생 = 남는 폭을 채우되 상한(사이드바 넓혀도 겹치지 않게 반응형) */}
+             <div style={{ width: '100%', maxWidth: 720, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              {/* 마스크 상태: 참조샷과 이미지 사이 */}
+              {activeMask && !activeMask.error && (
+                activeMask.verdict === 'over'
+                  ? <div className="mask-alert warn" style={{ flexShrink: 0, marginBottom: 8 }}><IcWarn /><span>배경까지 넓게 잡힘 · 부품 안쪽 점만 남기고 배경엔 제외점을 찍어보세요</span></div>
+                  : <div className="mask-alert ok" style={{ flexShrink: 0, marginBottom: 8 }}><IcCheck /><span>부품이 잘 잡혔어요</span></div>
+              )}
+              {/* 듀얼 이미지: 좌우 동일 비율로 축소(스크롤 없음), 여백 흰색 */}
               <div style={{ display: 'flex', gap: 12, flex: 1, minHeight: 0 }}>
                 <div className="img-pane">
                   {preparing
@@ -608,17 +673,6 @@ function AutoLabelView() {
                 </div>
               </div>
 
-              {/* 범례 (얇게) */}
-              {activeMask && !activeMask.error &&
-                <div className="mask-legend" style={{ flexShrink: 0 }}>
-                  <span className="lg-title">입력 마스크</span>
-                  <span><b style={{ color: '#2563eb' }}>파랑</b> 포함점</span>
-                  <span><b style={{ color: '#dc2626' }}>빨강</b> 제외점</span>
-                  <span><b style={{ color: '#16a34a' }}>초록</b> 마스크</span>
-                  <span><b style={{ color: '#ea580c' }}>주황</b> 박스</span>
-                  {typeof activeMask.area_frac === 'number' &&
-                    <span>면적 <b style={{ color: 'var(--ink)' }}>{(activeMask.area_frac * 100).toFixed(1)}%</b></span>}
-                </div>}
 
               {/* 재생 컨트롤 바: 이미지 바로 아래, 이미지 폭에 꽉(비디오 플레이어 느낌) */}
               <div className="al-controls" style={{ flexShrink: 0, marginTop: 8 }}>
@@ -641,6 +695,9 @@ function AutoLabelView() {
             {/* 오른쪽: 부품 패널 = 상단 고정 이전/다음 헤더 + 스크롤 리스트 */}
             <div className="part-panel">
               <div className="part-panel-head">
+                <input type="checkbox" className="part-sel" checked={allPartsSelected} disabled={running || partFolders.length === 0}
+                       ref={el => { if (el) el.indeterminate = selParts.size > 0 && !allPartsSelected }}
+                       onChange={toggleAllParts} title="전체 선택 / 해제" aria-label="부품 전체 선택" />
                 <span className="al-hint" style={{ fontWeight: 600 }}>부품 {nLabeled}/{partFolders.length}</span>
                 <span style={{ flex: 1 }} />
                 <button className="pb-btn ico" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0} title="이전 부품"><IcChevronLeft /></button>
@@ -649,14 +706,47 @@ function AutoLabelView() {
               <div className="part-list">
                 {partFolders.map((pf, i) => {
                   const part = partOf(pf.folder)
+                  const st = pfStatus(pf)
                   return (
-                    <div key={pf.folder} className={`part-item ${pfStatus(pf)} ${i === partIdx ? 'on' : ''}`}
-                         onClick={() => !running && goPart(i)} title={part}>
+                    <div key={pf.folder} className={`part-item ${st} ${i === partIdx ? 'on' : ''}`}
+                         onClick={() => !running && goPart(i)} title={st === 'done' ? `${part} (라벨됨)` : part}>
+                      <input type="checkbox" className="part-sel" checked={selParts.has(pf.folder)} disabled={running}
+                             onClick={(e) => e.stopPropagation()} onChange={() => toggleSelPart(pf.folder)} aria-label={`${part} 선택`} />
                       <span className="part-name">{part}</span>
+                      {servedSet.has(part)
+                        ? <span className="tchip-badge">학습됨</span>
+                        : <span className="tchip-badge new">신규</span>}
                     </div>
                   )
                 })}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 라벨 검수 모달: 생성된 학습 프레임(bbox) 확인 + 잘못된 사진 삭제 */}
+      {showReview && (
+        <div className="modal-scrim" onClick={() => setShowReview(false)}>
+          <div className="modal-card wide" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <b>라벨 검수 — {partName} {reviewFrames.length}장</b>
+              <button className="icon-x" onClick={() => setShowReview(false)} aria-label="닫기"><IcX /></button>
+            </div>
+            <div className="review-grid">
+              {reviewFrames.length === 0 && <p className="al-hint" style={{ padding: 18 }}>이 부품의 생성된 라벨이 없습니다.</p>}
+              {reviewFrames.map(f => (
+                <figure key={`${f.session}/${f.name}`} className="review-cell">
+                  <img loading="lazy" alt={f.part}
+                       src={`/api/sam2/train_frame?session=${encodeURIComponent(f.session)}&name=${encodeURIComponent(f.name)}&w=240`} />
+                  <figcaption title={f.name}>{f.part}</figcaption>
+                  <button className="review-del" title="이 프레임 삭제" onClick={() => delReviewFrame(f)}><IcX /></button>
+                </figure>
+              ))}
+            </div>
+            <div className="modal-foot">
+              <span className="al-hint" style={{ marginRight: 'auto' }}>잘못 잡힌 프레임은 ×로 삭제하세요. 삭제 즉시 학습셋에서 빠집니다.</span>
+              <button className="act-btn neutral" onClick={() => setShowReview(false)}>닫기</button>
             </div>
           </div>
         </div>
@@ -667,137 +757,778 @@ function AutoLabelView() {
 }
 
 // 부품 인식 앱: 라벨 생성 → 학습 → 학습 결과 3단계를 한 화면에서 스텝 전환
+function LogConsole({ log }) {   // 터미널 로그: 새 줄마다 자동 하단 스크롤(사용자가 위로 올리면 멈춤)
+  const ref = useRef(null)
+  const stick = useRef(true)
+  useEffect(() => {
+    const el = ref.current
+    if (el && stick.current) el.scrollTop = el.scrollHeight
+  }, [log])
+  const onScroll = () => {
+    const el = ref.current
+    if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 28
+  }
+  return (
+    <div className="term" ref={ref} onScroll={onScroll}>
+      {(log || []).map((l, i) => <div key={i} className={`term-line ${l.level || 'info'}`}>{l.msg}</div>)}
+      {!(log && log.length) && <div className="term-line dim">로그 대기 중...</div>}
+    </div>
+  )
+}
+
+// 원형 프로그레스: 진행률(pct)에 맞춰 링이 차오르고 중앙 숫자가 부드럽게 카운트업. 완료 시 녹색 체크
+function CircularProgress({ pct, done }) {
+  const [disp, setDisp] = useState(0)
+  useEffect(() => {
+    let raf, cur = disp
+    const tick = () => {
+      cur += (pct - cur) * 0.25
+      if (Math.abs(pct - cur) < 0.5) { setDisp(pct); return }
+      setDisp(Math.round(cur)); raf = requestAnimationFrame(tick)
+    }
+    tick()
+    return () => cancelAnimationFrame(raf)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pct])
+  const r = 32, c = 2 * Math.PI * r
+  const off = c * (1 - (done ? 100 : pct) / 100)
+  return (
+    <div className={`circ ${done ? 'done' : 'run'}`}>
+      <svg width="80" height="80" viewBox="0 0 80 80">
+        <circle className="circ-track" cx="40" cy="40" r={r} />
+        <circle className="circ-bar" cx="40" cy="40" r={r} style={{ strokeDasharray: c, strokeDashoffset: off }} />
+      </svg>
+      <div className="circ-label">{done ? <IcCheck /> : `${disp}%`}</div>
+    </div>
+  )
+}
+
+// 예측 프레임 뷰어: 학습 검출평가 예측 이미지(박스)를 영상별로 넘겨보며 신규 부품 예측 확인
+function EvalFramesViewer({ session, srcs }) {
+  const [src, setSrc] = useState(srcs[0] || '')
+  const [idx, setIdx] = useState(0)
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    if (!src) return
+    setIdx(0)
+    fetch(`/api/sam2/eval_frames?session=${encodeURIComponent(session)}&src=${encodeURIComponent(src)}`)
+      .then(r => r.json()).then(d => setCount(d.count || 0)).catch(() => setCount(0))
+  }, [src, session])
+  if (!srcs.length) return null
+  return (
+    <div className="frame-viewer">
+      <div className="fv-srcs">
+        {srcs.map(s => (
+          <button key={s} className={s === src ? 'pb-btn sm on' : 'pb-btn sm'} onClick={() => setSrc(s)}>{s}</button>
+        ))}
+      </div>
+      {count > 0 ? (
+        <>
+          <div className="fv-img">
+            <img src={`/api/sam2/eval_frame?session=${encodeURIComponent(session)}&src=${encodeURIComponent(src)}&idx=${idx}&w=760`} alt={`${src} ${idx}`} />
+          </div>
+          <div className="fv-bar">
+            <button className="pb-btn ico" onClick={() => setIdx(i => Math.max(0, i - 1))} disabled={idx <= 0}><IcChevronLeft /></button>
+            <input type="range" min={0} max={count - 1} value={idx} onChange={e => setIdx(+e.target.value)} />
+            <button className="pb-btn ico" onClick={() => setIdx(i => Math.min(count - 1, i + 1))} disabled={idx >= count - 1}><IcChevronRight /></button>
+            <span className="al-hint">{idx + 1} / {count}</span>
+          </div>
+        </>
+      ) : <p className="al-hint">이 영상의 예측 프레임이 없습니다.</p>}
+    </div>
+  )
+}
+
+// 학습곡선: 에폭별 지표를 SVG 선그래프로(외부 라이브러리 없이). data=curve, series=[{key,name,color}]
+function MiniLineChart({ title, data, series }) {
+  const pts = (data || []).filter(d => series.some(s => d[s.key] != null))
+  const W = 300, H = 130, pl = 40, pr = 10, pt = 10, pb = 22
+  let body = <div className="chart-empty">데이터 대기 중...</div>
+  if (pts.length) {
+    const xs = pts.map(p => p.epoch)
+    const xmin = Math.min(...xs), xmax = Math.max(...xs)
+    const ys = []
+    series.forEach(s => pts.forEach(p => { if (p[s.key] != null) ys.push(p[s.key]) }))
+    let ymin = Math.min(...ys), ymax = Math.max(...ys)
+    if (ymin === ymax) { ymin -= 0.01; ymax += 0.01 }
+    const sx = x => pl + (xmax === xmin ? 0 : (x - xmin) / (xmax - xmin)) * (W - pl - pr)
+    const sy = y => pt + (1 - (y - ymin) / (ymax - ymin)) * (H - pt - pb)
+    const fmt = v => Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(2)
+    body = (
+      <svg viewBox={`0 0 ${W} ${H}`} className="chart-svg">
+        {[ymax, (ymax + ymin) / 2, ymin].map((v, i) => (
+          <g key={i}>
+            <line x1={pl} y1={sy(v)} x2={W - pr} y2={sy(v)} className="chart-grid" />
+            <text x={pl - 4} y={sy(v) + 3} className="chart-tick" textAnchor="end">{fmt(v)}</text>
+          </g>
+        ))}
+        {series.map(s => {
+          const sp = pts.filter(p => p[s.key] != null)
+          const d = sp.map((p, i) => `${i ? 'L' : 'M'}${sx(p.epoch).toFixed(1)} ${sy(p[s.key]).toFixed(1)}`).join(' ')
+          return <path key={s.key} d={d} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" />
+        })}
+        <text x={pl} y={H - 5} className="chart-tick">{xmin}</text>
+        <text x={W - pr} y={H - 5} className="chart-tick" textAnchor="end">{xmax}</text>
+      </svg>
+    )
+  }
+  return (
+    <div className="chart">
+      <div className="chart-title">{title}</div>
+      {body}
+      <div className="chart-legend">{series.map(s => <span key={s.key} className="cl"><i style={{ background: s.color }} />{s.name}</span>)}</div>
+    </div>
+  )
+}
+
+// 라벨링·학습 두 페이지가 공유하는 공통 헤더(제목 타이포·뒤로가기·하단 구분선 통일)
+function PageHead({ title, back, right, flat }) {
+  return (
+    <div className={`page-head${flat ? ' flat' : ''}`}>
+      <div className="page-head-l">
+        {back && <button className="icon-back" onClick={back} aria-label="뒤로"><IcChevronLeft /></button>}
+        <h2 className="page-title">{title}</h2>
+      </div>
+      {right && <div className="page-head-r">{right}</div>}
+    </div>
+  )
+}
+
+// 모델ID(YYYYMMDD_HHMMSS) → 사람이 읽는 날짜
+function fmtId(s) {
+  if (!s) return ''
+  const m = String(s).match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})/)
+  return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : String(s)
+}
+
+// 모델 버전 카드(기존/신규 나란히 비교). highlightNew=신규 부품 뱃지 강조
+// 표시 항목은 딱 4가지: ①모델 ID ②생성 일시 ③학습 부품 뱃지 ④포착률(있으면). 중복 캡션 없음
+function VerCard({ tag, cls, id, time, classes, map50, baseSet, highlightNew }) {
+  const list = classes || []
+  return (
+    <div className={`verc ${cls}`}>
+      <div className={`verc-tag ${cls}`}>{tag}</div>
+      <div className="verc-id">{id ? <>#{id}</> : <span className="verc-none">모델 없음</span>}</div>
+      <dl className="verc-meta">
+        <div><dt>생성 일시</dt><dd>{time || '—'}</dd></div>
+        {map50 != null && (
+          <div><dt>포착률<span className="verc-qual">(자동라벨)</span></dt><dd className="verc-map">{map50}</dd></div>
+        )}
+      </dl>
+      <div className="verc-parts">
+        <span className="verc-parts-lbl">학습 부품 <span className="verc-parts-n">{list.length}종</span></span>
+        <div className="verc-badges">
+          {list.length === 0 && <span className="al-hint">—</span>}
+          {list.slice(0, 14).map(c => (
+            <span key={c} className={`cbadge${highlightNew && baseSet && !baseSet.has(c) ? ' new' : ''}`}>{c}</span>
+          ))}
+          {list.length > 14 && <span className="cbadge more">+{list.length - 14}</span>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 하단 액션바의 [과거 모델로 롤백 ▾] 드롭다운. 최근 10개 버전 · 항목 클릭=롤백 · ×=삭제 · 바깥 클릭 시 닫힘
+function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {                         // 팝업이 열려 있을 때만 바깥 클릭 감지 리스너 부착
+    if (!open) return
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    const onKey = (ev) => { if (ev.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
+  }, [open])
+  const recent = (models || []).slice(0, 10)     // 최근 10개 버전만
+  return (
+    <div className="rbmenu" ref={ref}>
+      <button className="act-btn ghost rbmenu-btn" onClick={() => setOpen(o => !o)}
+              aria-haspopup="true" aria-expanded={open}>
+        과거 모델로 롤백 <IcChevronDown />
+      </button>
+      {open && (
+        <div className="rbmenu-pop" role="menu">
+          <div className="rbmenu-head">버전 선택 · 클릭 시 롤백 · ×: 삭제</div>
+          {onKeep && (
+            <button className="rbmenu-item keep" role="menuitem"
+                    onClick={() => { setOpen(false); onKeep() }}>
+              <span className="rbmenu-main">
+                <span className="rbmenu-t">현재 모델 유지</span>
+                <span className="rbmenu-s">신규 학습을 폐기하고 라벨 화면으로</span>
+              </span>
+            </button>
+          )}
+          {recent.length === 0 && <div className="rbmenu-empty">등록된 과거 버전이 없습니다.</div>}
+          {recent.map(m => {
+            const active = m.is_active || m.model_id === servedId
+            return (
+              <div key={m.model_id} role="menuitem" tabIndex={0}
+                   className={`rbmenu-item${active ? ' active' : ''}`}
+                   onClick={() => {
+                     if (active) return
+                     const when = m.time || fmtId(m.model_id)
+                     if (window.confirm(`이 버전(${when})으로 롤백할까요? 현재 서비스 모델이 됩니다.`)) {
+                       setOpen(false); onRollbackTo(m.model_id)
+                     }
+                   }}>
+                <span className="rbmenu-main">
+                  <span className="rbmenu-t">{m.time || fmtId(m.model_id)}</span>
+                  <span className="rbmenu-s">{m.n_classes}종 · 포착률 {m.map50 != null ? m.map50 : '—'}</span>
+                </span>
+                {active
+                  ? <span className="rbmenu-cur">현재</span>
+                  : <button className="rbmenu-del" title="이 버전 삭제"
+                            onClick={(e) => { e.stopPropagation(); onDeleteModel(m.model_id) }}><IcX /></button>}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 부품 하나의 여러 테스트 프레임을 좌우 화살표로 넘겨보는 Before/After 슬라이더
+// frames = [{ before: dataURI|null, after: dataURI|null }, ...] (같은 part의 여러 프레임)
+function BaGroup({ part, kind, frames }) {
+  const [idx, setIdx] = useState(0)          // 현재 보고 있는 프레임 인덱스
+  const n = frames.length
+  const i = Math.min(idx, n - 1)             // 프레임 수가 줄어도 인덱스 안전
+  const cur = frames[i] || {}
+  const go = (d) => setIdx(p => ((Math.min(p, n - 1) + d) % n + n) % n)   // 순환 이동(양끝 래핑)
+  return (
+    <div className="ba-group">
+      <div className="ba-cap">
+        <span className={`samp-tag ${kind}`}>{kind === 'new' ? '신규 부품' : '기존 부품'}</span>
+        <span className="ba-part">{part}</span>
+        <span className="ba-count">프레임 {i + 1} / {n}</span>
+      </div>
+      <div className="ba-stage">
+        {n > 1 && <button className="ba-nav" onClick={() => go(-1)} aria-label="이전 프레임"><IcChevronLeft /></button>}
+        <div className="ba-pair big">
+          <figure className="ba-fig">
+            <figcaption>기존 모델</figcaption>
+            {cur.before ? <img src={cur.before} alt={`${part} 기존 모델 검출`} /> : <div className="ba-none">기존 모델 없음</div>}
+          </figure>
+          <div className="ba-arrow" aria-hidden="true"><IcChevronRight /></div>
+          <figure className="ba-fig after">
+            <figcaption>신규 모델</figcaption>
+            {cur.after ? <img src={cur.after} alt={`${part} 신규 모델 검출`} /> : <div className="ba-none">신규 모델 없음</div>}
+          </figure>
+        </div>
+        {n > 1 && <button className="ba-nav" onClick={() => go(1)} aria-label="다음 프레임"><IcChevronRight /></button>}
+      </div>
+      <div className="ba-sub">기존 모델 → 신규 모델</div>
+      {n > 1 && (
+        <div className="ba-dots">
+          {frames.map((_, k) => (
+            <button key={k} className={`ba-dot${k === i ? ' on' : ''}`} onClick={() => setIdx(k)}
+                    aria-label={`${k + 1}번째 프레임 보기`} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function PartsApp() {
-  const [step, setStep] = useState('label')          // 'label' | 'train' | 'result'
   const [folders, setFolders] = useState([])
   const [session, setSession] = useState(null)
   const [labeledMap, setLabeledMap] = useState({})   // {학습영상: {labels,frames}}
-  const [excluded, setExcluded] = useState([])
+  const [trainedVideos, setTrainedVideos] = useState([])   // 기존 모델에 이미 학습된 영상
+  const [picked, setPicked] = useState([])           // 선택한 부품(기본 = 선택 없음)
   const [epochs, setEpochs] = useState(100)
+  const [augment, setAugment] = useState(true)   // 배경 합성 증강(누끼→실배경 copy-paste) 기본 켜짐
   const [job, setJob] = useState(null)
   const [status, setStatus] = useState(null)
+  const [page, setPage] = useState('label')          // 'label' | 'training' (학습 전용 페이지)
+  const [cmpJob, setCmpJob] = useState(null)
+  const [cmp, setCmp] = useState(null)               // 신규↔기존 모델 비교(평가) 상태
+  const [applied, setApplied] = useState(false)      // 신규 모델 서비스 적용 완료
+  const [served, setServed] = useState(null)         // 현재 서비스(기존) 모델 정보
+  const [models, setModels] = useState([])           // 등록소 버전 목록(타임라인)
+  const [rolledTo, setRolledTo] = useState(null)     // 롤백 완료된 model_id
+  const [selVer, setSelVer] = useState(null)         // 타임라인에서 고른 비교 기준 버전(null=현재 서비스)
   const running = !!status?.running
 
-  const loadTrain = useCallback(() => {   // 학습 단계 진입 시 폴더+라벨 현황 갱신
+  const loadTrain = useCallback(() => {   // 모달 열 때 폴더+라벨 현황 갱신
     fetch('/api/autolabel/folders').then(r => r.json()).then(setFolders).catch(() => {})
     fetch('/api/sam2/parts_sessions').then(r => r.json()).then(list => {
       const saved = localStorage.getItem('parts_session_v1')
-      const found = list.find(s => s.session === saved) || list[0]
-      if (found) { setSession(found.session); setLabeledMap(found.videos || {}) }
+      const found = list.find(s => s.session === saved)   // 내 세션만(자동탭 baseline 자동 채택 금지)
+      if (found) { setSession(found.session); setLabeledMap(found.videos || {}); setTrainedVideos(found.trained || []) }
     }).catch(() => {})
   }, [])
 
   const folderOf = (video) => folders.find(f => f.videos.some(v => v.name === video))
-  const items = Object.keys(labeledMap).map(video => {
+  const items = Object.keys(labeledMap).map(video => {   // 라벨 1장 이상 생성된 부품만 학습 대상
     const f = folderOf(video)
-    return { video, part: f ? partOf(f.folder) : video, test: f ? takeRoles(f.videos).test : video, labels: labeledMap[video].labels }
-  }).sort((a, b) => a.part.localeCompare(b.part))
-  const selected = items.filter(it => !excluded.includes(it.part))
+    return { video, part: f ? partOf(f.folder) : video, test: f ? takeRoles(f.videos).test : video,
+             labels: labeledMap[video].labels, trained: trainedVideos.includes(video) }
+  }).filter(it => it.labels > 0).sort((a, b) => a.part.localeCompare(b.part))
+  const selected = items.filter(it => picked.includes(it.part))
   const allOn = items.length > 0 && selected.length === items.length
-  const toggle = (p) => setExcluded(c => c.includes(p) ? c.filter(x => x !== p) : [...c, p])
-  const toggleAll = () => setExcluded(allOn ? items.map(it => it.part) : [])
+  const toggle = (p) => setPicked(c => c.includes(p) ? c.filter(x => x !== p) : [...c, p])
+  const toggleAll = () => setPicked(allOn ? [] : items.map(it => it.part))
+
+  const openTrain = () => { loadTrain(); setPage('training') }
+  const backToLabel = () => setPage('label')               // 학습은 계속 진행(폴링 유지), 라벨 화면으로 복귀
+  const newRun = () => { setJob(null); setStatus(null); setCmpJob(null); setCmp(null); setApplied(false); setPage('training') }
 
   const runTrain = async () => {
     const classes = selected.map(it => it.part)
     const tests = [...new Set(selected.map(it => it.test).filter(Boolean))]
     const r = await fetch('/api/sam2/multiclass', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session, epochs, test_srcs: tests, classes })
+      body: JSON.stringify({ session, epochs, test_srcs: tests, classes, augment })
     }).then(x => x.json())
-    if (r.error) { setStatus({ error: r.error }); setStep('result'); return }
-    setJob(r.job); setStatus({ stage: 'start', running: true }); setStep('result')   // 학습 시작하면 결과 화면으로
+    if (r.error) { setJob('err'); setStatus({ error: r.error, running: false, log: [] }); return }
+    setJob(r.job); setStatus({ stage: 'start', running: true, log: [] })   // 학습 시작 → 로그 뷰어로 전환
   }
   useEffect(() => {
-    if (!job || !status?.running) return
+    if (!job || job === 'err' || !status?.running) return
     const t = setInterval(async () => {
       const d = await fetch(`/api/sam2/status?job=${job}`).then(r => r.json())
       setStatus(d); if (!d.running) clearInterval(t)
     }, 1500)
     return () => clearInterval(t)
   }, [job, status?.running])
-  const stage = { start: '준비 중', build: '라벨 통합(클래스 매핑)', train: 'YOLO 학습 중', eval: '검출 평가 중', done: '완료', error: '오류' }
 
-  const go = (s) => { if (s !== 'label') loadTrain(); setStep(s) }
+  const runCompare = (baseId) => {   // 비교 실행/재실행. baseId=기준(기존) 버전, 없으면 현재 서비스 모델
+    setSelVer(baseId || null)
+    setCmpJob(null); setCmp({ stage: 'compare', running: true })
+    ;(async () => {
+      const r = await fetch('/api/sam2/compare', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session, base_model_id: baseId || null })
+      }).then(x => x.json()).catch(() => ({ error: 'compare 요청 실패' }))
+      if (r.error) { setCmpJob('err'); setCmp({ error: r.error, running: false }); return }
+      setCmpJob(r.job); setCmp({ stage: 'compare', running: true })
+    })()
+  }
+  const triggerCompare = () => { if (!cmpJob) runCompare(null) }
+  const goEvaluate = () => { setPage('evaluate'); triggerCompare() }
+  const goManage = () => {   // 학습/비교 없이 모델 관리(롤백·삭제) 페이지로 바로 이동
+    setPage('evaluate')
+    fetch('/api/sam2/served').then(r => r.json()).then(d => setServed(d && !d.none ? d : null)).catch(() => {})
+    fetch('/api/sam2/models').then(r => r.json()).then(d => setModels(d.models || [])).catch(() => {})
+  }
+  const onTimelineClick = (mid) => {   // 신규 학습 있으면 그 버전 기준 재비교, 없으면(관리 모드) 아래에 상세 표시
+    if (status?.model_id) runCompare(mid)
+    else setSelVer(mid)
+  }
+  const doDeleteModel = async (mid) => {   // 타임라인/히스토리에서 버전 삭제(현재 서비스 모델은 백엔드가 거부)
+    if (!window.confirm(`모델 #${mid} 을(를) 삭제할까요? 되돌릴 수 없습니다.`)) return
+    const r = await fetch('/api/sam2/delete_model', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id: mid })
+    }).then(x => x.json()).catch(() => ({ error: '삭제 실패' }))
+    if (r.error) { window.alert(r.error); return }
+    if (selVer === mid) setSelVer(null)
+    fetch('/api/sam2/models').then(x => x.json()).then(d => setModels(d.models || [])).catch(() => {})
+  }
+
+  useEffect(() => {   // 비교 잡 폴링
+    if (!cmpJob || cmpJob === 'err' || !cmp?.running) return
+    const t = setInterval(async () => {
+      const d = await fetch(`/api/sam2/status?job=${cmpJob}`).then(r => r.json())
+      setCmp(d); if (!d.running) clearInterval(t)
+    }, 1500)
+    return () => clearInterval(t)
+  }, [cmpJob, cmp?.running])
+
+  // 페이지 재진입: 진행 중인 학습/평가 잡이 있으면 그 잡에 다시 붙어 복구(“이미 실행중” 방지)
+  useEffect(() => {
+    fetch('/api/sam2/active').then(r => r.json()).then(a => {
+      if (!a || !a.job || !a.running) return
+      if (a.session) setSession(a.session)
+      if (a.kind === 'multiclass') { setJob(a.job); setStatus(a); setPage('training'); loadTrain() }
+      else if (a.kind === 'compare') { setCmpJob(a.job); setCmp(a); setPage('evaluate') }
+    }).catch(() => {})
+  }, [loadTrain])
+
+  // 현재 서비스(기존) 모델 로드 — 라벨/학습 화면에서 '학습됨 vs 신규' 비교 기준
+  const loadServed = useCallback(() => {
+    fetch('/api/sam2/served').then(r => r.json()).then(d => setServed(d && !d.none ? d : null)).catch(() => {})
+  }, [])
+  useEffect(() => { loadServed() }, [loadServed])
+  // 평가 완료 시 버전 목록도 로드
+  useEffect(() => {
+    if (cmp?.stage !== 'done') return
+    loadServed()
+    fetch('/api/sam2/models').then(r => r.json()).then(d => setModels(d.models || [])).catch(() => {})
+  }, [cmp?.stage, loadServed])
+
+  const doRollbackTo = async (mid) => {   // 선택 버전으로 롤백(타임라인에서 직접 호출)
+    if (!mid) return
+    const r = await fetch('/api/sam2/rollback_to', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id: mid })
+    }).then(x => x.json()).catch(() => ({ error: '롤백 실패' }))
+    if (!r.error) {
+      setRolledTo(mid); setApplied(false)
+      fetch('/api/sam2/served').then(x => x.json()).then(d => setServed(d && !d.none ? d : null)).catch(() => {})
+      fetch('/api/sam2/models').then(x => x.json()).then(d => setModels(d.models || [])).catch(() => {})
+    } else { window.alert(r.error) }
+  }
+
+  const doRollback = async () => {   // 신규 폐기 → 라벨 화면 복귀
+    await fetch('/api/sam2/rollback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {})
+    setJob(null); setStatus(null); setCmpJob(null); setCmp(null); setApplied(false); setPage('label')
+  }
+  const doApply = async () => {   // 신규 모델을 서비스에 적용
+    const r = await fetch('/api/sam2/apply_model', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session })
+    }).then(x => x.json()).catch(() => ({ error: 'apply failed' }))
+    if (!r.error) setApplied(true)
+  }
+  const doCancel = async () => {   // 학습 중단
+    if (!job || job === 'err') return
+    await fetch('/api/sam2/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job }) }).catch(() => {})
+  }
+
+  const ep = status?.epoch || 0
+  const tot = status?.total_epochs || epochs
+  const ingD = status?.ingest_done || 0
+  const ingT = status?.ingest_total || 0
+  const stageText = {
+    start: '학습 준비 중...',
+    build: `학습 데이터 산입 중... (${ingD}/${ingT})`,
+    train: `YOLO 모델 학습 중... (Epoch ${ep}/${tot})`,
+    eval: `검출 평가 중... (${status?.eval_done || 0}/${status?.eval_total || 0})`,
+    done: '학습 완료', cancelled: '학습 중단됨', error: '학습 오류',
+  }
+  const headText = status?.error ? '학습 오류' : (stageText[status?.stage] || '학습 중...')
+  const pct = status?.stage === 'done' ? 100
+    : status?.stage === 'eval' ? Math.round(90 + (status?.eval_frac || 0) * 10)     // 평가(프레임) 90→100
+    : status?.stage === 'train' ? Math.round(10 + (status?.train_frac || 0) * 80)   // 학습(배치) 10→90
+    : status?.stage === 'build' ? (ingT ? Math.round((ingD / ingT) * 10) : 0)       // 산입 0→10
+    : 0
+
+  // ── 학습 완료 후: 평가(compare) 단계 진행/표시 ──
+  const trainDone = status?.stage === 'done' && !status?.error
+  const cmpDone = cmp?.stage === 'done'
+  const cmpPct = cmpDone ? 100 : Math.round((cmp?.compare_frac || 0) * 100)
+  const cmpTitle = cmpDone ? '모델 평가 완료'
+    : (cmp?.error ? '평가 오류' : `모델 평가 중... (${cmp?.compare_done || 0}/${cmp?.compare_total || 0})`)
+  const pctv = (x) => x == null ? '—' : `${Math.round(x * 100)}%`
+  const deltaEl = (before, after) => {
+    if (before == null || after == null) return <span className="delta flat">—</span>
+    const d = Math.round((after - before) * 100)
+    if (d > 0) return <span className="delta up">↑ {d}%p</span>
+    if (d < 0) return <span className="delta down">↓ {Math.abs(d)}%p</span>
+    return <span className="delta flat">±0%p</span>
+  }
+  // 평가 화면용 파생값
+  const newClasses = status?.per_class ? Object.keys(status.per_class)
+    : [...new Set((cmp?.rows || []).map(r => r.part))]
+  const baseModel = (selVer && models.find(m => m.model_id === selVer)) || served   // 비교 기준(선택 or 현재 서비스)
+  const baseSet = new Set(baseModel?.classes || [])
+  // 검출 샘플: 백엔드가 부품(part)당 여러 프레임을 평평한 리스트로 줌 → part로 묶어 부품별 슬라이더 구성
+  const baGroups = (() => {
+    const raw = (cmp?.samples || []).filter(s => s && (s.after || s.before || s.img))
+    const byPart = new Map()
+    for (const s of raw) {
+      const key = s.part || '기타'
+      if (!byPart.has(key)) byPart.set(key, { part: key, kind: s.kind || 'base', frames: [] })
+      const g = byPart.get(key)
+      if (s.kind === 'new') g.kind = 'new'          // 한 프레임이라도 신규 부품이면 신규로 표기
+      g.frames.push({ before: s.before || null, after: s.after || s.img || null })   // img는 구계약 하위호환
+    }
+    return [...byPart.values()]
+  })()
 
   return (
     <div>
-      <div className="step-tabs">
-        <button className={`step ${step === 'label' ? 'on' : ''}`} onClick={() => go('label')}>1 · 라벨 생성</button>
-        <span className="step-arrow">→</span>
-        <button className={`step ${step === 'train' ? 'on' : ''}`} onClick={() => go('train')}>2 · 학습</button>
-        <span className="step-arrow">→</span>
-        <button className={`step ${step === 'result' ? 'on' : ''}`} onClick={() => go('result')} disabled={!status}>3 · 학습 결과</button>
-      </div>
-
-      {step === 'label' && <AutoLabelView />}
-
-      {step === 'train' && (
-        <div>
-          <p className="al-hint" style={{ marginBottom: 10 }}>라벨 생성한 부품을 클래스별로 통합해 YOLO 학습. 테스트 영상이 없으면 학습영상 그대로 검출률·클래스 분포로 평가. 학습할 부품을 고르세요.</p>
-          {items.length === 0
-            ? <p className="al-hint">라벨된 부품이 없습니다. <button className="pb-btn" onClick={() => go('label')} style={{ marginLeft: 6 }}>← 라벨 생성으로</button></p>
-            : <>
-              <div className="al-controls">
-                <button className="pb-btn" onClick={toggleAll} disabled={running}>{allOn ? '전체해제' : '전체선택'}</button>
-                <span className="al-hint">학습 대상 <b>{selected.length}</b>/{items.length}</span>
-                <button className="pb-btn" onClick={loadTrain} disabled={running} title="라벨 현황 새로고침">↻</button>
-                <span style={{ marginLeft: 'auto' }} />
-                <span className="al-hint">epoch</span>
-                <input className="ep-in" type="number" min={1} value={epochs} disabled={running}
-                       onChange={(e) => setEpochs(Math.max(1, Math.floor(+e.target.value) || 1))} />
-                <button className="act-btn train" onClick={runTrain} disabled={running || selected.length === 0}>학습 시작 →</button>
-              </div>
-              <div className="chips" style={{ marginTop: 10 }}>
-                {items.map(it => {
-                  const on = !excluded.includes(it.part)
-                  return (
-                    <button key={it.part} className={on ? 'chip on' : 'chip'} disabled={running} onClick={() => toggle(it.part)}>
-                      {on ? '☑ ' : '☐ '}{it.part} <span className="al-hint">{it.labels}장</span>
-                    </button>
-                  )
-                })}
-              </div>
+      {page === 'label' ? (
+        <>
+          <PageHead title="부품 학습 데이터 생성" flat
+                    right={<button className="icon-back" onClick={openTrain} title="학습 설정으로 이동" aria-label="학습 설정"><IcChevronRight /></button>} />
+          <AutoLabelView />
+        </>
+      ) : page === 'training' ? (
+        // ===== 2단계: 학습 (설정 → 진행 → 결과 요약) =====
+        <div className="train-page">
+          <PageHead
+            title={trainDone ? '학습 결과' : (status?.stage === 'cancelled' ? '학습 중단' : '학습 설정')}
+            back={backToLabel}
+            right={<>
+              {!job && <span className="al-hint">학습 대상 {selected.length}/{items.length}종</span>}
+              {!job && <button className="icon-back" onClick={goManage} title="모델 관리 · 롤백" aria-label="모델 관리"><IcChevronRight /></button>}
+              {running && <button className="act-btn stop" onClick={doCancel}>■ 학습 중단</button>}
             </>}
-        </div>
-      )}
+          />
 
-      {step === 'result' && (
-        <div>
-          {!status
-            ? <p className="al-hint">아직 학습을 시작하지 않았습니다. <button className="pb-btn" onClick={() => go('train')} style={{ marginLeft: 6 }}>← 학습으로</button></p>
-            : status.error
-              ? <p className="fn" style={{ color: '#b91c1c' }}>학습 오류: {status.error}</p>
-              : <div className="al-result">
-                  <div className="al-controls">
-                    <b style={{ fontSize: 15 }}>{stage[status.stage] || status.stage}</b>
-                    {status.note && <span className="al-hint">{status.note}</span>}
-                    {status.n_images && <span className="al-hint">통합 <b>{status.n_images}</b>장 / {status.n_classes}클래스</span>}
-                    {status.stage === 'eval' && <span className="al-hint">평가 {status.eval_done || 0} / {status.eval_total}</span>}
-                    {status.running && <span className="al-hint">진행 중...</span>}
+          <div className="train-split">
+            {/* 좌측: 학습 대상 선택 폼 */}
+            <aside className="train-config">
+              <div className="tc-head">
+                {items.length > 0 && !trainDone && status?.stage !== 'cancelled' &&
+                  <input type="checkbox" className="part-sel" checked={allOn} disabled={running}
+                         ref={el => { if (el) el.indeterminate = selected.length > 0 && !allOn }}
+                         onChange={toggleAll} title="전체 선택 / 해제" aria-label="학습 대상 전체 선택" />}
+                <b className="tc-head-title">학습 대상 선택</b>
+                <span className="al-hint" style={{ marginLeft: 'auto' }}>{selected.length}/{items.length}</span>
+              </div>
+              <div className="tc-list">
+                {items.length === 0
+                  ? <p className="al-hint">라벨 생성된 부품이 없습니다. 라벨 화면에서 먼저 부품을 탭·라벨 생성하세요.</p>
+                  : items.map(it => {
+                      const on = picked.includes(it.part)
+                      const inModel = served ? baseSet.has(it.part) : it.trained   // 현재 서비스 모델 보유 여부
+                      return (
+                        <button key={it.part} className={`tc-item${on ? ' on' : ''}`}
+                                onClick={() => toggle(it.part)} disabled={running || trainDone || status?.stage === 'cancelled'}>
+                          <span className="tc-check" aria-hidden="true" />
+                          <span className="tc-name">{it.part}</span>
+                          {inModel ? <span className="tchip-badge">학습됨</span> : <span className="tchip-badge new">신규</span>}
+                        </button>
+                      )
+                    })}
+              </div>
+            </aside>
+
+            {/* 우측: 실시간 로그 + 결과 */}
+            <section className="train-monitor">
+              {job && (
+                <div className="prog-head">
+                  <CircularProgress pct={pct} done={trainDone} />
+                  <div className="prog-head-info">
+                    <b className="prog-head-title">{headText}</b>
+                    {running && <span className="prog-sub"><span className="spinner" /> 진행 중...</span>}
                   </div>
-                  {status.stage === 'done' && (
-                    <p className="al-hint">모델 <code>results/parts/{status.session}/multiclass/model/</code></p>
-                  )}
-                  {status.eval?.length > 0 && (
-                    <>
-                      <table><thead><tr>
-                        <th>영상(학습=평가)</th><th>프레임</th><th>검출</th><th>검출률</th><th>평균 신뢰도</th><th>주요 클래스</th>
+                </div>
+              )}
+              {!job && (
+                // 학습 시작 전: 에포크 입력창 + 시작 버튼
+                <div className="train-setup-bar">
+                  <span className="al-hint">Epoch</span>
+                  <input className="ep-in" type="number" min={1} value={epochs}
+                         onChange={(e) => setEpochs(Math.max(1, Math.floor(+e.target.value) || 1))} />
+                  <label className="aug-toggle" title="객체를 오려 실제 배경에 합성한 이미지를 추가해 배경 과적합을 줄입니다(학습 시간 늘어남)">
+                    <input type="checkbox" checked={augment} onChange={(e) => setAugment(e.target.checked)} />
+                    <span>배경 합성 증강</span>
+                  </label>
+                  <button className="act-btn train" onClick={runTrain} disabled={selected.length === 0}>학습 시작</button>
+                  <span className="al-hint" style={{ marginLeft: 4 }}>{selected.length === 0 ? '좌측에서 학습할 부품을 선택하세요' : `${selected.length}종 선택됨`}</span>
+                </div>
+              )}
+              {job && status?.curve?.length > 0 && (
+                <div className="ev2-card">
+                  <h4 className="ev2-h">학습 곡선</h4>
+                  <div className="charts">
+                    <MiniLineChart title="Loss" data={status.curve}
+                      series={[{ key: 'box', name: 'box_loss', color: '#ef4444' }, { key: 'cls', name: 'cls_loss', color: '#f59e0b' }, { key: 'dfl', name: 'dfl_loss', color: '#8b5cf6' }]} />
+                    <MiniLineChart title="mAP" data={status.curve}
+                      series={[{ key: 'map50', name: 'mAP50', color: '#10b981' }, { key: 'map5095', name: 'mAP50-95', color: '#06b6d4' }]} />
+                  </div>
+                </div>
+              )}
+              {job && <LogConsole log={status?.log} />}
+              {status?.error && <div className="reco-banner rollback"><IcWarn /><span>학습 오류: {status.error}</span></div>}
+              {status?.stage === 'cancelled' && <div className="reco-banner review"><IcWarn /><span>학습이 중단되었습니다.</span></div>}
+              {trainDone && (
+                <div className="train-result">
+                  {/* 결과 요약 카드 */}
+                  <div className="ev2-card">
+                    <h4 className="ev2-h">학습 결과 요약</h4>
+                    <div className="result-cards">
+                      <div className="rcard"><span>학습률(산입률)</span><b>{status?.learn_rate != null ? `${status.learn_rate}%` : '—'}</b></div>
+                      <div className="rcard"><span>Epoch</span><b>{tot}/{tot}</b></div>
+                      <div className="rcard"><span>학습셋</span>
+                        {status?.n_images != null ? (<>
+                          <b>{status.n_images + (status.n_augmented || 0)}장</b>
+                          {status.n_augmented ? <small>(원본 {status.n_images}장 + 증강 {status.n_augmented}장)</small> : null}
+                        </>) : <b>—</b>}
+                      </div>
+                      <div className="rcard"><span>데이터 종류</span><b>{status?.n_classes ?? '—'}종</b></div>
+                    </div>
+                  </div>
+                  {/* 검출 평가 카드 */}
+                  {status?.eval?.length > 0 && (
+                    <div className="ev2-card">
+                      <h4 className="ev2-h">검출 평가</h4>
+                      <table className="eval-table"><thead><tr>
+                        <th>프레임</th><th>검출</th><th>검출률</th><th>평균 신뢰도</th><th>주요 클래스</th>
                       </tr></thead><tbody>
                         {status.eval.map(e => (
-                          <tr key={e.src}><td>{e.src}</td><td>{e.frames}</td><td>{e.detected}</td>
+                          <tr key={e.src}><td>{e.frames}</td><td>{e.detected}</td>
                             <td><b>{Math.round(e.rate * 100)}%</b></td><td>{e.mean_conf}</td>
                             <td>{(e.top_classes || []).map(([c, n]) => `${c}(${n})`).join(', ')}</td></tr>
                         ))}
                       </tbody></table>
-                      {status.eval.map(e => e.samples?.length > 0 && (
-                        <div key={e.src}>
-                          <h4 className="subtable-title">{e.src}</h4>
-                          <div className="al-thumbs">{e.samples.map((u, i) => <img key={i} src={u} alt={`${e.src} ${i}`} />)}</div>
-                        </div>
-                      ))}
-                    </>
+                    </div>
                   )}
-                </div>}
+                </div>
+              )}
+            </section>
+          </div>
+
+          {(trainDone || status?.stage === 'cancelled') && (
+            <div className="ev2-footer">
+              <button className="act-btn ghost" onClick={newRun}>↻ 새 학습</button>
+              <div className="ev2-footer-right">
+                {trainDone && <button className="act-btn train big" onClick={goEvaluate}>모델 평가 · 적용 →</button>}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        // ===== 3단계: 모델 평가 · 적용 (버전 비교 → 서비스 적용 / 선택형 롤백) =====
+        <div className="ev2">
+          <PageHead title={cmpDone ? '모델 평가 · 적용' : cmp?.running ? '모델 평가 중' : '모델 관리 · 롤백'} back={() => setPage('training')} />
+          {cmp?.running && (
+            <div className="ev2-progress">
+              <CircularProgress pct={cmpPct} done={false} />
+              <div className="prog-head-info">
+                <b className="prog-head-title">{cmpTitle}</b>
+                <span className="prog-sub"><span className="spinner" /> 신규 모델을 기존 모델과 비교 중...</span>
+              </div>
+            </div>
+          )}
+          {cmp?.error && <div className="ev2-body"><div className="reco-banner rollback"><IcWarn /><span>모델 평가 오류: {cmp.error}</span></div></div>}
+          {!cmp?.running && !cmp?.error && (
+            <>
+              <div className="ev2-body">
+                {cmpDone && cmp.recommend && (
+                  <div className={`reco-banner ${cmp.recommend.level}`}>
+                    {cmp.recommend.level === 'apply' ? <IcCheck /> : <IcWarn />}
+                    <span>
+                      {cmp.recommend.msg}
+                      {cmp.recommend.level !== 'apply' &&
+                        <b className="reco-cta">오검출이 의심되면 아래 검출 샘플을 확인한 뒤 롤백하세요.</b>}
+                    </span>
+                  </div>
+                )}
+
+                {/* 상시 안내: 이 수치는 자동라벨 기준 포착률 → 오검출은 육안 확인 필요 */}
+                {cmpDone && (
+                  <div className="eval-note">
+                    <IcInfo />
+                    <span>이 수치는 <b>자동 생성 라벨 기준 포착률</b>입니다. 엉뚱한 부품을 잡는 오검출 여부는 반드시 아래 <b>‘검출 결과 비교’</b> 이미지를 육안으로 확인하세요.</span>
+                  </div>
+                )}
+
+                {/* 관리 모드(신규 학습·비교 없이 진입): 현재 서비스 모델 안내 */}
+                {!cmpDone && (
+                  <div className="reco-banner review">
+                    <IcWarn />
+                    <span>{served
+                      ? <>현재 서비스 모델 <b>{fmtId(served.model_id) || served.applied || '—'}</b> ({served.n_classes ?? (served.classes || []).length}종). 아래 <b>[과거 모델로 롤백 ▾]</b> 에서 다른 버전으로 되돌리거나 삭제할 수 있습니다.</>
+                      : '현재 서비스 중인 모델이 없습니다. 첫 배포를 진행하세요.'}</span>
+                  </div>
+                )}
+
+                {/* [최우선] 검출 결과 비교 — 권고배너 바로 아래에 크게 (스크롤 없이 즉시 육안 확인) */}
+                {baGroups.length > 0 && (
+                  <section className="ev2-card ba-primary">
+                    <h4 className="ev2-h">검출 결과 비교 <span className="al-hint">(부품별 · 좌우 화살표로 여러 프레임 확인 · 기존 모델 → 신규 모델)</span></h4>
+                    <div className="ba-list">
+                      {baGroups.map((g, i) => (
+                        <BaGroup key={g.part + '_' + i} part={g.part} kind={g.kind} frames={g.frames} />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* 모델 버전 비교. 비교할 기존 모델이 없으면 신규 카드 1개만 중앙 배치 + 첫 배포 안내 */}
+                {cmpDone && (
+                  <section className="ev2-card">
+                    <h4 className="ev2-h">모델 버전 비교</h4>
+                    {baseModel ? (
+                      <div className="verc-grid">
+                        <VerCard tag={selVer ? '비교 기준 (선택 버전)' : '기존 서비스 모델'} cls="base"
+                                 id={baseModel?.model_id}
+                                 time={baseModel?.time || baseModel?.applied}
+                                 classes={baseModel?.classes || []} map50={baseModel?.map50} baseSet={baseSet} />
+                        <div className="verc-vs" aria-hidden="true"><IcChevronRight /></div>
+                        <VerCard tag="신규 학습 모델" cls="new" id={status?.model_id}
+                                 time={fmtId(status?.model_id)}
+                                 classes={newClasses} map50={status?.cur_map} baseSet={baseSet} highlightNew />
+                      </div>
+                    ) : (
+                      <div className="verc-solo">
+                        <VerCard tag="신규 학습 모델" cls="new" id={status?.model_id}
+                                 time={fmtId(status?.model_id)}
+                                 classes={newClasses} map50={status?.cur_map} baseSet={baseSet} highlightNew />
+                        <p className="verc-solo-note"><IcInfo /> 현재 서비스 중인 모델이 없습니다. 첫 배포를 진행하세요.</p>
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {/* 관리 모드: 선택한 버전 상세 + 현재 서비스와 비교 + 롤백 */}
+                {!cmpDone && selVer && (() => {
+                  const sel = models.find(m => m.model_id === selVer)
+                  if (!sel) return null
+                  return (
+                    <section className="ev2-card">
+                      <h4 className="ev2-h">선택 버전 상세 <span className="al-hint">(현재 서비스 모델과 비교)</span></h4>
+                      <div className="verc-grid">
+                        <VerCard tag="현재 서비스 모델" cls="base" id={served?.model_id}
+                                 time={served?.time || served?.applied}
+                                 classes={served?.classes || []} map50={served?.map50} baseSet={new Set()} />
+                        <div className="verc-vs" aria-hidden="true"><IcChevronRight /></div>
+                        <VerCard tag="선택한 버전" cls="new" id={sel.model_id}
+                                 time={sel.time || fmtId(sel.model_id)}
+                                 classes={sel.classes || []} map50={sel.map50}
+                                 baseSet={new Set(served?.classes || [])} highlightNew />
+                      </div>
+                      <div className="verdetail-act">
+                        {sel.is_active
+                          ? <span className="ok-flash"><IcCheck /> 현재 서비스 중인 버전입니다</span>
+                          : <button className="act-btn train" onClick={() => {
+                              if (window.confirm(`이 버전(${sel.time || fmtId(sel.model_id)})으로 롤백할까요? 현재 서비스 모델이 됩니다.`)) doRollbackTo(selVer)
+                            }}>이 버전으로 롤백</button>}
+                      </div>
+                    </section>
+                  )
+                })()}
+
+                {/* 성능 비교(검출 인식률) - 컴팩트 표, 신규 학습이 있을 때만 */}
+                {cmpDone && (
+                <section className="ev2-card">
+                  <h4 className="ev2-h">자동라벨 포착률 (Recall) <span className="al-hint">(자동 생성 라벨 기준 · 기존→신규)</span></h4>
+                  <table className="perf-tbl">
+                    <thead><tr><th>부품군</th><th>기존</th><th></th><th>신규</th><th>변화</th></tr></thead>
+                    <tbody>
+                      <tr>
+                        <td className="perf-name">전체 일반화 <span className="al-hint">기존 {cmp.gen?.n ?? 0}종 · 포착률 유지 여부</span></td>
+                        <td className="perf-v">{pctv(cmp.gen?.before)}</td>
+                        <td className="perf-arr">→</td>
+                        <td className="perf-v new">{pctv(cmp.gen?.after)}</td>
+                        <td className="perf-d">{deltaEl(cmp.gen?.before, cmp.gen?.after)}</td>
+                      </tr>
+                      <tr>
+                        <td className="perf-name">신규 부품 <span className="al-hint">{cmp.newp?.n ?? 0}종 · 신규 학습 포착률</span></td>
+                        <td className="perf-v">{pctv(cmp.newp?.before)}</td>
+                        <td className="perf-arr">→</td>
+                        <td className="perf-v new">{pctv(cmp.newp?.after)}</td>
+                        <td className="perf-d">{deltaEl(cmp.newp?.before, cmp.newp?.after)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </section>
+                )}
+              </div>
+
+              {/* 하단 고정 액션바 */}
+              <div className="ev2-footer">
+                <RollbackMenu models={models} servedId={served?.model_id}
+                              onRollbackTo={doRollbackTo} onDeleteModel={doDeleteModel}
+                              onKeep={cmpDone ? doRollback : null} />
+                <div className="ev2-footer-right">
+                  {rolledTo && <span className="ok-flash"><IcCheck /> #{rolledTo} 롤백됨</span>}
+                  {cmpDone && (
+                    <button className="act-btn train big" onClick={doApply} disabled={applied}>
+                      {applied ? '✓ 서비스 적용됨' : '신규 모델 서비스 적용'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
         </div>
       )}
     </div>
@@ -847,7 +1578,7 @@ export default function App() {
         <nav>
           <div className="nav-title">오토라벨</div>
           <button className={view === 'autolabel' ? 'nav-item on' : 'nav-item'}
-                  onClick={() => setView('autolabel')}>부품 라벨링 · 학습 (SAM2)</button>
+                  onClick={() => setView('autolabel')}>부품 학습 데이터 생성</button>
           <div className="nav-title">실험 기록</div>
           <button className={view === 'benchmark' ? 'nav-item on' : 'nav-item'}
                   onClick={() => setView('benchmark')}>실험 (벤치마크 · 도메인갭 mAP)</button>

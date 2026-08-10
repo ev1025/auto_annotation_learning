@@ -15,10 +15,30 @@ def load_classes():
     return names, {n: i for i, n in enumerate(names)}
 
 
+_VID2PART = None
+
+
+def _video_part_map():
+    """영상 stem → 부품(폴더명). data/bell412/<부품>/videos/<영상> 구조 기준.
+    부품 정체성은 폴더가 결정한다(영상 파일명이 train/test여도 폴더로 클래스 확정)."""
+    global _VID2PART
+    if _VID2PART is None:
+        m = {}
+        for vp in glob.glob(BASE + "/data/bell412/*/videos/*.*"):
+            vstem = os.path.splitext(os.path.basename(vp))[0]
+            part = os.path.basename(os.path.dirname(os.path.dirname(vp)))   # <부품>/videos/<영상>
+            m.setdefault(vstem, part)
+        _VID2PART = m
+    return _VID2PART
+
+
 def stem_to_class(stem):
-    """라벨 파일 stem(<영상>_<프레임>) → 클래스명. 영상명 = 프레임번호 뗀 것, 카테고리 접두·끝숫자·_TEST 제거."""
-    v = re.sub(r"_\d+$", "", stem).replace("_TEST", "")     # 프레임번호 제거
-    part = v.split("_", 1)[1] if "_" in v else v            # 카테고리(Gearbox_/Tools_) 제거
+    """프레임/영상 stem → 부품 클래스. 폴더명 우선(신규 규칙), 못 찾으면 옛 영상명 규칙(<카테고리>_<부품>) 폴백."""
+    v = re.sub(r"_\d+$", "", stem).replace("_TEST", "")     # 프레임번호 제거 → 영상 stem
+    vm = _video_part_map()
+    if v in vm:                                             # 폴더명 기준(영상 파일명 무관)
+        return re.sub(r"\s+", "_", vm[v].lower())
+    part = v.split("_", 1)[1] if "_" in v else v            # 폴백: 카테고리(Gearbox_/Tools_) 제거
     part = re.sub(r"\d+$", "", part).strip()                # bracket2 → bracket
     return re.sub(r"\s+", "_", part.lower())                # seal support → seal_support
 

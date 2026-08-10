@@ -15,8 +15,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # --- 모델 가중치 ---
 MODELS_DIR = BASE_DIR / "models"
 BASE_MODEL = MODELS_DIR / "base_model.pt"       # 소량 데이터로 미리 학습한 초기 가중치
-NEW_MODEL_PT = MODELS_DIR / "new_model.pt"      # 본 학습 결과(best.pt)를 복사해 둘 위치
-NEW_MODEL_ONNX = MODELS_DIR / "new_model.onnx"  # ONNX 변환 산출물(Unity/C# 등 비파이썬 런타임용)
+NEW_MODEL_PT = MODELS_DIR / "model.pt"      # 서빙 모델(본 학습 결과 best.pt 를 복사). 고정 이름 = 갱신 시 덮어쓰기
+NEW_MODEL_ONNX = MODELS_DIR / "model.onnx"  # ONNX 변환 산출물(Thor TensorRT / 비파이썬 런타임용)
 
 # --- 데이터셋 경로 ---
 DATA_DIR = BASE_DIR / "data"          # 모든 데이터(원본·데이터셋·등록영상)의 단일 루트
@@ -37,9 +37,10 @@ KEEP_RELEASES = 10       # 보관할 릴리스 수(초과분은 오래된 것부
 PROMOTE_MIN_DROP = 0.0   # 배포 게이트: 직전 배포본 대비 mAP50 하락 허용폭(0 = 하락하면 미채택)
 
 # --- 학습 하이퍼파라미터 기본값 ---
-# 벤치마크(results/benchmark/, 7모델x2크기 + 시드 3반복)로 선정: 정확도 동급 최고
-# (mAP50-95 평균 1위), 시드 분산 최소, 지연 최단(NMS-free), Thor TensorRT 적합
-PRETRAINED = "yolo26s.pt"  # base_model 이 없을 때 전이학습 시작점(자동 다운로드)
+# 부품 34클래스 재벤치(results/bench/20260805_173149, v8·11·26 × n·s·m)로 선정:
+# yolo11s가 mAP50 1위(0.9931)이자 기존 yolo26s 대비 전 항목 우위(크기·GPU속도·학습시간)
+# 경량·엣지 배포가 필요하면 yolov8n / yolo11n 으로 교체
+PRETRAINED = "yolo11s.pt"  # base_model 이 없을 때 전이학습 시작점(자동 다운로드)
 EPOCHS = 100
 IMG_SIZE = 640
 BATCH = 16

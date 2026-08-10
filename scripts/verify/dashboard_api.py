@@ -8,6 +8,7 @@
   cd dashboard && npm install && npm run build   # 프론트 변경 시 1회
   python scripts/verify/dashboard_api.py             # http://127.0.0.1:7862
 """
+import os
 import sys
 from pathlib import Path
 
@@ -25,6 +26,9 @@ import autolabel
 import sam2_autolabel as sa
 
 PORT = 7862
+# 바인딩 호스트. 기본은 로컬 전용(안전). 서버에서 같이 쓰는 사람이 브라우저로 보게 하려면
+# DASH_HOST=0.0.0.0 으로 띄운다 (대시보드에 인증이 없으니 신뢰된 내부망에서만).
+HOST = os.environ.get("DASH_HOST", "127.0.0.1")
 DIST = config.BASE_DIR / "dashboard" / "dist"
 
 app = FastAPI(title="XR 오토러닝 대시보드 API")
@@ -150,7 +154,93 @@ def api_parts_label_batch(payload: dict = Body(...)):
 @app.post("/api/sam2/multiclass")
 def api_multiclass(payload: dict = Body(...)):
     return sa.start_multiclass(payload.get("session"), payload.get("epochs"), payload.get("test_srcs", []),
-                               payload.get("classes"))
+                               payload.get("classes"), payload.get("augment", False))
+
+
+@app.post("/api/sam2/cancel")
+def api_sam2_cancel(payload: dict = Body(...)):
+    return sa.cancel_multiclass(payload.get("job"))
+
+
+@app.post("/api/sam2/compare")
+def api_sam2_compare(payload: dict = Body(...)):
+    return sa.start_compare(payload.get("session"), payload.get("base_model_id"))
+
+
+@app.post("/api/sam2/delete_model")
+def api_sam2_delete_model(payload: dict = Body(...)):
+    return sa.delete_model(payload.get("model_id"))
+
+
+@app.get("/api/sam2/train_frames")
+def api_sam2_train_frames(session: str):
+    return sa.list_train_frames(session)
+
+
+@app.get("/api/sam2/part_frames")
+def api_sam2_part_frames(part: str):
+    return sa.list_part_frames(part)
+
+
+@app.get("/api/sam2/labeled_parts")
+def api_sam2_labeled_parts():
+    return sa.labeled_parts()
+
+
+@app.get("/api/sam2/train_frame")
+def api_sam2_train_frame(session: str, name: str, w: int = 360):
+    b = sa.train_frame_jpeg(session, name, w)
+    if b is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return Response(content=b, media_type="image/jpeg")
+
+
+@app.post("/api/sam2/delete_train_frame")
+def api_sam2_delete_train_frame(payload: dict = Body(...)):
+    return sa.delete_train_frame(payload.get("session"), payload.get("name"))
+
+
+@app.post("/api/sam2/apply_model")
+def api_sam2_apply_model(payload: dict = Body(...)):
+    return sa.apply_model(payload.get("session"))
+
+
+@app.post("/api/sam2/rollback")
+def api_sam2_rollback(payload: dict = Body(...)):
+    return sa.rollback()
+
+
+@app.get("/api/sam2/served")
+def api_sam2_served():
+    return sa.served_model() or {"none": True}
+
+
+@app.get("/api/sam2/active")
+def api_sam2_active():
+    return sa.active_job()
+
+
+@app.get("/api/sam2/models")
+def api_sam2_models():
+    return sa.list_models()
+
+
+@app.post("/api/sam2/rollback_to")
+def api_sam2_rollback_to(payload: dict = Body(...)):
+    return sa.rollback_to(payload.get("model_id"))
+
+
+@app.get("/api/sam2/eval_frames")
+def api_sam2_eval_frames(session: str, src: str):
+    return sa.eval_frames(session, src)
+
+
+@app.get("/api/sam2/eval_frame")
+def api_sam2_eval_frame(session: str, src: str, idx: int = 0, w: int = 720):
+    b = sa.eval_frame(session, src, idx, w)
+    if b is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return Response(content=b, media_type="image/jpeg")
 
 
 @app.get("/api/sam2/runs")
@@ -182,4 +272,4 @@ if DIST.exists():
 if __name__ == "__main__":
     if not DIST.exists():
         print("경고: dashboard/dist 없음. 먼저 빌드하세요: cd dashboard && npm install && npm run build")
-    uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")
+    uvicorn.run(app, host=HOST, port=PORT, log_level="warning")
