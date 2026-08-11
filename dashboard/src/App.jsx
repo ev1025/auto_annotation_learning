@@ -1335,6 +1335,28 @@ function PartsApp() {
     }).catch(() => {})
   }, [loadTrain])
 
+  // 산입 카운터 부드럽게 세어 올리기: 백엔드 스캔이 순식간에 끝나 0→N으로 튀어도, 화면은 1→N 으로 climbing.
+  const [ingShown, setIngShown] = useState(0)
+  const ingShownRef = useRef(0)
+  useEffect(() => { ingShownRef.current = ingShown }, [ingShown])
+  useEffect(() => {
+    if (status?.stage !== 'build') { ingShownRef.current = 0; setIngShown(0); return }
+    const target = status?.ingest_done || 0
+    const from = ingShownRef.current
+    if (target <= from) { setIngShown(target); return }   // 후퇴/동일이면 즉시
+    const dur = Math.min(1200, 250 + (target - from) * 4) // 개수 많을수록 조금 길게(최대 1.2s)
+    const t0 = performance.now()
+    let raf
+    const tick = (t) => {
+      const k = Math.min(1, (t - t0) / dur)
+      const e = 1 - Math.pow(1 - k, 3)                    // easeOutCubic
+      setIngShown(Math.round(from + (target - from) * e))
+      if (k < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [status?.stage, status?.ingest_done])
+
   // 현재 서비스(기존) 모델 로드 — 라벨/학습 화면에서 '학습됨 vs 신규' 비교 기준
   const loadServed = useCallback(() => {
     fetch('/api/sam2/served').then(r => r.json()).then(d => setServed(d && !d.none ? d : null)).catch(() => {})
@@ -1380,7 +1402,9 @@ function PartsApp() {
   const ingT = status?.ingest_total || 0
   const stageText = {
     start: '학습 준비 중...',
-    build: `학습 데이터 산입 중... (${ingD}/${ingT})`,
+    build: (status?.note && /증강|합성/.test(status.note))    // 산입 후 배경합성 증강 단계(수 분)면 라벨 구분
+      ? '배경 합성 증강 생성 중...'
+      : `학습 데이터 산입 중... (${Math.min(ingShown, ingT || ingShown)}/${ingT})`,
     train: `YOLO 모델 학습 중... (Epoch ${ep}/${tot})`,
     eval: `검출 평가 중... (${status?.eval_done || 0}/${status?.eval_total || 0})`,
     done: '학습 완료', cancelled: '학습 중단됨', error: '학습 오류',
@@ -1389,7 +1413,7 @@ function PartsApp() {
   const pct = status?.stage === 'done' ? 100
     : status?.stage === 'eval' ? Math.round(90 + (status?.eval_frac || 0) * 10)     // 평가(프레임) 90→100
     : status?.stage === 'train' ? Math.round(10 + (status?.train_frac || 0) * 80)   // 학습(배치) 10→90
-    : status?.stage === 'build' ? (ingT ? Math.round((ingD / ingT) * 10) : 0)       // 산입 0→10
+    : status?.stage === 'build' ? (ingT ? Math.round((Math.min(ingShown, ingT) / ingT) * 10) : 0)   // 산입 0→10
     : 0
 
   // ── 학습 완료 후: 평가(compare) 단계 진행/표시 ──
