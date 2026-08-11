@@ -690,12 +690,10 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .score-tile.bad { border-color: var(--danger-line); background: #fef2f2; }
 .score-label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; font-weight: 700; color: var(--ink-strong); }
 .score-hint { font-size: 11.5px; font-weight: 400; color: var(--muted); }
-.score-row { display: flex; align-items: baseline; gap: 9px; }
-.score-old { font-size: 19px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
-.score-arr { color: var(--faint); font-size: 15px; }
-.score-new { font-size: 23px; font-weight: 800; color: var(--ink-strong); font-variant-numeric: tabular-nums; line-height: 1; }
+.score-row { display: flex; align-items: center; gap: 10px; }
+.score-new { font-size: 30px; font-weight: 800; color: var(--ink-strong); font-variant-numeric: tabular-nums; line-height: 1; }
+.score-prev { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .score-tile.bad .score-new { color: var(--danger-ink); }
-.score-row .delta { margin-left: auto; align-self: center; }
 .score-na { font-size: 14px; font-weight: 600; color: var(--faint); padding: 6px 0; }
 
 /* ── 관리 모드: 현재 서비스 모델 카드 ── */
@@ -746,7 +744,12 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .ab-col span { font-size: 11px; color: var(--muted); }
 .ab-col b { font-size: 20px; font-variant-numeric: tabular-nums; color: var(--ink); }
 .ab-col.new b { color: var(--accent-ink); }
-.delta { flex: 0 0 auto; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+.delta { flex: 0 0 auto; font-size: 13px; font-weight: 800; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+.ba-legend { display: flex; gap: 16px; margin: 2px 0 4px; }
+.lg-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.lg-sw { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; }
+.lg-sw.green { background: #00b400; }
+.lg-sw.orange { background: #ff9600; }
 .delta.up { color: var(--success-ink); background: var(--success-bg); }
 .delta.down { color: var(--danger-ink); background: var(--danger-bg); }
 .delta.flat { color: var(--muted); background: var(--surface-3); }
@@ -872,7 +875,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .tc-foot .act-btn { margin-left: auto; }
 .train-monitor { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .train-monitor .metric-cards { flex-shrink: 0; }
-.train-monitor .term { height: 300px; }
+.train-monitor .term { height: 200px; }   /* 학습중·학습후 로그창 크기 통일(학습중 기준) */
 .result-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 6px 0 4px; }
 .rcard { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 13px;
   display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: 52px; }

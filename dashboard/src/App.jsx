@@ -1021,15 +1021,15 @@ function ScoreTile({ label, hint, before, after, pctv, deltaEl, warnDown }) {
       <div className="score-label">{label}<span className="score-hint">{hint}</span></div>
       {after == null ? (                          /* 신규 모델 결과 자체가 없음 */
         <div className="score-na">비교 대상 없음 · 첫 배포</div>
-      ) : before == null ? (                       /* 비교할 기존 모델이 없음 → 단일 값만(대시 안 씀) */
-        <div className="score-row"><span className="score-new">{pctv(after)}</span></div>
       ) : (
-        <div className="score-row">
-          <span className="score-old">{pctv(before)}</span>
-          <span className="score-arr" aria-hidden="true">→</span>
-          <span className="score-new">{pctv(after)}</span>
-          {deltaEl(before, after)}
-        </div>
+        /* 현재(신규) 인식률을 크게 + 변화 pill 바로 옆, 이전값은 아래 작게 = 한눈에 "지금 X%, Y%p 변화" */
+        <>
+          <div className="score-row">
+            <span className="score-new">{pctv(after)}</span>
+            {before != null && deltaEl(before, after)}
+          </div>
+          {before != null && <div className="score-prev">이전 {pctv(before)}</div>}
+        </>
       )}
     </div>
   )
@@ -1587,7 +1587,7 @@ function PartsApp() {
                         <div className="verdict-badge">
                           {cmp.recommend.level === 'apply' ? <IcCheck /> : <IcWarn />}
                           <span>{cmp.recommend.level === 'apply' ? '신규 모델 적용 권장'
-                            : cmp.recommend.level === 'rollback' ? '롤백 권장 · 기존 부품 손상'
+                            : cmp.recommend.level === 'rollback' ? '기존 모델 유지 권장'
                             : '검토 후 결정'}</span>
                         </div>
                         <p className="verdict-msg">{cmp.recommend.msg}</p>
@@ -1595,9 +1595,10 @@ function PartsApp() {
                           {applied ? (
                             <span className="ok-flash big"><IcCheck /> 신규 모델이 서비스에 적용되었습니다</span>
                           ) : (
+                            /* 강조색(채운 버튼)은 항상 '권장 액션'에 — 롤백 권장이면 '기존 모델 유지'가 강조 */
                             <>
-                              <button className="act-btn train big" onClick={doApply}>신규 모델 적용</button>
-                              <button className="act-btn ghost big" onClick={doRollback}>기존 모델 유지</button>
+                              <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'ghost' : 'train'} big`} onClick={doApply}>신규 모델 적용</button>
+                              <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'train' : 'ghost'} big`} onClick={doRollback}>기존 모델 유지</button>
                             </>
                           )}
                         </div>
@@ -1606,7 +1607,7 @@ function PartsApp() {
 
                     {/* 2) 스코어보드 — 판정을 뒷받침하는 인식률 2종(기존 유지 / 신규 학습) */}
                     <section className="scoreboard">
-                      <ScoreTile label="기존 부품 유지" hint={`전체 일반화 · ${cmp.gen?.n ?? 0}종 · 망각 여부`}
+                      <ScoreTile label="기존 부품 유지" hint={`전체 일반화 · ${cmp.gen?.n ?? 0}종`}
                                  before={cmp.gen?.before} after={cmp.gen?.after} pctv={pctv} deltaEl={deltaEl} warnDown />
                       <ScoreTile label="신규 부품 인식" hint={`신규 학습 · ${cmp.newp?.n ?? 0}종`}
                                  before={cmp.newp?.before} after={cmp.newp?.after} pctv={pctv} deltaEl={deltaEl} />
@@ -1619,6 +1620,10 @@ function PartsApp() {
                       return (
                         <section className="ev2-card ba-primary">
                           <h4 className="ev2-h">모델 결과 비교</h4>
+                          <div className="ba-legend">
+                            <span className="lg-item"><i className="lg-sw green" /> 정답 부품 검출</span>
+                            <span className="lg-item"><i className="lg-sw orange" /> 다른 부품으로 오검출</span>
+                          </div>
                           {baGroups.length > 1 && (
                             <PartSelect options={baGroups.map(x => x.part)} value={gi} onChange={setBaSel} />
                           )}
