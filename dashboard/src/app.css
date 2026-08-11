@@ -745,7 +745,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .ab-col b { font-size: 20px; font-variant-numeric: tabular-nums; color: var(--ink); }
 .ab-col.new b { color: var(--accent-ink); }
 .delta { flex: 0 0 auto; font-size: 13px; font-weight: 800; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
-.ba-legend { display: flex; gap: 16px; margin: 2px 0 4px; }
+.ba-legend { display: flex; justify-content: center; gap: 18px; margin: 12px 0 8px; }   /* 이미지 아래 중앙 */
 .lg-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 .lg-sw { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; }
 .lg-sw.green { background: #00b400; }
@@ -776,6 +776,8 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 /* 학습 중단 버튼(빨강) */
 .act-btn.stop { background: var(--danger); color: #fff; }
 .act-btn.stop:hover:not(:disabled) { filter: brightness(1.08); }
+.act-btn.danger { background: var(--danger); color: #fff; border-color: var(--danger); }   /* 롤백 권장 시 '기존 모델 유지' 강조(빨간 배너와 동계열) */
+.act-btn.danger:hover:not(:disabled) { filter: brightness(1.06); }
 
 /* 학습곡선 차트(SVG) */
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; flex-shrink: 0; margin-bottom: 4px; }
@@ -926,6 +928,8 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
   box-shadow: var(--shadow-sm); padding: 12px 16px; }
 .ev2-h { font-size: 14px; font-weight: 700; color: var(--ink-strong); margin: 0 0 8px;
   display: flex; align-items: baseline; gap: 8px; }
+.ev2-h-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.ev2-h-row .ev2-h { margin: 0; }   /* 제목행 안에선 제목 자체 margin 제거(드롭다운과 수평 정렬) */
 .ev2-h .al-hint { font-weight: 400; }
 .ev2-tip { display: inline-flex; align-items: center; color: var(--faint); cursor: help; }
 .ev2-tip svg { width: 14px; height: 14px; }

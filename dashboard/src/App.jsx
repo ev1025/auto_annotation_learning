@@ -1137,6 +1137,10 @@ function BaGroup({ part, kind, frames }) {
         </div>
         {n > 1 && <button className="ba-nav" onClick={() => go(1)} aria-label="다음 프레임"><IcChevronRight /></button>}
       </div>
+      <div className="ba-legend">
+        <span className="lg-item"><i className="lg-sw green" /> 정답 부품 검출</span>
+        <span className="lg-item"><i className="lg-sw orange" /> 다른 부품으로 오검출</span>
+      </div>
       {n > 1 && (
         <div className="ba-dots">
           {frames.map((_, k) => (
@@ -1598,7 +1602,7 @@ function PartsApp() {
                             /* 강조색(채운 버튼)은 항상 '권장 액션'에 — 롤백 권장이면 '기존 모델 유지'가 강조 */
                             <>
                               <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'ghost' : 'train'} big`} onClick={doApply}>신규 모델 적용</button>
-                              <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'train' : 'ghost'} big`} onClick={doRollback}>기존 모델 유지</button>
+                              <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'danger' : 'ghost'} big`} onClick={doRollback}>기존 모델 유지</button>
                             </>
                           )}
                         </div>
@@ -1619,14 +1623,12 @@ function PartsApp() {
                       const g = baGroups[gi]
                       return (
                         <section className="ev2-card ba-primary">
-                          <h4 className="ev2-h">모델 결과 비교</h4>
-                          <div className="ba-legend">
-                            <span className="lg-item"><i className="lg-sw green" /> 정답 부품 검출</span>
-                            <span className="lg-item"><i className="lg-sw orange" /> 다른 부품으로 오검출</span>
+                          <div className="ev2-h-row">
+                            <h4 className="ev2-h">모델 결과 비교</h4>
+                            {baGroups.length > 1 && (
+                              <PartSelect options={baGroups.map(x => x.part)} value={gi} onChange={setBaSel} />
+                            )}
                           </div>
-                          {baGroups.length > 1 && (
-                            <PartSelect options={baGroups.map(x => x.part)} value={gi} onChange={setBaSel} />
-                          )}
                           <BaGroup key={g.part + '_' + gi} part={g.part} kind={g.kind} frames={g.frames} />
                         </section>
                       )
