@@ -10,7 +10,7 @@ N = 1·2·4·6, 부품 = gearbox·a_test.
 
 사용: XR_BASE=/workspace/data2/jinwoolee/xr_autolearning CUDA_VISIBLE_DEVICES=2 \
         python scripts/experiments/ablation_refshots.py   (스모크: ABL_SMOKE=1)
-결과: results/ablation_refshots/<시각>/{results.json,summary.txt,run.log}
+결과: results/experiments/ablation_refshots/<시각>/{results.json,summary.txt,run.log}
 """
 import os, sys, glob, json, time, shutil
 from pathlib import Path
@@ -121,7 +121,7 @@ def train_eval(images_dir, gt_yaml, part, epochs, tag, rundir):
 
 def main():
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    rundir = BASE + f"/results/ablation_refshots/{ts}"; os.makedirs(rundir, exist_ok=True)
+    rundir = BASE + f"/results/experiments/ablation_refshots/{ts}"; os.makedirs(rundir, exist_ok=True)
 
     def log(s):
         print(s, flush=True)

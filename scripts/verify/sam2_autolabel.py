@@ -374,9 +374,9 @@ def _run_session(job_id, part, train_shots, test_srcs):
         yaml.write_text(f"path: {sess.resolve().as_posix()}\ntrain:\n  - {d}\nval:\n  - {d}\nnames:\n  0: part\n",
                         encoding="utf-8")
         model = YOLO(config.PRETRAINED)
-        model.train(data=str(yaml), epochs=EPOCHS, imgsz=640, batch=8, device=0,
+        model.train(data=str(yaml), epochs=EPOCHS, imgsz=640, batch=8, device=0, workers=0,
                     project=str(model_dir / "runs"), name="model", exist_ok=True, verbose=False,
-                    plots=False, degrees=15.0)
+                    plots=False, degrees=15.0)   # workers=0: 윈도우 멀티프로세싱 spawn 크래시 회피
         w1 = Path(model.trainer.best)   # 실제 저장 경로
         del model; gc.collect(); torch.cuda.empty_cache()
 
@@ -556,6 +556,51 @@ def _clear_video(store, video):
             f.unlink()
 
 
+# ==================== 참조샷(탭 포인트) 영속 저장/로드 ====================
+# 라벨은 서버(autolabel/labels)에 영속하지만, 참조샷(사람이 찍은 탭 포인트)은 여태 프론트
+# localStorage 에만 있어 이관·타 브라우저에서 안 떴다. → 부품 폴더에 shots.json 으로 durable 보관.
+#   data/bell412/<부품>/autolabel/shots.json = {"<영상stem>": {"<프레임>": [[rx,ry,lab], ...]}}
+def _save_shots(video, shots):
+    """이 영상의 참조샷(탭 포인트)을 그 부품 shots.json 에 병합 저장.
+    shots=[[frame,[[rx,ry,lab],...]],...] (전파에 쓴 그 값). 그 영상(stem) 키만 새로 쓰고
+    부품 안 다른 영상 키는 보존한다."""
+    vp = autolabel.resolve_video(video)
+    if not vp:
+        return
+    stem = vp.stem
+    store = _autolabel_store(video)
+    store["root"].mkdir(parents=True, exist_ok=True)
+    fp = store["root"] / "shots.json"
+    data = {}
+    if fp.exists():
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+    frames = {}
+    for fi, pts in (shots or []):
+        frames[str(int(fi))] = [[float(rx), float(ry), int(lab)] for rx, ry, lab in pts]
+    data[stem] = frames
+    fp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def load_shots():
+    """모든 부품 shots.json 취합 → {"<영상stem>": {"<프레임>": [[rx,ry,lab],...]}}. 프론트 참조샷 복원용."""
+    out = {}
+    if not DATA_BELL.exists():
+        return out
+    for fp in sorted(DATA_BELL.glob("*/autolabel/shots.json")):
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(data, dict):
+            for video, frames in data.items():
+                if isinstance(frames, dict):
+                    out.setdefault(video, {}).update(frames)
+    return out
+
+
 def _run_parts_label(job_id, session, video, shots):
     """부품 영상 하나 → SAM2 전파 → 그 부품 영속 저장소(data/bell412/<부품>/autolabel)에 <stem>_<프레임>로 누적.
     video = 부품경로 키 또는 stem. 저장소는 부품경로 기반으로 유니크 해석, 파일명 접두어·반환 식별자는 stem."""
@@ -572,6 +617,7 @@ def _run_parts_label(job_id, session, video, shots):
         j.update(stage="propagate", note=f"{stem} 라벨 생성 중")
         _clear_video(store, stem)                  # 재탭이면 이 영상분(stem_*)만 새로
         n, tot = _propagate_into(video, shots, pi, pl, None, mk_d)   # box 생략, masks=tap 시각화
+        _save_shots(video, shots)                  # 참조샷(탭 포인트) 영속 저장 → 재접속·타 브라우저 복원
         taps = [_b64(_rd(p), w=520) for p in sorted(mk_d.glob(f"{stem}_*.jpg"))][:6]
         j.update(stage="done", running=False, video=stem, labels=n, frames=tot,
                  session=PERSIST, taps=taps)
@@ -619,6 +665,7 @@ def _run_parts_label_batch(job_id, session, items):
             j.update(stage="propagate", note=f"{k}/{total} · {stem}", done=k - 1, total=total)
             _clear_video(store, stem)
             n, tot = _propagate_into(video, shots, pi, pl, None, mk_d)
+            _save_shots(video, shots)              # 참조샷 영속 저장(부품별 shots.json)
             results.append({"video": stem, "labels": n, "frames": tot})
         j.update(stage="done", running=False, session=PERSIST, done=total, total=total, results=results)
     except Exception as e:
@@ -906,9 +953,9 @@ def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None, augme
 
         model.add_callback("on_train_batch_end", _on_batch)
         model.add_callback("on_fit_epoch_end", _on_epoch)
-        model.train(data=str(yml), epochs=epochs, imgsz=640, batch=8, device=0,
+        model.train(data=str(yml), epochs=epochs, imgsz=640, batch=8, device=0, workers=0,
                     project=str(model_dir / "runs"), name="model", exist_ok=True, verbose=False,
-                    plots=False, degrees=15.0)
+                    plots=False, degrees=15.0)   # workers=0: 윈도우 멀티프로세싱 spawn 크래시(pickle truncated) 회피
         if j.get("cancel"):
             logln("학습을 중단했습니다.", "err")
             j.update(stage="cancelled", running=False)
@@ -1093,7 +1140,8 @@ def served_model():
         return {"weights": str(ap), "classes": cls, "n_classes": len(cls), "label": m.get("label", ""),
                 "session": m.get("session", ""), "applied": m.get("applied", ""), "model_id": mid,
                 "time": (info or {}).get("time", m.get("applied", "")),
-                "map50": _last_map50((info or {}).get("curve"))}
+                "map50": _last_map50((info or {}).get("curve")),
+                "gen_rate": (info or {}).get("gen_rate"), "newp_rate": (info or {}).get("newp_rate")}
     bp = PARTS_ROOT / "auto_baseline" / "multiclass" / "meta.json"
     if bp.exists():
         m = json.loads(bp.read_text(encoding="utf-8"))
@@ -1121,6 +1169,7 @@ def list_models():
                     "classes": info.get("classes", []),
                     "n_classes": info.get("n_classes", len(info.get("classes", []))),
                     "n_images": info.get("n_images"), "map50": _last_map50(info.get("curve")),
+                    "gen_rate": info.get("gen_rate"), "newp_rate": info.get("newp_rate"),   # 최근 평가 인식률 스냅샷
                     "has_pt": (MODELS_DIR / f"{mid}.pt").exists(),
                     "is_active": (active_mid is not None and active_mid == mid)})
     return {"models": out, "active": active_mid}
@@ -1308,13 +1357,24 @@ def _run_compare(job_id, session, base_model_id=None):
         if base_rows and gen_drop >= 10:
             reco = {"level": "rollback",
                     "msg": f"신규 부품은 인식하지만 기존 부품들의 인식률이 {gen_drop:.0f}%p 하락했습니다. "
-                           "라벨링 마스크 영역을 좁게 재조정하여 다시 학습하는 것을 권장합니다. (롤백 권장)"}
+                           "라벨링 마스크 영역을 좁게 재조정하여 다시 학습하는 것을 권장합니다."}
         elif (newp_after or 0) >= 0.7 and (not base_rows or gen_drop < 5):
             reco = {"level": "apply",
-                    "msg": "새로운 부품이 성공적으로 학습되었으며, 기존 부품의 인식률도 안정적입니다. (신규 모델 적용 권장)"}
+                    "msg": "새로운 부품이 성공적으로 학습되었으며, 기존 부품의 인식률도 안정적입니다."}
         else:
             reco = {"level": "review",
                     "msg": "신규 부품 인식률 또는 기존 부품 유지가 애매합니다. 아래 샘플 이미지를 확인한 뒤 결정하세요."}
+
+        new_mid = meta.get("model_id")   # 이 세션이 등록한 신규 모델 버전 json에 인식률 스냅샷 저장(드롭다운 표시용)
+        if new_mid:
+            mjp = MODELS_DIR / f"{new_mid}.json"
+            if mjp.exists():
+                try:
+                    minfo = json.loads(mjp.read_text(encoding="utf-8"))
+                    minfo["gen_rate"], minfo["newp_rate"] = gen_after, newp_after
+                    mjp.write_text(json.dumps(minfo, ensure_ascii=False, indent=2), encoding="utf-8")
+                except Exception:
+                    logger.exception("모델 인식률 스냅샷 저장 실패")
 
         j.update(stage="done", running=False, session=session,
                  new_label=new_label, base_label=base_label,

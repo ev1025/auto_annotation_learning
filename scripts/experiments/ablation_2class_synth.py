@@ -10,7 +10,7 @@ ablation_2class.py 와 동일(gearbox=0, a_test=1 remap, 2클래스 통합 GT �
   XR_BASE=/workspace/data2/jinwoolee/xr_autolearning CUDA_VISIBLE_DEVICES=2 \
     python scripts/experiments/ablation_2class_synth.py
   # 스모크: 위에 ABL_SMOKE=1 ABL_NSYN=8 추가
-결과: results/ablation_synth/gearbox_atest/<시각>/{results.json,summary.txt,run.log}
+결과: results/experiments/ablation_synth/gearbox_atest/<시각>/{results.json,summary.txt,run.log}
 """
 import os, sys, glob, json, time, shutil, re
 from pathlib import Path
@@ -55,7 +55,7 @@ GT_SRC = {
     "a_test":  BASE + "/data/bell412/a_test/gt",
 }
 N_SYN = int(os.environ.get("ABL_NSYN", "500"))
-OUT = BASE + "/results/ablation_synth/gearbox_atest"
+OUT = BASE + "/results/experiments/ablation_synth/gearbox_atest"
 MODELS = ["yolov8n", "yolov8s", "yolov8m", "yolo11n", "yolo11s", "yolo11m", "yolo26n", "yolo26s", "yolo26m"]
 DEF_EP = 100
 NAMES_BLOCK = "\n".join(f"  {i}: {c}" for i, c in enumerate(CLASSES))

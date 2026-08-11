@@ -10,7 +10,7 @@ ablation_atest.py 와 동일 구조지만, 학습 전 sam2_autolabel._synth_augm
     ABL_GT=$HOME/xr_autolearning/data/bell412/gearbox/gt/gt.yaml \
     python scripts/experiments/ablation_synth.py
   # 스모크(1모델·3ep·합성 8장): 위에 ABL_SMOKE=1 ABL_NSYN=8 추가
-결과: results/ablation_synth/<part>/<시각>/results.json · summary.txt · run.log
+결과: results/experiments/ablation_synth/<part>/<시각>/results.json · summary.txt · run.log
 """
 import os, sys, glob, json, time, shutil
 from pathlib import Path
@@ -25,7 +25,7 @@ import sam2_autolabel as sa            # _synth_augment (SAM2 누끼 + 배경합
 PART = os.environ.get("ABL_PART", "gearbox")
 GT_YAML = os.environ.get("ABL_GT", BASE + "/data/bell412/" + PART + "/gt/gt.yaml")
 N_SYN = int(os.environ.get("ABL_NSYN", "400"))
-OUT = BASE + "/results/ablation_synth/" + PART
+OUT = BASE + "/results/experiments/ablation_synth/" + PART
 MODELS = ["yolov8n", "yolov8s", "yolov8m", "yolo11n", "yolo11s", "yolo11m", "yolo26n", "yolo26s", "yolo26m"]
 DEF_EP = 100
 

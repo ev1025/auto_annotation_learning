@@ -141,6 +141,12 @@ def api_parts_sessions():
     return sa.parts_sessions()
 
 
+@app.get("/api/sam2/shots")
+def api_sam2_shots():
+    """부품별 shots.json 취합 → {"<영상>": {"<프레임>": [[rx,ry,lab],...]}}. 프론트 참조샷 복원."""
+    return sa.load_shots()
+
+
 @app.post("/api/sam2/parts_label")
 def api_parts_label(payload: dict = Body(...)):
     return sa.start_parts_label(payload.get("session"), payload.get("video"), payload.get("shots", []))

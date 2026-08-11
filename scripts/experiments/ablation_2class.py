@@ -7,7 +7,7 @@ per-part 라벨은 단일클래스(0)로 저장돼 있어 gearbox→0, a_test→
 GT 도 두 부품 GT(각 class0)를 같은 규칙으로 재매핑해 2클래스 통합 평가셋을 만든다.
 
 사용: XR_BASE=$HOME/xr_autolearning CUDA_VISIBLE_DEVICES=2 python scripts/experiments/ablation_2class.py
-결과: results/ablation/gearbox_atest/<시각>/{results.json,summary.txt,run.log}
+결과: results/experiments/ablation/gearbox_atest/<시각>/{results.json,summary.txt,run.log}
 """
 import os, sys, glob, json, time
 from datetime import datetime
@@ -22,7 +22,7 @@ GT_SRC = {                                  # 각 부품 수동 GT(단일 class0
     "gearbox": BASE + "/data/bell412/gearbox/gt",
     "a_test":  BASE + "/data/bell412/a_test/gt",
 }
-OUT = BASE + "/results/ablation/gearbox_atest"
+OUT = BASE + "/results/experiments/ablation/gearbox_atest"
 MODELS = ["yolov8n", "yolov8s", "yolov8m", "yolo11n", "yolo11s", "yolo11m", "yolo26n", "yolo26s", "yolo26m"]
 DEF_MODEL, DEF_EP = "yolo11s", 100
 NAMES_BLOCK = "\n".join(f"  {i}: {c}" for i, c in enumerate(CLASSES))

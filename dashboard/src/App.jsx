@@ -338,6 +338,24 @@ function AutoLabelView() {
       .then(d => setLabeledAnywhere(new Set(d.parts || [])))
       .catch(() => {})
   }, [])
+  useEffect(() => {   // 서버 영속 참조샷(shots.json) 로드 → ptsBySrc 병합(서버 우선)
+    // 라벨은 서버에 있으나 참조샷은 여태 localStorage 에만 있어 이관·타 브라우저에서 안 떴다.
+    // 서버 shots.json = {영상: {프레임: [[rx,ry,lab],...]}} → {rx,ry,lab} 객체로 변환해 병합.
+    fetch('/api/sam2/shots').then(r => r.json()).then(d => {
+      if (!d || typeof d !== 'object') return
+      setPtsBySrc(prev => {
+        const next = { ...prev }
+        for (const [video, frames] of Object.entries(d)) {
+          const conv = {}
+          for (const [fi, arr] of Object.entries(frames || {})) {
+            conv[fi] = (arr || []).map(p => ({ rx: p[0], ry: p[1], lab: p[2] }))
+          }
+          next[video] = conv   // 서버가 durable 소스 → 서버값 우선
+        }
+        return next
+      })
+    }).catch(() => {})
+  }, [])
   const [showReview, setShowReview] = useState(false)   // 라벨 검수 모달
   const [reviewFrames, setReviewFrames] = useState([])
   const [selParts, setSelParts] = useState(() => new Set())   // 일괄 라벨 생성 대상 부품(체크박스 선택)
@@ -821,7 +839,7 @@ function AutoLabelView() {
 }
 
 // 부품 인식 앱: 라벨 생성 → 학습 → 학습 결과 3단계를 한 화면에서 스텝 전환
-function LogConsole({ log }) {   // 터미널 로그: 새 줄마다 자동 하단 스크롤(사용자가 위로 올리면 멈춤)
+function LogConsole({ log, compact }) {   // 터미널 로그: 새 줄마다 자동 하단 스크롤. compact=학습중 축소(1/3)
   const ref = useRef(null)
   const stick = useRef(true)
   useEffect(() => {
@@ -833,7 +851,7 @@ function LogConsole({ log }) {   // 터미널 로그: 새 줄마다 자동 하�
     if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 28
   }
   return (
-    <div className="term" ref={ref} onScroll={onScroll}>
+    <div className={`term${compact ? ' compact' : ''}`} ref={ref} onScroll={onScroll}>
       {(log || []).map((l, i) => <div key={i} className={`term-line ${l.level || 'info'}`}>{l.msg}</div>)}
       {!(log && log.length) && <div className="term-line dim">로그 대기 중...</div>}
     </div>
@@ -993,6 +1011,30 @@ function VerCard({ tag, cls, id, time, classes, map50, baseSet, highlightNew }) 
   )
 }
 
+// 스코어 타일: 한 지표(기존 부품 유지 / 신규 부품)의 기존→신규 인식률 + 변화 pill.
+// warnDown=하락이 치명적(≤-10%p)이면 붉게 강조(기존 부품 망각 경보용)
+function ScoreTile({ label, hint, before, after, pctv, deltaEl, warnDown }) {
+  const d = (before != null && after != null) ? Math.round((after - before) * 100) : null
+  const bad = warnDown && d != null && d <= -10
+  return (
+    <div className={`score-tile${bad ? ' bad' : ''}`}>
+      <div className="score-label">{label}<span className="score-hint">{hint}</span></div>
+      {after == null ? (                          /* 신규 모델 결과 자체가 없음 */
+        <div className="score-na">비교 대상 없음 · 첫 배포</div>
+      ) : before == null ? (                       /* 비교할 기존 모델이 없음 → 단일 값만(대시 안 씀) */
+        <div className="score-row"><span className="score-new">{pctv(after)}</span></div>
+      ) : (
+        <div className="score-row">
+          <span className="score-old">{pctv(before)}</span>
+          <span className="score-arr" aria-hidden="true">→</span>
+          <span className="score-new">{pctv(after)}</span>
+          {deltaEl(before, after)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // 하단 액션바 모델 액션. onApply(신규 적용) 있으면 주 CTA=분할버튼(적용 + ▾메뉴: 폐기·과거 롤백),
 // 없으면(관리 모드) [과거 모델로 롤백 ▾] 단일 드롭다운. 항목 클릭=롤백 · ×=삭제 · 바깥 클릭 시 닫힘
 function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, onApply, applied }) {
@@ -1023,12 +1065,12 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
       ) : (
         <button className="act-btn ghost rbmenu-btn" onClick={() => setOpen(o => !o)}
                 aria-haspopup="true" aria-expanded={open}>
-          과거 모델로 롤백 <IcChevronDown />
+          과거 모델 조회 <IcChevronDown />
         </button>
       )}
       {open && (
         <div className="rbmenu-pop" role="menu">
-          <div className="rbmenu-head">{onApply ? '다른 작업' : '버전 선택 · 클릭 시 롤백 · ×: 삭제'}</div>
+          <div className="rbmenu-head">{onApply ? '다른 작업' : '저장된 모델 버전'}</div>
           {onKeep && (
             <button className="rbmenu-item keep" role="menuitem"
                     onClick={() => { setOpen(false); onKeep() }}>
@@ -1054,7 +1096,11 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
                    }}>
                 <span className="rbmenu-main">
                   <span className="rbmenu-t">{m.time || fmtId(m.model_id)}</span>
-                  <span className="rbmenu-s">{m.n_classes}종 · 인식률 {m.map50 != null ? m.map50 : '—'}</span>
+                  <span className="rbmenu-s">
+                    {m.n_classes}종
+                    {m.gen_rate != null ? ` · 전체 인식률 ${Math.round(m.gen_rate * 100)}%` : ''}
+                    {m.newp_rate != null ? ` · 신규 부품 ${Math.round(m.newp_rate * 100)}%` : ''}
+                  </span>
                 </span>
                 {active
                   ? <span className="rbmenu-cur">현재</span>
@@ -1335,7 +1381,7 @@ function PartsApp() {
             title={trainDone ? '학습 결과' : (status?.stage === 'cancelled' ? '학습 중단' : '학습 설정')}
             back={backToLabel}
             right={<>
-              {!job && <button className="icon-back" onClick={goManage} title="모델 관리 · 롤백" aria-label="모델 관리"><IcChevronRight /></button>}
+              {!job && <button className="icon-back" onClick={goManage} title="모델관리" aria-label="모델관리"><IcChevronRight /></button>}
               {trainDone && <button className="icon-back" onClick={goEvaluate} title="모델 평가 · 적용" aria-label="다음 단계: 모델 평가·적용"><IcChevronRight /></button>}
             </>}
           />
@@ -1401,7 +1447,7 @@ function PartsApp() {
                   </div>
                 </div>
               )}
-              {job && <LogConsole log={status?.log} />}
+              {job && <LogConsole log={status?.log} compact={running} />}
               {status?.error && <div className="reco-banner rollback"><IcWarn /><span>학습 오류: {status.error}</span></div>}
               {status?.stage === 'cancelled' && <div className="reco-banner review"><IcWarn /><span>학습이 중단되었습니다.</span></div>}
               {trainDone && (
@@ -1436,12 +1482,11 @@ function PartsApp() {
       ) : (
         // ===== 3단계: 모델 평가 · 적용 (버전 비교 → 서비스 적용 / 선택형 롤백) =====
         <div className="ev2">
-          <PageHead title={cmpDone ? '모델 평가 · 적용' : cmp?.running ? '모델 평가 중' : '모델 관리 · 롤백'} back={() => setPage('training')}
+          <PageHead title={cmpDone ? '모델 평가 · 적용' : cmp?.running ? '모델 평가 중' : '모델관리'} back={() => setPage('training')}
                     right={(!cmp?.running && !cmp?.error) ? (
                       <RollbackMenu models={models} servedId={served?.model_id}
                                     onRollbackTo={doRollbackTo} onDeleteModel={doDeleteModel}
-                                    onKeep={cmpDone ? doRollback : null}
-                                    onApply={cmpDone ? doApply : null} applied={applied} />
+                                    onKeep={null} onApply={null} applied={applied} />
                     ) : null} />
           {cmp?.running && (
             <div className="ev2-progress">
@@ -1456,132 +1501,131 @@ function PartsApp() {
           {!cmp?.running && !cmp?.error && (
             <>
               <div className="ev2-body">
-                {cmpDone && cmp.recommend && (
-                  <div className={`reco-banner ${cmp.recommend.level}`}>
-                    {cmp.recommend.level === 'apply' ? <IcCheck /> : <IcWarn />}
-                    <span>
-                      {cmp.recommend.msg}
-                      {cmp.recommend.level !== 'apply' &&
-                        <b className="reco-cta">오검출이 의심되면 아래 인식 결과 비교를 확인한 뒤 롤백하세요.</b>}
-                    </span>
-                  </div>
-                )}
+                {cmpDone ? (
+                  <>
+                    {/* 1) 판정 히어로 — 권장 결정 + 이유 + 주 액션(적용/폐기)을 한곳에 */}
+                    {cmp.recommend && (
+                      <section className={`verdict ${cmp.recommend.level}`}>
+                        <div className="verdict-badge">
+                          {cmp.recommend.level === 'apply' ? <IcCheck /> : <IcWarn />}
+                          <span>{cmp.recommend.level === 'apply' ? '신규 모델 적용 권장'
+                            : cmp.recommend.level === 'rollback' ? '롤백 권장 · 기존 부품 손상'
+                            : '검토 후 결정'}</span>
+                        </div>
+                        <p className="verdict-msg">{cmp.recommend.msg}</p>
+                        <div className="verdict-act">
+                          {applied ? (
+                            <span className="ok-flash big"><IcCheck /> 신규 모델이 서비스에 적용되었습니다</span>
+                          ) : (
+                            <>
+                              <button className="act-btn train big" onClick={doApply}>신규 모델 적용</button>
+                              <button className="act-btn ghost" onClick={doRollback}>기존 모델 유지</button>
+                            </>
+                          )}
+                        </div>
+                      </section>
+                    )}
 
-                {/* 관리 모드(신규 학습·비교 없이 진입): 현재 서비스 모델 안내 */}
-                {!cmpDone && (
-                  <div className="reco-banner review">
-                    <IcWarn />
-                    <span>{served
-                      ? <>현재 서비스 모델 <b>{fmtId(served.model_id) || served.applied || '—'}</b> ({served.n_classes ?? (served.classes || []).length}종). 아래 <b>[과거 모델로 롤백 ▾]</b> 에서 다른 버전으로 되돌리거나 삭제할 수 있습니다.</>
-                      : '현재 서비스 중인 모델이 없습니다. 첫 배포를 진행하세요.'}</span>
-                  </div>
-                )}
+                    {/* 2) 스코어보드 — 판정을 뒷받침하는 인식률 2종(기존 유지 / 신규 학습) */}
+                    <section className="scoreboard">
+                      <ScoreTile label="기존 부품 유지" hint={`전체 일반화 · ${cmp.gen?.n ?? 0}종 · 망각 여부`}
+                                 before={cmp.gen?.before} after={cmp.gen?.after} pctv={pctv} deltaEl={deltaEl} warnDown />
+                      <ScoreTile label="신규 부품 인식" hint={`신규 학습 · ${cmp.newp?.n ?? 0}종`}
+                                 before={cmp.newp?.before} after={cmp.newp?.after} pctv={pctv} deltaEl={deltaEl} />
+                    </section>
 
-                {/* [최우선] 인식 결과 비교 — 권고배너 바로 아래에 크게, 부품 하나씩 육안 확인 */}
-                {baGroups.length > 0 && (() => {
-                  const gi = baSel < baGroups.length ? baSel : 0    // 선택 부품(범위 밖이면 첫 부품)
-                  const g = baGroups[gi]
-                  return (
-                    <section className="ev2-card ba-primary">
-                      <h4 className="ev2-h">인식 결과 비교</h4>
-                      {baGroups.length > 1 && (
-                        <div className="fv-srcs" style={{ marginBottom: 12 }}>
-                          {baGroups.map((x, i) => (
-                            <button key={x.part + '_' + i} className={i === gi ? 'pb-btn sm on' : 'pb-btn sm'}
-                                    onClick={() => setBaSel(i)}>{x.part}</button>
-                          ))}
+                    {/* 3) 눈으로 확인 — 실제 프레임 검출 비교(가장 신뢰되는 근거) */}
+                    {baGroups.length > 0 && (() => {
+                      const gi = baSel < baGroups.length ? baSel : 0
+                      const g = baGroups[gi]
+                      return (
+                        <section className="ev2-card ba-primary">
+                          <h4 className="ev2-h">눈으로 확인 · 검출 결과 <span className="al-hint">(기존 모델 → 신규 모델)</span></h4>
+                          {baGroups.length > 1 && (
+                            <div className="fv-srcs" style={{ marginBottom: 12 }}>
+                              {baGroups.map((x, i) => (
+                                <button key={x.part + '_' + i} className={i === gi ? 'pb-btn sm on' : 'pb-btn sm'}
+                                        onClick={() => setBaSel(i)}>{x.part}</button>
+                              ))}
+                            </div>
+                          )}
+                          <BaGroup key={g.part + '_' + gi} part={g.part} kind={g.kind} frames={g.frames} />
+                        </section>
+                      )
+                    })()}
+
+                    {/* 4) 접이식 상세 — 모델 버전 메타(비전문가는 접힌 채 무시) */}
+                    <details className="ev2-detail">
+                      <summary>모델 상세 · 학습 부품 구성</summary>
+                      {baseModel ? (
+                        <div className="verc-grid">
+                          <VerCard tag={selVer ? '비교 기준 (선택 버전)' : '기존 서비스 모델'} cls="base"
+                                   id={baseModel?.model_id}
+                                   time={baseModel?.time || baseModel?.applied}
+                                   classes={baseModel?.classes || []} map50={baseModel?.map50} baseSet={baseSet} />
+                          <div className="verc-vs" aria-hidden="true"><IcChevronRight /></div>
+                          <VerCard tag="신규 학습 모델" cls="new" id={status?.model_id}
+                                   time={fmtId(status?.model_id)}
+                                   classes={newClasses} map50={status?.cur_map} baseSet={baseSet} highlightNew />
+                        </div>
+                      ) : (
+                        <div className="verc-solo">
+                          <VerCard tag="신규 학습 모델" cls="new" id={status?.model_id}
+                                   time={fmtId(status?.model_id)}
+                                   classes={newClasses} map50={status?.cur_map} baseSet={baseSet} highlightNew />
+                          <p className="verc-solo-note"><IcInfo /> 현재 서비스 중인 모델이 없습니다. 위 [신규 모델 서비스 적용]으로 첫 배포를 진행하세요.</p>
                         </div>
                       )}
-                      <BaGroup key={g.part + '_' + gi} part={g.part} kind={g.kind} frames={g.frames} />
+                    </details>
+                  </>
+                ) : (
+                  <>
+                    {/* 관리 모드(학습 없이 진입): 현재 서비스 모델 카드 + 선택 버전 상세 */}
+                    <section className="served-card">
+                      <div className="served-top">
+                        <span className="served-lbl">현재 서비스 모델</span>
+                        {rolledTo && <span className="served-flash"><IcCheck /> 롤백 완료</span>}
+                      </div>
+                      {served ? (
+                        <div className="served-meta">
+                          {(served.n_classes ?? (served.classes || []).length)}종
+                          {served.gen_rate != null ? ` · 전체 인식률 ${Math.round(served.gen_rate * 100)}%` : ''}
+                          {served.newp_rate != null ? ` · 신규 인식률 ${Math.round(served.newp_rate * 100)}%` : ''}
+                        </div>
+                      ) : (
+                        <div className="served-none">서비스 중인 모델이 없습니다. 먼저 학습을 진행하세요.</div>
+                      )}
                     </section>
-                  )
-                })()}
 
-                {/* 모델 버전 비교. 비교할 기존 모델이 없으면 신규 카드 1개만 중앙 배치 + 첫 배포 안내 */}
-                {cmpDone && (
-                  <section className="ev2-card">
-                    <h4 className="ev2-h">모델 버전 비교</h4>
-                    {baseModel ? (
-                      <div className="verc-grid">
-                        <VerCard tag={selVer ? '비교 기준 (선택 버전)' : '기존 서비스 모델'} cls="base"
-                                 id={baseModel?.model_id}
-                                 time={baseModel?.time || baseModel?.applied}
-                                 classes={baseModel?.classes || []} map50={baseModel?.map50} baseSet={baseSet} />
-                        <div className="verc-vs" aria-hidden="true"><IcChevronRight /></div>
-                        <VerCard tag="신규 학습 모델" cls="new" id={status?.model_id}
-                                 time={fmtId(status?.model_id)}
-                                 classes={newClasses} map50={status?.cur_map} baseSet={baseSet} highlightNew />
-                      </div>
-                    ) : (
-                      <div className="verc-solo">
-                        <VerCard tag="신규 학습 모델" cls="new" id={status?.model_id}
-                                 time={fmtId(status?.model_id)}
-                                 classes={newClasses} map50={status?.cur_map} baseSet={baseSet} highlightNew />
-                        <p className="verc-solo-note"><IcInfo /> 현재 서비스 중인 모델이 없습니다. 첫 배포를 진행하세요.</p>
-                      </div>
-                    )}
-                  </section>
-                )}
-
-                {/* 관리 모드: 선택한 버전 상세 + 현재 서비스와 비교 + 롤백 */}
-                {!cmpDone && selVer && (() => {
-                  const sel = models.find(m => m.model_id === selVer)
-                  if (!sel) return null
-                  return (
-                    <section className="ev2-card">
-                      <h4 className="ev2-h">선택 버전 상세 <span className="al-hint">(현재 서비스 모델과 비교)</span></h4>
-                      <div className="verc-grid">
-                        <VerCard tag="현재 서비스 모델" cls="base" id={served?.model_id}
-                                 time={served?.time || served?.applied}
-                                 classes={served?.classes || []} map50={served?.map50} baseSet={new Set()} />
-                        <div className="verc-vs" aria-hidden="true"><IcChevronRight /></div>
-                        <VerCard tag="선택한 버전" cls="new" id={sel.model_id}
-                                 time={sel.time || fmtId(sel.model_id)}
-                                 classes={sel.classes || []} map50={sel.map50}
-                                 baseSet={new Set(served?.classes || [])} highlightNew />
-                      </div>
-                      <div className="verdetail-act">
-                        {sel.is_active
-                          ? <span className="ok-flash"><IcCheck /> 현재 서비스 중인 버전입니다</span>
-                          : <button className="act-btn train" onClick={() => {
-                              if (window.confirm(`이 버전(${sel.time || fmtId(sel.model_id)})으로 롤백할까요? 현재 서비스 모델이 됩니다.`)) doRollbackTo(selVer)
-                            }}>이 버전으로 롤백</button>}
-                      </div>
-                    </section>
-                  )
-                })()}
-
-                {/* 성능 비교(검출 인식률) - 컴팩트 표, 신규 학습이 있을 때만 */}
-                {cmpDone && (
-                <section className="ev2-card">
-                  <h4 className="ev2-h">자동라벨 인식률
-                    <span className="ev2-tip" title="자동 생성 라벨을 정답으로 본 인식률입니다 (기존 모델 → 신규 모델)"><IcInfo /></span>
-                  </h4>
-                  <table className="perf-tbl">
-                    <thead><tr><th>부품군</th><th>기존</th><th></th><th>신규</th><th>변화</th></tr></thead>
-                    <tbody>
-                      <tr>
-                        <td className="perf-name">전체 일반화 <span className="al-hint">기존 {cmp.gen?.n ?? 0}종 · 인식률 유지 여부</span></td>
-                        <td className="perf-v">{pctv(cmp.gen?.before)}</td>
-                        <td className="perf-arr">→</td>
-                        <td className="perf-v new">{pctv(cmp.gen?.after)}</td>
-                        <td className="perf-d">{deltaEl(cmp.gen?.before, cmp.gen?.after)}</td>
-                      </tr>
-                      <tr>
-                        <td className="perf-name">신규 부품 <span className="al-hint">{cmp.newp?.n ?? 0}종 · 신규 학습 인식률</span></td>
-                        <td className="perf-v">{pctv(cmp.newp?.before)}</td>
-                        <td className="perf-arr">→</td>
-                        <td className="perf-v new">{pctv(cmp.newp?.after)}</td>
-                        <td className="perf-d">{deltaEl(cmp.newp?.before, cmp.newp?.after)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </section>
+                    {selVer && (() => {
+                      const sel = models.find(m => m.model_id === selVer)
+                      if (!sel) return null
+                      return (
+                        <section className="ev2-card">
+                          <h4 className="ev2-h">선택 버전 상세 <span className="al-hint">(현재 서비스 모델과 비교)</span></h4>
+                          <div className="verc-grid">
+                            <VerCard tag="현재 서비스 모델" cls="base" id={served?.model_id}
+                                     time={served?.time || served?.applied}
+                                     classes={served?.classes || []} map50={served?.map50} baseSet={new Set()} />
+                            <div className="verc-vs" aria-hidden="true"><IcChevronRight /></div>
+                            <VerCard tag="선택한 버전" cls="new" id={sel.model_id}
+                                     time={sel.time || fmtId(sel.model_id)}
+                                     classes={sel.classes || []} map50={sel.map50}
+                                     baseSet={new Set(served?.classes || [])} highlightNew />
+                          </div>
+                          <div className="verdetail-act">
+                            {sel.is_active
+                              ? <span className="ok-flash"><IcCheck /> 현재 서비스 중인 버전입니다</span>
+                              : <button className="act-btn train" onClick={() => {
+                                  if (window.confirm(`이 버전(${sel.time || fmtId(sel.model_id)})으로 롤백할까요? 현재 서비스 모델이 됩니다.`)) doRollbackTo(selVer)
+                                }}>이 버전으로 롤백</button>}
+                          </div>
+                        </section>
+                      )
+                    })()}
+                  </>
                 )}
               </div>
-
-              {/* 액션(적용·롤백·폐기)은 상단 헤더 우측으로 이동. 여기는 롤백 완료 플래시만 */}
-              {rolledTo && <div className="ev2-footer"><span className="ok-flash"><IcCheck /> #{rolledTo} 롤백됨</span></div>}
             </>
           )}
 

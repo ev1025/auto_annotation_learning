@@ -2,7 +2,7 @@
 """a_test ablation: 모델·라벨수·에포크 축을 각각 독립으로(서로 안 곱함) 학습 → 실측 GT mAP 측정.
 기본값 고정: yolo11s · 100ep · 전체 라벨. 각 축은 한 변수만 변경.
 사용: XR_BASE=$HOME/xr_autolearning CUDA_VISIBLE_DEVICES=3 python scripts/experiments/ablation_atest.py
-결과: results/ablation/a_test/<시각>/results.json · summary.txt · run.log
+결과: results/experiments/ablation/a_test/<시각>/results.json · summary.txt · run.log
 """
 import os, sys, glob, json, time
 from datetime import datetime
@@ -14,7 +14,7 @@ import build_multiclass as bm
 # PART/GT는 환경변수로 바꿔 다른 부품에도 재사용(기본=a_test). OUT은 부품명으로 분리.
 PART = os.environ.get("ABL_PART", "a_test")
 GT_YAML = os.environ.get("ABL_GT", BASE + "/data/bell412/" + PART + "/gt/gt.yaml")
-OUT = BASE + "/results/ablation/" + PART
+OUT = BASE + "/results/experiments/ablation/" + PART
 MODELS = ["yolov8n", "yolov8s", "yolov8m", "yolo11n", "yolo11s", "yolo11m", "yolo26n", "yolo26s", "yolo26m"]
 DEF_MODEL, DEF_EP = "yolo11s", 100
 
