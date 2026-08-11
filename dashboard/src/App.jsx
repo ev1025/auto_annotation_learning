@@ -1208,15 +1208,16 @@ function ConfirmModal({ open, title, message, confirmLabel, danger, onConfirm, o
 
 function PartsApp() {
   const [folders, setFolders] = useState([])
-  const [session, setSession] = useState(null)
+  // F5 복구용: page·job·cmpJob·session을 세션스토리지에서 초기화(같은 탭 새로고침이면 있던 자리로 복원)
+  const [session, setSession] = useState(() => sessionStorage.getItem('xr_session') || null)
   const [labeledMap, setLabeledMap] = useState({})   // {학습영상: {labels,frames}}
   const [trainedVideos, setTrainedVideos] = useState([])   // 기존 모델에 이미 학습된 영상
   const [picked, setPicked] = useState([])           // 선택한 부품(기본 = 선택 없음)
   const [epochs, setEpochs] = useState(100)
-  const [job, setJob] = useState(null)
+  const [job, setJob] = useState(() => sessionStorage.getItem('xr_job') || null)
   const [status, setStatus] = useState(null)
-  const [page, setPage] = useState('label')          // 'label' | 'training' (학습 전용 페이지)
-  const [cmpJob, setCmpJob] = useState(null)
+  const [page, setPage] = useState(() => sessionStorage.getItem('xr_page') || 'label')   // 'label' | 'training' | 'evaluate'
+  const [cmpJob, setCmpJob] = useState(() => sessionStorage.getItem('xr_cmpJob') || null)
   const [cmp, setCmp] = useState(null)               // 신규↔기존 모델 비교(평가) 상태
   const [applied, setApplied] = useState(false)      // 신규 모델 서비스 적용 완료
   const [served, setServed] = useState(null)         // 현재 서비스(기존) 모델 정보
@@ -1328,14 +1329,37 @@ function PartsApp() {
     return () => clearInterval(t)
   }, [cmpJob, cmp?.running])
 
-  // 페이지 재진입: 진행 중인 학습/평가 잡이 있으면 그 잡에 다시 붙어 복구(“이미 실행중” 방지)
+  // 현재 위치·잡을 세션스토리지에 저장 → F5(같은 탭 새로고침) 때 있던 자리로 복원
+  useEffect(() => { sessionStorage.setItem('xr_page', page) }, [page])
+  useEffect(() => { if (job && job !== 'err') sessionStorage.setItem('xr_job', job) }, [job])
+  useEffect(() => { if (cmpJob && cmpJob !== 'err') sessionStorage.setItem('xr_cmpJob', cmpJob) }, [cmpJob])
+  useEffect(() => { if (session) sessionStorage.setItem('xr_session', session) }, [session])
+
+  // 마운트 시 복구: 세션스토리지로 되살린 page/job 에 실제 상태를 다시 붙인다(백엔드 JOBS 가 완료 잡도 보관).
+  // 잡이 소실됐으면(백엔드 재시작 등) 처음(라벨)으로 안전 복귀. 세션 복구가 없으면 실행 중 잡만 재진입.
   useEffect(() => {
-    fetch('/api/sam2/active').then(r => r.json()).then(a => {
-      if (!a || !a.job || !a.running) return
-      if (a.session) setSession(a.session)
-      if (a.kind === 'multiclass') { setJob(a.job); setStatus(a); setPage('training'); loadTrain() }
-      else if (a.kind === 'compare') { setCmpJob(a.job); setCmp(a); setPage('evaluate') }
-    }).catch(() => {})
+    const jb = sessionStorage.getItem('xr_job')
+    const cj = sessionStorage.getItem('xr_cmpJob')
+    if (page === 'training' && jb) {
+      loadTrain()
+      fetch(`/api/sam2/status?job=${jb}`).then(r => r.json())
+        .then(d => { if (d && !d.error) setStatus(d); else { setJob(null); setPage('label') } })
+        .catch(() => { setJob(null); setPage('label') })
+    } else if (page === 'evaluate') {
+      fetch('/api/sam2/served').then(r => r.json()).then(d => setServed(d && !d.none ? d : null)).catch(() => {})
+      fetch('/api/sam2/models').then(r => r.json()).then(d => setModels(d.models || [])).catch(() => {})
+      if (cj) fetch(`/api/sam2/status?job=${cj}`).then(r => r.json())
+        .then(d => { if (d && !d.error) setCmp(d) }).catch(() => {})
+    } else {
+      // 세션 복구 없음(새 탭 등): 다른 곳에서 실행 중인 잡이 있으면 그거라도 재진입
+      fetch('/api/sam2/active').then(r => r.json()).then(a => {
+        if (!a || !a.job || !a.running) return
+        if (a.session) setSession(a.session)
+        if (a.kind === 'multiclass') { setJob(a.job); setStatus(a); setPage('training'); loadTrain() }
+        else if (a.kind === 'compare') { setCmpJob(a.job); setCmp(a); setPage('evaluate') }
+      }).catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadTrain])
 
   // 산입 카운터 부드럽게 세어 올리기: 백엔드 스캔이 순식간에 끝나 0→N으로 튀어도, 화면은 1→N 으로 climbing.
