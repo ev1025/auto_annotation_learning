@@ -132,8 +132,8 @@ def gt_yaml_for(part, rundir):
     """서버경로 무관하게 GT yaml 을 이 실행 기준 절대경로로 재생성(원본 gt.yaml 의 Windows 절대경로 무시)."""
     gt_dir = os.path.join(BASE, "data", "bell412", part, "gt")
     y = os.path.join(rundir, f"gt_{part}.yaml")
-    with open(y, "w", encoding="utf-8") as f:
-        f.write(f"path: {gt_dir}\nval:\n  - images\nnames:\n  0: {part}\n")
+    with open(y, "w", encoding="utf-8") as f:   # ultralytics 8.4는 train·val 키 둘 다 요구(평가는 val 만 사용)
+        f.write(f"path: {gt_dir}\ntrain:\n  - images\nval:\n  - images\nnames:\n  0: {part}\n")
     return y
 
 
