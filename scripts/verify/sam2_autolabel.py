@@ -108,21 +108,15 @@ def mask_preview(src, frame_idx, points):
     for rx, ry, lab in points:   # 마스크가 초록이라 부품점은 파랑(BGR), 제외점은 빨강
         cv2.circle(vis, (int(rx * w), int(ry * h)), r, (255, 60, 0) if lab else (0, 0, 255), -1)
         cv2.circle(vis, (int(rx * w), int(ry * h)), r, (255, 255, 255), ew)
-    # 오탐 판정: 포함점(fg)이 퍼진 범위보다 마스크 박스가 '훨씬' 크면 배경까지 먹은 것(과포착).
-    # 사람은 부품 안쪽에 점 몇 개만 찍어 박스가 탭범위보다 원래 좀 크므로, 6배 초과일 때만 경고.
-    fg = [(rx * w, ry * h) for rx, ry, lab in points if int(lab) == 1]
-    verdict = "ok"
-    if bb:
-        box_area = max((bb[2] - bb[0]) * (bb[3] - bb[1]), 1)
-        if len(fg) >= 2:
-            txs = [p[0] for p in fg]; tys = [p[1] for p in fg]
-            tap_area = max((max(txs) - min(txs)) * (max(tys) - min(tys)), 1.0)
-            if box_area > tap_area * 6:                 # 탭 범위의 6배 초과 = 과포착
-                verdict = "over"
-        elif float(m.sum()) / (w * h) > 0.6:            # 점 1개면 범위가 없어 프레임 60%로 판단
-            verdict = "over"
-    else:
+    # 과포착 판정: 마스크가 프레임의 절반 넘게 덮으면 배경까지 먹은 것. 탭 점 간격은 신뢰불가
+    # (사람은 부품 안쪽에 점 몇 개만 가까이 찍으므로) → 프레임 대비 마스크 '면적'으로만 판단.
+    area_frac = float(m.sum()) / (w * h)
+    if not bb:
         verdict = "empty"
+    elif area_frac > 0.5:                               # 마스크가 프레임 절반 초과 = 배경까지 먹음(과포착)
+        verdict = "over"
+    else:
+        verdict = "ok"
     gc.collect(); torch.cuda.empty_cache()
     return {"combo": _b64(vis), "area_frac": round(float(m.sum()) / (w * h), 4), "bbox": bb, "verdict": verdict}
 
@@ -281,16 +275,18 @@ def _draw_pred(im, r):
     return confs
 
 
-def _propagate_into(video, shots, pi, pl, box_d, ref_d):
-    """영상 하나를 SAM2 전파 → train/train_box/tap 에 '영상stem_프레임' 이름으로 통합 저장. 라벨수 반환.
-    video = 부품경로 키(bell412/<부품>/videos/<stem>) 또는 stem. 파일명 접두어는 항상 stem(슬래시 방지)."""
+def _propagate_into(video, shots, labels_dir, boxs_dir):
+    """영상 하나를 SAM2 전파 → labels_dir 에 <stem>_<frame>.txt(YOLO 라벨),
+    boxs_dir 에 탭점+박스 확인 이미지. 프레임 이미지는 이미 autolabels/images/<stem>/ 캐시에 있으므로
+    복사하지 않는다(_frame_cache 폐지·중복 제거). 라벨수·전체프레임수 반환.
+    파일명 접두어는 항상 stem(슬래시 방지). 라벨 <stem>_<frame> ↔ 이미지 images/<stem>/<frame>.jpg 로 짝."""
     from sam2.build_sam import build_sam2_video_predictor
     vp = autolabel.resolve_video(video)
     if not vp:
         raise RuntimeError(f"영상을 찾지 못함: {video}")
-    stem = vp.stem                                     # 파일명 접두어(부품 폴더 안에서 유니크)
+    stem = vp.stem
     fs = autolabel._frames(video)
-    cache_dir = autolabel.frames_dir_for(video)        # 부품별 프레임 캐시(부품경로 기반)
+    cache_dir = autolabel.frames_dir_for(video)        # = autolabels/<부품>/images/<stem> (전 프레임)
     predictor = build_sam2_video_predictor(CFG, str(CKPT), device=DEV)
     h, w = _rd(fs[0]).shape[:2]
     with torch.inference_mode(), torch.autocast(DEV, dtype=torch.bfloat16):
@@ -305,7 +301,24 @@ def _propagate_into(video, shots, pi, pl, box_d, ref_d):
             m = logits[0].cpu().numpy(); masks[fidx] = (m[0] if m.ndim == 3 else m) > 0.0
     del predictor, state; free_sam2()
 
-    for fi, pts in shots:   # tap: 탭 프레임에 점+마스크+박스 한 장에
+    n = 0
+    for i, p in enumerate(fs):
+        mk = masks.get(i)
+        if mk is not None and mk.shape != (h, w):
+            mk = cv2.resize(mk.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool)
+        bb = _bbox(mk) if mk is not None else None
+        nm = f"{stem}_{p.stem}"   # 영상stem_번호 → 라벨/boxs 한 폴더에 통합해도 안 겹침
+        if bb and (bb[2] - bb[0]) > 10 and (bb[3] - bb[1]) > 10:
+            cx, cy = (bb[0] + bb[2]) / 2 / w, (bb[1] + bb[3]) / 2 / h
+            bw, bh = (bb[2] - bb[0]) / w, (bb[3] - bb[1]) / h
+            (labels_dir / f"{nm}.txt").write_text(f"0 {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}\n", encoding="utf-8")
+            boxed = _rd(p).copy()                       # 박스 확인 이미지(라벨된 전 프레임)
+            cv2.rectangle(boxed, (bb[0], bb[1]), (bb[2], bb[3]), (0, 165, 255), 3)
+            cv2.putText(boxed, "part", (bb[0], max(bb[1] - 6, 16)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
+            cv2.imwrite(str(boxs_dir / f"{nm}.jpg"), boxed)
+            n += 1
+
+    for fi, pts in shots:   # 탭 프레임: 점+마스크+박스 더 자세히(박스뷰 위에 덮어써 확인성↑)
         mk = masks.get(int(fi)); base = _rd(fs[int(fi)]); has = mk is not None and mk.shape == (h, w)
         vis = _overlay(base, mk) if has else base
         bb = _bbox(mk) if has else None
@@ -314,26 +327,7 @@ def _propagate_into(video, shots, pi, pl, box_d, ref_d):
         for rx, ry, lab in pts:
             cv2.circle(vis, (int(rx * w), int(ry * h)), 10, (255, 60, 0) if lab else (0, 0, 255), -1)
             cv2.circle(vis, (int(rx * w), int(ry * h)), 10, (255, 255, 255), 2)
-        cv2.imwrite(str(ref_d / f"{stem}_{Path(fs[int(fi)]).stem}.jpg"), vis)
-
-    n = 0
-    for i, p in enumerate(fs):
-        mk = masks.get(i); im = _rd(p)
-        if mk is not None and mk.shape != (h, w):
-            mk = cv2.resize(mk.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool)
-        bb = _bbox(mk) if mk is not None else None
-        nm = f"{stem}_{p.stem}"   # 영상stem_번호 → 한 폴더에 통합해도 안 겹침
-        if bb and (bb[2] - bb[0]) > 10 and (bb[3] - bb[1]) > 10:
-            cv2.imwrite(str(pi / f"{nm}.jpg"), im)
-            cx, cy = (bb[0] + bb[2]) / 2 / w, (bb[1] + bb[3]) / 2 / h
-            bw, bh = (bb[2] - bb[0]) / w, (bb[3] - bb[1]) / h
-            (pl / f"{nm}.txt").write_text(f"0 {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}\n", encoding="utf-8")
-            if box_d is not None:                 # box(확인용) 저장은 선택. 영속 저장소에는 생략(None) 가능.
-                boxed = im.copy()
-                cv2.rectangle(boxed, (bb[0], bb[1]), (bb[2], bb[3]), (0, 165, 255), 3)
-                cv2.putText(boxed, "part", (bb[0], max(bb[1] - 6, 16)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
-                cv2.imwrite(str(box_d / f"{nm}.jpg"), boxed)
-            n += 1
+        cv2.imwrite(str(boxs_dir / f"{stem}_{Path(fs[int(fi)]).stem}.jpg"), vis)
     return n, len(fs)
 
 
@@ -458,12 +452,10 @@ def job_status(jid):
 # ==================== 멀티클래스 부품 라벨링 (장비별 위저드) ====================
 # 여러 부품 영상을 한 세션 폴더(results/parts/<세션>/)에 누적. 파일명=<영상>_<프레임>.
 # 부품 하나씩: 탭 → 라벨 생성(전파) → 다음 부품. 다 모으면 34클래스로 통합 학습.
-PARTS_ROOT = RESULTS / "parts"
-MODELS_DIR = PARTS_ROOT / "_models"   # 학습 모델 등록소(시각·품목명 보관, 최근 10개만 유지)
-
+# 학습 run = results/<시각>/ (model/·pred/·<부품>/·meta.json). 옛 results/parts/{_models,_active} 폐지.
 # 개발자용 상세 로그(백그라운드 작업 추적): 회전 파일 + 타임스탬프 + 전체 트레이스백.
 # 사용자용 친절 로그(job["log"], 프론트 터미널)와 분리 저장.
-LOG_DIR = PARTS_ROOT / "_logs"
+LOG_DIR = RESULTS / "_logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 logger = logging.getLogger("xr.parts")
 if not logger.handlers:
@@ -499,15 +491,17 @@ def _part_root_for_video(video):
 
 
 def _autolabel_store(video):
-    """영상(부품경로 키/stem) → 그 부품 영속 저장소 경로 dict {root,images,labels,masks}."""
-    base = _part_root_for_video(video) / "autolabel"
-    return {"root": base, "images": base / "images", "labels": base / "labels", "masks": base / "masks"}
+    """영상(부품경로 키/stem) → 그 부품 영속 오토라벨 저장소 dict.
+    results/autolabels/<부품>/{images/<stem>/, labels, boxs} (영속 = '라벨됨' 유지).
+    images 는 프레임 저장소(전 프레임, autolabel.cache_dir_of 와 동일 트리)를 겸한다 = _frame_cache 폐지."""
+    base = autolabel.AUTOLABELS / _part_root_for_video(video).name
+    return {"root": base, "images": base / "images", "labels": base / "labels", "boxs": base / "boxs"}
 
 
 def _store_for_part(part):
-    """부품 폴더명 → 그 부품 영속 저장소 경로 dict. (검수 썸네일/삭제에서 part 를 알 때 유니크)."""
-    base = DATA_BELL / part / "autolabel"
-    return {"root": base, "images": base / "images", "labels": base / "labels", "masks": base / "masks"}
+    """부품 폴더명 → 그 부품 영속 저장소 dict. (검수 썸네일/삭제에서 part 를 알 때 유니크)."""
+    base = autolabel.AUTOLABELS / part
+    return {"root": base, "images": base / "images", "labels": base / "labels", "boxs": base / "boxs"}
 
 
 def _store_for_frame(name):
@@ -518,8 +512,8 @@ def _store_for_frame(name):
 def _persist_videos():
     """부품별 영속 저장소를 스캔 → {영상stem: {labels, frames}}. 프론트 labeledMap 재료(세션 무관 통합)."""
     videos = {}
-    if DATA_BELL.exists():
-        for lbl_dir in DATA_BELL.glob("*/autolabel/labels"):
+    if autolabel.AUTOLABELS.exists():
+        for lbl_dir in autolabel.AUTOLABELS.glob("*/labels"):
             for tp in lbl_dir.glob("*.txt"):
                 v = _video_stem(tp.name)
                 d = videos.setdefault(v, {"labels": 0, "frames": 0})
@@ -548,10 +542,9 @@ def parts_sessions():
 
 
 def _clear_video(store, video):
-    """이 영상의 기존 라벨/이미지/마스크 제거(재탭 반영). 부품 저장소 안에서 <영상>_* 만 지운다."""
-    for g in (store["images"].glob(f"{video}_*.jpg"),
-              store["labels"].glob(f"{video}_*.txt"),
-              store["masks"].glob(f"{video}_*.jpg")):
+    """재탭 반영: 그 영상(stem)의 기존 라벨·boxs 만 제거. 프레임 이미지(images/<stem> 캐시)는 재사용하므로 보존."""
+    for g in (store["labels"].glob(f"{video}_*.txt"),
+              store["boxs"].glob(f"{video}_*.jpg")):
         for f in list(g):
             f.unlink()
 
@@ -587,9 +580,9 @@ def _save_shots(video, shots):
 def load_shots():
     """모든 부품 shots.json 취합 → {"<영상stem>": {"<프레임>": [[rx,ry,lab],...]}}. 프론트 참조샷 복원용."""
     out = {}
-    if not DATA_BELL.exists():
+    if not autolabel.AUTOLABELS.exists():
         return out
-    for fp in sorted(DATA_BELL.glob("*/autolabel/shots.json")):
+    for fp in sorted(autolabel.AUTOLABELS.glob("*/shots.json")):
         try:
             data = json.loads(fp.read_text(encoding="utf-8"))
         except Exception:
@@ -611,14 +604,14 @@ def _run_parts_label(job_id, session, video, shots):
             raise RuntimeError(f"영상을 찾지 못함: {video}")
         stem = vp.stem
         store = _autolabel_store(video)
-        pi, pl, mk_d = store["images"], store["labels"], store["masks"]
-        for d in (pi, pl, mk_d):
+        pl, boxs = store["labels"], store["boxs"]
+        for d in (pl, boxs, store["images"]):
             d.mkdir(parents=True, exist_ok=True)
         j.update(stage="propagate", note=f"{stem} 라벨 생성 중")
-        _clear_video(store, stem)                  # 재탭이면 이 영상분(stem_*)만 새로
-        n, tot = _propagate_into(video, shots, pi, pl, None, mk_d)   # box 생략, masks=tap 시각화
+        _clear_video(store, stem)                  # 재탭이면 이 영상분(stem_*)만 새로(라벨·boxs)
+        n, tot = _propagate_into(video, shots, pl, boxs)
         _save_shots(video, shots)                  # 참조샷(탭 포인트) 영속 저장 → 재접속·타 브라우저 복원
-        taps = [_b64(_rd(p), w=520) for p in sorted(mk_d.glob(f"{stem}_*.jpg"))][:6]
+        taps = [_b64(_rd(p), w=520) for p in sorted(boxs.glob(f"{stem}_*.jpg"))][:6]
         j.update(stage="done", running=False, video=stem, labels=n, frames=tot,
                  session=PERSIST, taps=taps)
     except Exception as e:
@@ -659,12 +652,12 @@ def _run_parts_label_batch(job_id, session, items):
                 continue
             stem = vp.stem
             store = _autolabel_store(video)
-            pi, pl, mk_d = store["images"], store["labels"], store["masks"]
-            for d in (pi, pl, mk_d):
+            pl, boxs = store["labels"], store["boxs"]
+            for d in (pl, boxs, store["images"]):
                 d.mkdir(parents=True, exist_ok=True)
             j.update(stage="propagate", note=f"{k}/{total} · {stem}", done=k - 1, total=total)
             _clear_video(store, stem)
-            n, tot = _propagate_into(video, shots, pi, pl, None, mk_d)
+            n, tot = _propagate_into(video, shots, pl, boxs)
             _save_shots(video, shots)              # 참조샷 영속 저장(부품별 shots.json)
             results.append({"video": stem, "labels": n, "frames": tot})
         j.update(stage="done", running=False, session=PERSIST, done=total, total=total, results=results)
@@ -757,7 +750,7 @@ def _synth_augment(oi, ol, logln, n_syn=400):
     free_sam2()
     if not cuts:
         logln("누끼 대상 없음 → 배경 합성 증강 생략", "info"); return 0
-    logln(f"누끼 {len(cuts)}개 → 실배경 합성 {n_syn}장 생성", "info")
+    logln(f"누끼 {len(cuts)}개 → 배경 합성 증강 생성 중...", "info")
 
     # 2) 합성: 배경에 1~2개 랜덤 붙여넣기(회전·스케일), 멀티클래스 라벨 기록
     made = 0
@@ -798,25 +791,35 @@ def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None, augme
         logger.log(logging.ERROR if level == "err" else logging.INFO, f"[multiclass:{job_id}] {msg}")
 
     try:
-        session = PERSIST                          # 입력=부품별 영속 저장소, 출력=results/parts/autolabel 로 통일
+        runid = datetime.now().strftime("%y%m%d_%H%M%S")   # 이 학습 run = results/<시각>/
+        session = runid
+        sess = RESULTS / runid
         sys.path.insert(0, str(config.BASE_DIR / "scripts" / "experiments"))
         import build_multiclass as bm
         names, name2idx = bm.load_classes()
-        sess = PARTS_ROOT / session
-        # 학습 입력 = 부품별 영속 저장소(data/bell412/<부품>/autolabel/images). 실험폴더(train) 아님.
-        store_imgs = sorted(p for d in sorted(DATA_BELL.glob("*/autolabel/images")) for p in d.glob("*.jpg"))
-        if not store_imgs:
+        # 학습 입력 = 부품별 영속 오토라벨(results/autolabels/<부품>/labels/<stem>_<frame>.txt).
+        # 이미지는 results/autolabels/<부품>/images/<stem>/<frame>.jpg (프레임캐시 겸용).
+        store_lbls = sorted(p for d in sorted(autolabel.AUTOLABELS.glob("*/labels")) for p in d.glob("*.txt"))
+        if not store_lbls:
             raise RuntimeError("오토라벨 라벨이 없습니다. 부품을 먼저 탭·라벨 생성하세요.")
 
-        # 1) 클래스 매핑 통합
+        def _part_of_label(lp):     # results/autolabels/<부품>/labels/<file> → 부품폴더명
+            return lp.parent.parent.name
+
+        def _img_of_label(lp):      # 라벨 <video>_<frame> → 이미지 images/<video>/<frame>.jpg
+            ls = lp.stem
+            video = _video_stem(ls)
+            frame = ls[len(video) + 1:]
+            return lp.parent.parent / "images" / video / f"{frame}.jpg"
+
+        # 1) 클래스 매핑 통합 (학습 입력 스테이징 = results/<시각>/train)
         j.update(stage="build", note="라벨 클래스 매핑 통합")
         logln("라벨 클래스 매핑 통합 중...", "info")
-        out = sess / "multiclass"
-        oi, ol = out / "images", out / "labels"
+        oi, ol = sess / "train" / "images", sess / "train" / "labels"
         oi.mkdir(parents=True, exist_ok=True); ol.mkdir(parents=True, exist_ok=True)
         sel = set(only_classes) if only_classes else None    # 선택한 클래스만 학습(없으면 전체)
         # 망각 방지(리플레이): 부분 선택 시에도 현재 서비스 모델이 가진 기존 부품을 자동 포함.
-        # 매 학습이 from-scratch라, 신규만 고르면 기존을 잊는다. 세션에 남아있는 기존 라벨을 함께 학습.
+        # 매 학습이 from-scratch라, 신규만 고르면 기존을 잊는다.
         replay = set()
         if sel is not None:
             sv = served_model()
@@ -827,42 +830,38 @@ def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None, augme
                     logln(f"망각 방지: 기존 서비스 모델 부품 {len(replay)}종을 학습에 자동 포함", "info")
         per, miss = {}, {}
         input_cnt = 0        # 선택한 클래스의 자동생성 라벨(입력 데이터) 총수
-        drop_nolabel = 0     # 라벨 파일 없음으로 산입 제외
+        drop_noimg = 0       # 대응 이미지 없음으로 산입 제외
         drop_empty = 0       # 빈 라벨(유효 박스 없음)로 산입 제외
-        imgs = store_imgs
-        if sel is not None:   # 선택한 부품만 산입 대상 → 진행바 분모도 선택분만(전체 1206 아님)
-            imgs = [p for p in store_imgs if re.sub(r"\s+", "_", p.parent.parent.parent.name.lower()) in sel]
-        n_total = len(imgs)
+        lbls = store_lbls
+        if sel is not None:   # 선택한 부품만 산입 대상 → 진행바 분모도 선택분만
+            lbls = [p for p in store_lbls if re.sub(r"\s+", "_", _part_of_label(p).lower()) in sel]
+        n_total = len(lbls)
         j.update(ingest_total=n_total, ingest_done=0)         # 산입 진행바(선택 부품 기준)
-        # 1차 스캔: 유효 라벨이 있는 이미지를 부품별로 수집(파일 기록은 재색인 뒤 2차에서).
-        # classes.txt 전역(35종)을 그대로 모델 클래스공간으로 쓰면, 학습하지 않은 부품(예: split_gearbox)의
-        # 출력 뉴런이 남아 검출평가에서 엉뚱한 부품을 오검출로 내뱉는다. → 실제 학습되는 부품만 0..N-1로 재색인.
-        staged = []          # [(원본이미지경로, stem, 부품클래스, [박스4값,...]), ...]
-        for k, ip in enumerate(imgs, 1):
+        # 1차 스캔: 부품별 라벨 수집. 부품 판정 = 라벨이 놓인 부품 폴더명(파일명 아님 → 안 꼬임).
+        # classes.txt 전역을 그대로 쓰면 미학습 부품 뉴런이 남아 오검출 → 실제 학습 부품만 0..N-1 재색인.
+        staged = []          # [(이미지경로, stem, 부품클래스, [박스4값,...]), ...]
+        for k, lp in enumerate(lbls, 1):
             if k % 20 == 0 or k == n_total:
                 j.update(ingest_done=k)                       # 산입 진행 실시간 갱신
-            stem = ip.stem
-            # 부품 판정 = 라벨이 놓인 부품 폴더명(data/bell412/<부품>/autolabel/images/<file>).
-            # 파일명(stem_to_class) 대신 폴더로 직접 → 같은 이름 영상이 다른 부품에 있어도 클래스 안 꼬임.
-            part = ip.parent.parent.parent.name
+            part = _part_of_label(lp)
             cls = re.sub(r"\s+", "_", part.lower())
             if sel is not None and cls not in sel:
-                continue                                     # 선택 안 한 클래스 → 입력 집계 제외
+                continue
             input_cnt += 1
             if cls not in name2idx:
                 miss[cls] = miss.get(cls, 0) + 1; continue   # classes.txt 미등록 → 산입 실패
-            lp = ip.parent.parent / "labels" / f"{stem}.txt"   # <부품>/autolabel/labels
-            if not lp.exists():
-                drop_nolabel += 1; continue                  # 라벨 없음 → 산입 실패
+            ip = _img_of_label(lp)
+            if not ip.exists():
+                drop_noimg += 1; continue                    # 대응 프레임 이미지 없음 → 산입 실패
             boxes = [p[1:5] for p in (l.split() for l in lp.read_text(encoding="utf-8").splitlines()) if len(p) == 5]
             if not boxes:
                 drop_empty += 1; continue                    # 빈 라벨 → 산입 실패
-            staged.append((ip, stem, cls, boxes))
+            staged.append((ip, lp.stem, cls, boxes))
             per[cls] = per.get(cls, 0) + 1
         # 압축 클래스공간: 실제 학습되는 부품만 정렬해 0..N-1 로 재색인(모델 nc = 학습 부품 수)
         train_names = sorted(per.keys())
         cidx = {c: i for i, c in enumerate(train_names)}
-        for ip, stem, cls, boxes in staged:                   # 2차: 재색인한 인덱스로 이미지·라벨 기록
+        for ip, stem, cls, boxes in staged:                   # 2차: 재색인 인덱스로 이미지·라벨 기록(<stem>=<video>_<frame>)
             shutil.copy(ip, oi / f"{stem}.jpg")
             (ol / f"{stem}.txt").write_text(
                 "\n".join(f"{cidx[cls]} {b[0]} {b[1]} {b[2]} {b[3]}" for b in boxes) + "\n",
@@ -880,10 +879,10 @@ def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None, augme
         learn_rate = round(n_img / input_cnt * 100, 1) if input_cnt else 0.0
         j.update(input_total=input_cnt, ingested=n_img, learn_rate=learn_rate)
         # 학습률 로그는 학습 완료 후에 출력(산입 + 1 Epoch 완료가 확정돼야 학습률로 성립)
-        yml = out / "data.yaml"
+        yml = sess / "train" / "data.yaml"
         nb = "\n".join(f"  {i}: {n}" for i, n in enumerate(names))
         d = oi.resolve().as_posix()
-        yml.write_text(f"path: {out.resolve().as_posix()}\ntrain:\n  - {d}\nval:\n  - {d}\nnames:\n{nb}\n",
+        yml.write_text(f"path: {(sess / 'train').resolve().as_posix()}\ntrain:\n  - {d}\nval:\n  - {d}\nnames:\n{nb}\n",
                        encoding="utf-8")
 
         # 1.5) (opt-in) 배경 합성 증강: 누끼 → 실배경 copy-paste 로 학습셋 보강(배경 과적합 완화)
@@ -897,7 +896,7 @@ def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None, augme
         j.update(stage="train", note=f"{n_img}장 / {len(per)}클래스", n_images=n_img,
                  n_augmented=n_aug, n_classes=len(per), epoch=0, total_epochs=epochs)
         logln(f"YOLO 학습 시작 (epochs={epochs}, imgsz=640, batch=8, device=0)", "info")
-        model_dir = out / "model"
+        model_dir = sess / "model"
         model = YOLO(config.PRETRAINED)
         bpe = max(1, (n_img + 7) // 8)      # 에폭당 배치 수(batch=8)
         total_batches = bpe * epochs
@@ -979,7 +978,9 @@ def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None, augme
             done_frames = 0
             for ts in test_srcs:
                 fs = autolabel._frames(ts)
-                outd = model_dir / "eval" / ts
+                vp_ts = autolabel.resolve_video(ts)          # 예측 결과 = results/<시각>/<부품>/pred (꼬인 eval 경로 정리)
+                part = autolabel.part_root_of(vp_ts).name if vp_ts else re.sub(r"[\\/]", "_", str(ts))
+                outd = sess / "pred" / part
                 outd.mkdir(parents=True, exist_ok=True)
                 hit, confs, cls_cnt = 0, [], {}
                 for p in fs:
@@ -1009,56 +1010,35 @@ def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None, augme
                 j.update(eval_done=len(eval_res), eval_frac=done_frames / total_frames)
             del det; gc.collect(); torch.cuda.empty_cache()
 
-        # 모델 등록소(_models): 파일명 = 훈련 시각(YYYYMMDD_HHMMSS). .pt/.onnx/.json, 최근 10개만 유지
+        # 모델 버전 = 이 run 폴더(results/<시각>). best.pt·onnx → model/, 기록·지표 → meta.json.
         now = datetime.now()
-        model_id = now.strftime("%Y%m%d_%H%M%S")
+        model_id = runid                              # 버전 id = 시각 폴더명(results/<시각>)
         parts_list = sorted(per.keys())
         parts_short = ", ".join(parts_list[:3]) + (f" 외 {len(parts_list) - 3}개" if len(parts_list) > 3 else "")
         label = f"{now.strftime('%Y-%m-%d %H:%M')} · {len(per)}종 · {parts_short}"
-        MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        reg_pt = MODELS_DIR / f"{model_id}.pt"
+        model_dir.mkdir(parents=True, exist_ok=True)
+        reg_pt = model_dir / "best.pt"
         shutil.copy(w1, reg_pt)
-        logln(f"모델 저장: {model_id}.pt", "ok")
+        logln(f"모델 저장: {runid}/model/best.pt", "ok")
         reg_onnx = None
         if onnx_src and Path(onnx_src).exists():
-            reg_onnx = MODELS_DIR / f"{model_id}.onnx"
+            reg_onnx = model_dir / "model.onnx"
             shutil.copy(onnx_src, reg_onnx)
-            logln(f"ONNX 변환 완료: {model_id}.onnx", "ok")
-        eval_meta = [{k: r[k] for k in ("src", "frames", "detected", "rate", "mean_conf", "top_classes")} for r in eval_res]
-        info = {"model_id": model_id, "label": label, "time": now.strftime("%Y-%m-%d %H:%M:%S"),
-                "classes": parts_list, "n_classes": len(per), "n_images": n_img, "learn_rate": learn_rate,
-                "session": session, "weights": str(reg_pt), "onnx": str(reg_onnx) if reg_onnx else None,
-                "curve": j.get("curve", []), "log": j.get("log", []), "eval": eval_meta}
-        (MODELS_DIR / f"{model_id}.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
-        try:   # 등록소에 보관했으니 학습 산출(runs) 가중치 원본은 삭제(디스크 절약)
-            shutil.rmtree(w1.parent, ignore_errors=True)
+            logln("ONNX 변환 완료", "ok")
+        try:   # YOLO 학습 runs 원본(대용량) 삭제 — best.pt 복사본만 유지
+            shutil.rmtree(model_dir / "runs", ignore_errors=True)
         except Exception:
             pass
-        # 최근 10개만 유지. 단 현재 서비스(active) 모델은 10개 밖이어도 파기 금지(롤백 대상 보존).
-        protected = set()
-        aj = ACTIVE_DIR / "active.json"
-        if aj.exists():
-            try:
-                protected.add(json.loads(aj.read_text(encoding="utf-8")).get("model_id"))
-            except Exception:
-                pass
-        ids = sorted({p.stem for p in MODELS_DIR.glob("*.pt")}, reverse=True)
-        for old in ids[10:]:
-            if old in protected:
-                logger.info(f"[prune] 서비스 중 모델 보존(파기 제외): {old}")
-                continue
-            for ext in (".pt", ".onnx", ".json"):
-                (MODELS_DIR / f"{old}{ext}").unlink(missing_ok=True)
-            logger.info(f"[prune] 오래된 모델 파기: {old}")
-
-        meta = {"session": session, "model_id": model_id, "label": label,
-                "n_images": n_img, "n_classes": len(per), "per_class": per,
-                "classes": names, "weights": str(reg_pt), "onnx": str(reg_onnx) if reg_onnx else None,
-                "miss": miss, "input_total": input_cnt, "learn_rate": learn_rate, "curve": j.get("curve", []),
-                "time": now.strftime("%Y-%m-%d %H:%M:%S"), "eval": eval_meta}
-        (out / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        eval_meta = [{k: r[k] for k in ("src", "frames", "detected", "rate", "mean_conf", "top_classes")} for r in eval_res]
+        meta = {"run": True, "model_id": model_id, "label": label, "time": now.strftime("%Y-%m-%d %H:%M:%S"),
+                "session": runid, "classes": parts_list, "n_classes": len(per), "per_class": per,
+                "n_images": n_img, "learn_rate": learn_rate, "input_total": input_cnt, "miss": miss,
+                "weights": str(reg_pt), "onnx": str(reg_onnx) if reg_onnx else None,
+                "curve": j.get("curve", []), "log": j.get("log", []), "eval": eval_meta}
+        (sess / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        _prune_runs(keep=10)                          # 오래된 run 정리(현재 서비스 버전은 보호)
         logln("전체 완료", "ok")
-        j.update(stage="done", running=False, session=session, model_id=model_id, label=label,
+        j.update(stage="done", running=False, session=runid, model_id=model_id, label=label,
                  weights=str(reg_pt), onnx=str(reg_onnx) if reg_onnx else None,
                  n_images=n_img, n_classes=len(per), per_class=per, eval=eval_res, miss=miss)
     except Exception as e:
@@ -1095,7 +1075,8 @@ def cancel_multiclass(job):
 
 
 # ==================== 3단계: 모델 평가·적용 (A/B 비교 → 서비스 적용/롤백) ====================
-ACTIVE_DIR = PARTS_ROOT / "_active"          # 현재 서비스(active) 모델 보관
+SERVED_PTR = RESULTS / "_served.json"        # 현재 서비스 모델 포인터 {"run": "<시각>"}
+_RUN_RE = re.compile(r"^\d{6}_\d{6}$")       # 학습 run 폴더명 = YYMMDD_HHMMSS
 _ACTIVE = {"job": None, "kind": None, "session": None}   # 현재 진행 중인 학습/평가 잡(재진입 복구용)
 
 
@@ -1118,103 +1099,106 @@ def _last_map50(curve):
     return None
 
 
-def _model_info(model_id):
-    """등록소(_models) 모델 1개 메타(버전 히스토리·롤백용)."""
-    jp = MODELS_DIR / f"{model_id}.json"
-    if not jp.exists():
+def _run_dirs():
+    """results/ 아래 학습 run 폴더(최신순). meta.json 있는 시각(YYMMDD_HHMMSS) 폴더만."""
+    if not RESULTS.exists():
+        return []
+    ds = [d for d in RESULTS.iterdir() if d.is_dir() and _RUN_RE.match(d.name) and (d / "meta.json").exists()]
+    return sorted(ds, key=lambda d: d.name, reverse=True)
+
+
+def _run_meta(runid):
+    mp = RESULTS / str(runid) / "meta.json"
+    if not runid or not mp.exists():
         return None
     try:
-        return json.loads(jp.read_text(encoding="utf-8"))
+        return json.loads(mp.read_text(encoding="utf-8"))
     except Exception:
         return None
 
 
+def _latest_run():
+    ds = _run_dirs()
+    return ds[0].name if ds else None
+
+
+def _served_runid():
+    if SERVED_PTR.exists():
+        try:
+            return json.loads(SERVED_PTR.read_text(encoding="utf-8")).get("run")
+        except Exception:
+            return None
+    return None
+
+
+def _set_served(runid):
+    SERVED_PTR.write_text(json.dumps(
+        {"run": runid, "applied": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
+        ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _prune_runs(keep=10):
+    """오래된 run 폴더 정리. 현재 서비스(served) run 은 10개 밖이어도 보호."""
+    served = _served_runid()
+    for d in _run_dirs()[keep:]:
+        if d.name == served:
+            continue
+        shutil.rmtree(d, ignore_errors=True)
+        logger.info(f"[prune] 오래된 run 파기: {d.name}")
+
+
+def _model_info(model_id):
+    """run(model_id=<시각>) 1개 메타(버전 히스토리·롤백용)."""
+    return _run_meta(model_id)
+
+
 def served_model():
-    """현재 서비스 중인 모델(_active). 없으면 자동탭 baseline으로 폴백. 둘 다 없으면 None."""
-    ap, aj = ACTIVE_DIR / "best.pt", ACTIVE_DIR / "active.json"
-    if ap.exists() and aj.exists():
-        m = json.loads(aj.read_text(encoding="utf-8"))
+    """현재 서비스 중인 모델 = _served.json 이 가리키는 run. 없으면 None."""
+    runid = _served_runid()
+    m = _run_meta(runid) if runid else None
+    if m and Path(m.get("weights", "")).exists():
         cls = m.get("classes", [])
-        mid = m.get("model_id")
-        info = _model_info(mid) if mid else None
-        return {"weights": str(ap), "classes": cls, "n_classes": len(cls), "label": m.get("label", ""),
-                "session": m.get("session", ""), "applied": m.get("applied", ""), "model_id": mid,
-                "time": (info or {}).get("time", m.get("applied", "")),
-                "map50": _last_map50((info or {}).get("curve")),
-                "gen_rate": (info or {}).get("gen_rate"), "newp_rate": (info or {}).get("newp_rate")}
-    bp = PARTS_ROOT / "auto_baseline" / "multiclass" / "meta.json"
-    if bp.exists():
-        m = json.loads(bp.read_text(encoding="utf-8"))
-        w = m.get("weights")
-        if w and Path(w).exists():
-            cls = list(m.get("per_class", {}).keys())
-            return {"weights": w, "classes": cls, "n_classes": len(cls),
-                    "label": f"자동탭 baseline ({len(cls)}종)", "session": "auto_baseline", "applied": "",
-                    "model_id": m.get("model_id"), "time": m.get("time", ""), "map50": _last_map50(m.get("curve"))}
+        return {"weights": m["weights"], "classes": cls, "n_classes": len(cls),
+                "label": m.get("label", ""), "session": runid, "applied": runid, "model_id": runid,
+                "time": m.get("time", ""), "map50": _last_map50(m.get("curve")),
+                "gen_rate": m.get("gen_rate"), "newp_rate": m.get("newp_rate")}
     return None
 
 
 def list_models():
-    """등록소(_models) 버전 목록(최신순) — 버전 히스토리·선택형 롤백 UI 재료."""
-    served = served_model() or {}
-    active_mid = served.get("model_id")
+    """run 버전 목록(최신순) — 버전 히스토리·선택형 롤백 UI 재료."""
+    active_mid = _served_runid()
     out = []
-    for jp in sorted(MODELS_DIR.glob("*.json"), reverse=True):
-        try:
-            info = json.loads(jp.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        mid = info.get("model_id") or jp.stem
+    for d in _run_dirs():
+        info = _run_meta(d.name) or {}
+        mid = info.get("model_id") or d.name
         out.append({"model_id": mid, "label": info.get("label", ""), "time": info.get("time", ""),
                     "classes": info.get("classes", []),
                     "n_classes": info.get("n_classes", len(info.get("classes", []))),
                     "n_images": info.get("n_images"), "map50": _last_map50(info.get("curve")),
-                    "gen_rate": info.get("gen_rate"), "newp_rate": info.get("newp_rate"),   # 최근 평가 인식률 스냅샷
-                    "has_pt": (MODELS_DIR / f"{mid}.pt").exists(),
+                    "gen_rate": info.get("gen_rate"), "newp_rate": info.get("newp_rate"),
+                    "has_pt": Path(info.get("weights", "")).exists(),
                     "is_active": (active_mid is not None and active_mid == mid)})
     return {"models": out, "active": active_mid}
 
 
-def _write_active(session, dst, classes, label, model_id):
-    (ACTIVE_DIR / "active.json").write_text(json.dumps(
-        {"session": session, "weights": str(dst), "classes": classes, "label": label,
-         "model_id": model_id, "applied": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
-        ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def apply_model(session):
-    """최근 학습 가중치를 서비스(active) 모델로 적용(복사). 이전 것은 prev.pt로 백업."""
-    meta_p = PARTS_ROOT / PERSIST / "multiclass" / "meta.json"
-    if not meta_p.exists():
+def apply_model(session=None):
+    """학습 run 을 서비스로 지정(_served.json 포인터). session 이 유효 run 이면 그것, 아니면 최신 run."""
+    runid = session if _run_meta(session) else _latest_run()
+    if not runid:
         return {"error": "학습된 모델이 없습니다."}
-    meta = json.loads(meta_p.read_text(encoding="utf-8"))
-    w = meta.get("weights")
-    if not w or not Path(w).exists():
-        return {"error": "가중치 파일을 찾을 수 없습니다."}
-    ACTIVE_DIR.mkdir(parents=True, exist_ok=True)
-    dst = ACTIVE_DIR / "best.pt"
-    if dst.exists():
-        shutil.copy(dst, ACTIVE_DIR / "prev.pt")
-    shutil.copy(w, dst)
-    classes = list(meta.get("per_class", {}).keys())
-    _write_active(PERSIST, dst, classes, meta.get("label", ""), meta.get("model_id"))
-    return {"ok": True, "session": PERSIST, "label": meta.get("label", ""), "n_classes": len(classes)}
+    m = _run_meta(runid) or {}
+    _set_served(runid)
+    return {"ok": True, "session": runid, "label": m.get("label", ""), "n_classes": m.get("n_classes", 0)}
 
 
 def rollback_to(model_id):
-    """선택형 롤백: 등록소의 과거 버전(model_id)을 서비스(active) 모델로 되돌린다."""
-    src = MODELS_DIR / f"{model_id}.pt"
-    if not src.exists():
-        return {"error": "해당 버전의 가중치가 없습니다."}
-    info = _model_info(model_id) or {}
-    ACTIVE_DIR.mkdir(parents=True, exist_ok=True)
-    dst = ACTIVE_DIR / "best.pt"
-    if dst.exists():
-        shutil.copy(dst, ACTIVE_DIR / "prev.pt")
-    shutil.copy(src, dst)
-    classes = info.get("classes", [])
-    _write_active(info.get("session", ""), dst, classes, info.get("label", ""), model_id)
-    return {"ok": True, "model_id": model_id, "label": info.get("label", ""), "n_classes": len(classes)}
+    """선택형 롤백: 과거 run(model_id=<시각>)을 서비스로 지정."""
+    m = _run_meta(model_id)
+    if not m:
+        return {"error": "해당 버전이 없습니다."}
+    _set_served(model_id)
+    return {"ok": True, "model_id": model_id, "label": m.get("label", ""), "n_classes": m.get("n_classes", 0)}
 
 
 def rollback():
@@ -1231,25 +1215,24 @@ def _run_compare(job_id, session, base_model_id=None):
     """신규 모델 vs 기존(서비스) 모델을 같은 테스트 영상에 돌려 '정답 클래스 검출률'(인식률) 비교.
     기존 부품(망각 여부)/신규 부품 성능을 분리 집계하고 적용·롤백을 권장한다."""
     j = JOBS[job_id]
-    session = PERSIST                              # 학습 산출은 results/parts/autolabel 에 저장됨
+    session = _latest_run()                        # 신규 모델 = 방금 학습한 최신 run(results/<시각>)
     logger.info(f"[compare:{job_id}] 시작 (session={session})")
     try:
         sys.path.insert(0, str(config.BASE_DIR / "scripts" / "experiments"))
         import build_multiclass as bm
         from ultralytics import YOLO
-        meta_p = PARTS_ROOT / session / "multiclass" / "meta.json"
-        if not meta_p.exists():
+        meta = _run_meta(session)
+        if not meta:
             raise RuntimeError("학습된 모델이 없습니다. 먼저 학습을 실행하세요.")
-        meta = json.loads(meta_p.read_text(encoding="utf-8"))
         new_w = meta.get("weights")
         new_classes = list(meta.get("per_class", {}).keys())
         new_label = meta.get("label", session)
-        if base_model_id:   # 타임라인에서 특정 과거 버전을 기준으로 선택한 경우
-            info = _model_info(base_model_id)
-            bp = MODELS_DIR / f"{base_model_id}.pt"
-            base = ({"weights": str(bp), "classes": info.get("classes", []),
-                     "label": info.get("label", "") or base_model_id, "session": info.get("session", "")}
-                    if info and bp.exists() else served_model())
+        if base_model_id:   # 타임라인에서 특정 과거 버전(run)을 기준으로 선택한 경우
+            info = _run_meta(base_model_id)
+            bw = (info or {}).get("weights", "")
+            base = ({"weights": bw, "classes": info.get("classes", []),
+                     "label": info.get("label", "") or base_model_id, "session": base_model_id}
+                    if info and Path(bw).exists() else served_model())
         else:
             base = served_model()
         base_classes = base["classes"] if base else []
@@ -1365,9 +1348,8 @@ def _run_compare(job_id, session, base_model_id=None):
             reco = {"level": "review",
                     "msg": "신규 부품 인식률 또는 기존 부품 유지가 애매합니다. 아래 샘플 이미지를 확인한 뒤 결정하세요."}
 
-        new_mid = meta.get("model_id")   # 이 세션이 등록한 신규 모델 버전 json에 인식률 스냅샷 저장(드롭다운 표시용)
-        if new_mid:
-            mjp = MODELS_DIR / f"{new_mid}.json"
+        if session:   # 신규 모델 run(results/<시각>)의 meta.json 에 인식률 스냅샷 저장(드롭다운 표시용)
+            mjp = RESULTS / session / "meta.json"
             if mjp.exists():
                 try:
                     minfo = json.loads(mjp.read_text(encoding="utf-8"))
@@ -1405,36 +1387,40 @@ def start_compare(session, base_model_id=None):
 
 
 def delete_model(model_id):
-    """등록소에서 특정 모델 버전 삭제. 단 현재 서비스(active) 모델은 삭제 금지."""
+    """버전(run=<시각>) 폴더 삭제. 현재 서비스 중인 run 은 삭제 금지."""
     if not model_id:
         return {"error": "model_id 없음"}
-    aj = ACTIVE_DIR / "active.json"
-    if aj.exists():
-        try:
-            if json.loads(aj.read_text(encoding="utf-8")).get("model_id") == model_id:
-                return {"error": "현재 서비스 중인 모델은 삭제할 수 없습니다. 먼저 다른 버전으로 롤백하세요."}
-        except Exception:
-            pass
-    removed = False
-    for ext in (".pt", ".onnx", ".json"):
-        p = MODELS_DIR / f"{model_id}{ext}"
-        if p.exists():
-            p.unlink(missing_ok=True); removed = True
-    logger.info(f"[delete_model] {model_id} 삭제({'성공' if removed else '대상없음'})")
-    return {"ok": True, "model_id": model_id} if removed else {"error": "해당 버전이 없습니다."}
+    if _served_runid() == model_id:
+        return {"error": "현재 서비스 중인 모델은 삭제할 수 없습니다. 먼저 다른 버전으로 롤백하세요."}
+    d = RESULTS / str(model_id)
+    if _run_meta(model_id) is None and not d.exists():
+        return {"error": "해당 버전이 없습니다."}
+    shutil.rmtree(d, ignore_errors=True)
+    logger.info(f"[delete_model] run {model_id} 삭제")
+    return {"ok": True, "model_id": model_id}
+
+
+def _pred_dir(session, src):
+    """예측 오버레이 폴더 = results/<run>/<부품>/pred. run=유효 세션 or 최신, 부품=src 영상의 부품."""
+    runid = session if _run_meta(session) else _latest_run()
+    if not runid:
+        return None
+    vp = autolabel.resolve_video(src)
+    part = autolabel.part_root_of(vp).name if vp else re.sub(r"[\\/]", "_", str(src))
+    return RESULTS / runid / "pred" / part
 
 
 def eval_frames(session, src):
     """학습 검출평가 예측 이미지(박스 그려진 것) 개수 — 마지막 화면에서 넘겨보기용."""
-    d = PARTS_ROOT / PERSIST / "multiclass" / "model" / "eval" / src
-    n = len(list(d.glob("*.jpg"))) if d.exists() else 0
-    return {"session": PERSIST, "src": src, "count": n}
+    d = _pred_dir(session, src)
+    n = len(list(d.glob("*.jpg"))) if d and d.exists() else 0
+    return {"session": session, "src": src, "count": n}
 
 
 def eval_frame(session, src, idx, w=720):
     """예측 이미지 한 장(JPEG 바이트). 없으면 None."""
-    d = PARTS_ROOT / PERSIST / "multiclass" / "model" / "eval" / src
-    fs = sorted(d.glob("*.jpg")) if d.exists() else []
+    d = _pred_dir(session, src)
+    fs = sorted(d.glob("*.jpg")) if d and d.exists() else []
     if not fs:
         return None
     idx = max(0, min(int(idx), len(fs) - 1))
@@ -1451,33 +1437,31 @@ def eval_frame(session, src, idx, w=720):
 def list_train_frames(session):
     """생성된 학습 프레임 목록(부품별, 세션 무관). 잘못된 사진 검수·삭제용."""
     frames = []
-    if DATA_BELL.exists():
-        for img_dir in sorted(DATA_BELL.glob("*/autolabel/images")):
-            part = img_dir.parent.parent.name
-            for ip in sorted(img_dir.glob("*.jpg")):
-                frames.append({"session": PERSIST, "name": ip.name, "part": part})
+    for lbl_dir in sorted(autolabel.AUTOLABELS.glob("*/labels")):
+        part = lbl_dir.parent.name
+        for lp in sorted(lbl_dir.glob("*.txt")):
+            frames.append({"session": PERSIST, "name": lp.stem + ".jpg", "part": part})
     return {"session": PERSIST, "count": len(frames), "frames": frames}
 
 
 def labeled_parts():
     """autolabel 라벨이 하나라도 있는 부품(폴더=클래스) 집합 — 기존/신규 판정·검수 활성 판단용."""
     parts = set()
-    if DATA_BELL.exists():
-        for lbl_dir in DATA_BELL.glob("*/autolabel/labels"):
-            if any(lbl_dir.glob("*.txt")):
-                parts.add(lbl_dir.parent.parent.name)     # data/bell412/<부품>/autolabel/labels → <부품>
+    for lbl_dir in autolabel.AUTOLABELS.glob("*/labels"):
+        if any(lbl_dir.glob("*.txt")):
+            parts.add(lbl_dir.parent.name)     # results/autolabels/<부품>/labels → <부품>
     return {"parts": sorted(parts)}
 
 
 def list_part_frames(part, limit=400):
-    """특정 부품(폴더=클래스)의 생성된 학습 프레임 수집(라벨 검수용). part = 폴더명."""
+    """특정 부품(폴더=클래스)의 생성된 학습(라벨) 프레임 수집(검수용). part = 폴더명."""
     if not part:
         return {"part": part, "count": 0, "frames": []}
-    img_dir = DATA_BELL / part / "autolabel" / "images"
+    lbl_dir = autolabel.AUTOLABELS / part / "labels"
     out = []
-    if img_dir.exists():
-        for ip in sorted(img_dir.glob("*.jpg")):
-            out.append({"session": PERSIST, "name": ip.name, "part": part})
+    if lbl_dir.exists():
+        for lp in sorted(lbl_dir.glob("*.txt")):
+            out.append({"session": PERSIST, "name": lp.stem + ".jpg", "part": part})
             if len(out) >= limit:
                 return {"part": part, "count": len(out), "frames": out, "truncated": True}
     return {"part": part, "count": len(out), "frames": out}
@@ -1493,12 +1477,15 @@ def train_frame_jpeg(session, name, w=360, part=None):
         store = _store_for_part(part)
     else:
         store = _store_for_frame(name)              # 파일명 → 그 부품 저장소(폴백)
-    ip = store["images"] / name
+    stem_name = Path(name).stem                     # <video>_<frame>
+    video = _video_stem(stem_name)
+    frame = stem_name[len(video) + 1:]
+    ip = store["images"] / video / f"{frame}.jpg"   # 프레임 = images/<video>/<frame>.jpg (캐시 겸용)
     if not ip.exists():
         return None
     im = _rd(ip)
     boxes = []
-    lp = store["labels"] / (Path(name).stem + ".txt")
+    lp = store["labels"] / (stem_name + ".txt")
     if lp.exists():
         for line in lp.read_text(encoding="utf-8").splitlines():
             p = line.split()
@@ -1522,9 +1509,9 @@ def delete_train_frame(session, name, part=None):
         store = _store_for_part(part)
     else:
         store = _store_for_frame(name)
-    stem = Path(name).stem
+    stem_name = Path(name).stem
     removed = False
-    for p in (store["images"] / name, store["labels"] / (stem + ".txt"), store["masks"] / name):
+    for p in (store["labels"] / (stem_name + ".txt"), store["boxs"] / name):   # 라벨·boxs 제거(프레임캐시는 보존)
         if p.exists():
             p.unlink(missing_ok=True); removed = True
     return {"ok": True, "name": name} if removed else {"error": "대상 없음"}
@@ -1554,19 +1541,17 @@ def delete_video(src):
         shutil.move(str(vp), str(dst))
         moved_to = str(dst)
 
-    # 2) 프레임 캐시 삭제(부품별 + 레거시 중앙) — 재생성 가능 산출물
+    # 2) 프레임 이미지(=캐시) 삭제: autolabels/<부품>/images/<stem> + 레거시(부품·중앙) — 재생성 가능
     removed_cache = 0
-    for d in (autolabel.cache_dir_of(vp), autolabel.FRAME_CACHE / stem):
+    for d in (autolabel.cache_dir_of(vp), part_root / "_frame_cache" / stem, autolabel.FRAME_CACHE / stem):
         if d.exists():
             removed_cache += len(list(d.glob("*.jpg")))
             shutil.rmtree(d, ignore_errors=True)
 
-    # 3) 오토라벨 산출(이 영상분 <stem>_*)만 삭제 — 다른 영상 라벨은 보존
+    # 3) 오토라벨 산출(이 영상분 <stem>_*)만 삭제 — 라벨·boxs. 다른 영상 라벨은 보존
     store = _store_for_part(part)
     removed_labels = 0
-    for g in (store["images"].glob(f"{stem}_*.jpg"),
-              store["labels"].glob(f"{stem}_*.txt"),
-              store["masks"].glob(f"{stem}_*.jpg")):
+    for g in (store["labels"].glob(f"{stem}_*.txt"), store["boxs"].glob(f"{stem}_*.jpg")):
         for f in list(g):
             f.unlink(missing_ok=True); removed_labels += 1
 

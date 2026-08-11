@@ -273,11 +273,11 @@ def bar_row(name, value, note="", adopt=None):
 
 # ---------------- 본문 구성 ----------------
 def build():
-    al = jload("results/exp_results/report_2cls_seed15.json")
-    zs_rows, zs_p = zeroshot_rows("results/exp_results/zeroshot/zeroshot_eval_post.json")
-    gs_rows, gs_p = zeroshot_rows("results/exp_results/zeroshot/zeroshot_eval_gsam_tight.json")
-    clip_rows, _ = sweep_rows("results/exp_results/zeroshot/gallery_eval_clip.json")
-    dino_rows, dino_hp = sweep_rows("results/exp_results/zeroshot/gallery_eval_dinov2.json")
+    al = jload("results/dashboard/exp_results/report_2cls_seed15.json")
+    zs_rows, zs_p = zeroshot_rows("results/dashboard/exp_results/zeroshot/zeroshot_eval_post.json")
+    gs_rows, gs_p = zeroshot_rows("results/dashboard/exp_results/zeroshot/zeroshot_eval_gsam_tight.json")
+    clip_rows, _ = sweep_rows("results/dashboard/exp_results/zeroshot/gallery_eval_clip.json")
+    dino_rows, dino_hp = sweep_rows("results/dashboard/exp_results/zeroshot/gallery_eval_dinov2.json")
     pairs, pair_note = gen_selftrain_pairs()
 
     # ---- 결과 한눈에 ----
@@ -310,11 +310,11 @@ def build():
         code_html("m1") +
         sub("실제 입출력 결과") + pair_html +
         sub("실험 결과") +
-        table(["항목", "값"], autolearn_rows("results/exp_results/report_2cls_seed15.json")) +
+        table(["항목", "값"], autolearn_rows("results/dashboard/exp_results/report_2cls_seed15.json")) +
         '<p class="subtable-title">모델 성능 (1차 → 2차)</p>' +
-        table(["지표", "1차 모델", "2차 모델", "변화율"], perf_rows("results/exp_results/report_2cls_seed15.json")) +
+        table(["지표", "1차 모델", "2차 모델", "변화율"], perf_rows("results/dashboard/exp_results/report_2cls_seed15.json")) +
         '<p class="subtable-title">클래스별 정확도 (mAP50-95)</p>' +
-        table(["클래스", "1차 모델", "2차 모델", "변화율"], per_class_rows("results/exp_results/report_2cls_seed15.json")))
+        table(["클래스", "1차 모델", "2차 모델", "변화율"], per_class_rows("results/dashboard/exp_results/report_2cls_seed15.json")))
 
     # ---- 방법 2 ----
     m2 = section("m2", "텍스트 제로샷 (Grounding DINO)", badge("drop"),
@@ -386,13 +386,13 @@ def build():
         table(m8_m["headers"], m8_m["rows"]))
 
     # ---- 부록 ----
-    bench = jload("results/benchmark/benchmark.json")
+    bench = jload("results/dashboard/benchmark/benchmark.json")
     bench_rows = [[r["model"], r["imgsz"], r["map50"], r["map50_95"],
                    f"{r['latency_ms']}ms", r["fps"], f"{r['weight_MB']}MB"] for r in bench]
-    conds = [("2클래스 · 1차 라벨 10%", "results/exp_results/report_2cls_seed10.json"),
-             ("2클래스 · 1차 라벨 15%", "results/exp_results/report_2cls_seed15.json"),
-             ("3클래스", "results/exp_results/report_3cls.json"),
-             ("4클래스", "results/exp_results/report_4cls.json")]
+    conds = [("2클래스 · 1차 라벨 10%", "results/dashboard/exp_results/report_2cls_seed10.json"),
+             ("2클래스 · 1차 라벨 15%", "results/dashboard/exp_results/report_2cls_seed15.json"),
+             ("3클래스", "results/dashboard/exp_results/report_3cls.json"),
+             ("4클래스", "results/dashboard/exp_results/report_4cls.json")]
     cond_rows = []
     for name, rel in conds:
         d = jload(rel)
@@ -513,7 +513,7 @@ figcaption{font-size:13px;color:var(--muted);margin-top:4px;text-align:center}
 <h1>오토라벨링 검증 리포트</h1>
 <p class="subtitle">사람 대신 AI 학습 라벨을 자동 생성하는 8가지 방법의 실험 기록 · XR 오토러닝 프로젝트</p>
 {intro}{overview_sec}{m1}{m2}{m3}{m4}{m5}{m6}{m7}{m8}{appendix}
-<p class="fn" style="text-align:center;margin:10px 0 30px">본 리포트는 scripts/verify/build_report.py 가 실험 결과 파일에서 자동 생성 · 수치 원본: results/exp_results/, results/benchmark/, results/exp_results/zeroshot/</p>
+<p class="fn" style="text-align:center;margin:10px 0 30px">본 리포트는 scripts/verify/build_report.py 가 실험 결과 파일에서 자동 생성 · 수치 원본: results/dashboard/exp_results/, results/dashboard/benchmark/, results/dashboard/exp_results/zeroshot/</p>
 </main></div></body></html>"""
     OUT.write_text(html, encoding="utf-8")
     size = OUT.stat().st_size / 1e6

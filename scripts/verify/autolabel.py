@@ -27,7 +27,9 @@ from experiments.point_ref_lib import (load_img, embed, candidates, nms, write_l
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 
 # 참조 소스 = data/ 하위 어디든(주제별 폴더 예: bell412/gearbox/videos/)의 영상. 새 영상 넣으면 자동 컷.
-FRAME_CACHE = config.DATA_DIR / "_frame_cache"   # 컷한 프레임 캐시(영상 stem 별, 주제 무관 중앙)
+FRAME_CACHE = config.DATA_DIR / "_frame_cache"   # (레거시) 옛 중앙 프레임캐시 — 폴백/이관 용으로만 참조
+RESULTS = config.BASE_DIR / "results"
+AUTOLABELS = RESULTS / "autolabels"       # results/autolabels/<부품>/{images/<stem>/, labels, boxs} (영속 = 라벨됨)
 VIDEO_EXT = {".mp4", ".avi", ".mov", ".mkv"}
 TARGET_FRAMES = 200                       # 영상당 목표 프레임 수(서브샘플, 과다·과부하 방지)
 
@@ -72,9 +74,9 @@ def video_key(vp):
 
 
 def cache_dir_of(vp):
-    """영상 Path → 부품별 프레임 캐시 디렉토리(data/bell412/<부품>/_frame_cache/<stem>).
-    '_' 로 시작하므로 list_folders 의 videos 스캔에 안 잡힌다."""
-    return part_root_of(vp) / "_frame_cache" / vp.stem
+    """영상 Path → 그 영상의 프레임 저장소(results/autolabels/<부품>/images/<stem>).
+    _frame_cache 폐지: autolabels/images 가 프레임(전 프레임) 저장소를 겸한다(SAM2 init_state·스크럽·학습이미지 공용)."""
+    return AUTOLABELS / part_root_of(vp).name / "images" / vp.stem
 
 
 def resolve_video(src):
@@ -116,7 +118,10 @@ def _frames_dir(vp):
     part_cache = cache_dir_of(vp)
     if _cached_frames(part_cache):
         return part_cache
-    legacy = FRAME_CACHE / vp.stem
+    legacy_part = part_root_of(vp) / "_frame_cache" / vp.stem   # 이관 전 부품별 캐시
+    if _cached_frames(legacy_part):
+        return legacy_part
+    legacy = FRAME_CACHE / vp.stem                              # 이관 전 중앙 캐시
     if _cached_frames(legacy):
         return legacy
     _extract(vp, part_cache)
@@ -173,7 +178,8 @@ def _frames(src):
 
 def _source_info(vp):
     d = cache_dir_of(vp)
-    cached = _cached_frames(d) or _cached_frames(FRAME_CACHE / vp.stem)   # 부품캐시→레거시 순
+    cached = (_cached_frames(d) or _cached_frames(part_root_of(vp) / "_frame_cache" / vp.stem)
+              or _cached_frames(FRAME_CACHE / vp.stem))   # 신 저장소→레거시(부품·중앙) 순
     return {"name": vp.stem, "key": video_key(vp),
             "count": len(cached) if cached else _estimate_count(vp),
             "ready": bool(cached)}

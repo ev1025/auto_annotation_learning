@@ -1089,10 +1089,7 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
                    className={`rbmenu-item${active ? ' active' : ''}`}
                    onClick={() => {
                      if (active) return
-                     const when = m.time || fmtId(m.model_id)
-                     if (window.confirm(`이 버전(${when})으로 롤백할까요? 현재 서비스 모델이 됩니다.`)) {
-                       setOpen(false); onRollbackTo(m.model_id)
-                     }
+                     setOpen(false); onRollbackTo(m.model_id)   // 확인은 인앱 모달(부모 askRollbackTo)에서
                    }}>
                 <span className="rbmenu-main">
                   <span className="rbmenu-t">{m.time || fmtId(m.model_id)}</span>
@@ -1125,11 +1122,6 @@ function BaGroup({ part, kind, frames }) {
   const go = (d) => setIdx(p => ((Math.min(p, n - 1) + d) % n + n) % n)   // 순환 이동(양끝 래핑)
   return (
     <div className="ba-group">
-      <div className="ba-cap">
-        <span className={`samp-tag ${kind}`}>{kind === 'new' ? '신규 부품' : '기존 부품'}</span>
-        <span className="ba-part">{part}</span>
-        <span className="ba-count">프레임 {i + 1} / {n}</span>
-      </div>
       <div className="ba-stage">
         {n > 1 && <button className="ba-nav" onClick={() => go(-1)} aria-label="이전 프레임"><IcChevronLeft /></button>}
         <div className="ba-pair big">
@@ -1145,7 +1137,6 @@ function BaGroup({ part, kind, frames }) {
         </div>
         {n > 1 && <button className="ba-nav" onClick={() => go(1)} aria-label="다음 프레임"><IcChevronRight /></button>}
       </div>
-      <div className="ba-sub">기존 모델 → 신규 모델</div>
       {n > 1 && (
         <div className="ba-dots">
           {frames.map((_, k) => (
@@ -1154,6 +1145,60 @@ function BaGroup({ part, kind, frames }) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// 부품 선택 커스텀 드롭다운(네이티브 select 대신 앱 톤 통일)
+function PartSelect({ options, value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDoc); document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
+  }, [open])
+  return (
+    <div className="psel" ref={ref}>
+      <button className="psel-btn" onClick={() => setOpen(o => !o)} aria-haspopup="listbox" aria-expanded={open}>
+        <span>{options[value]}</span><IcChevronDown />
+      </button>
+      {open && (
+        <div className="psel-pop" role="listbox">
+          {options.map((o, i) => (
+            <button key={o + '_' + i} role="option" aria-selected={i === value}
+                    className={`psel-item${i === value ? ' on' : ''}`}
+                    onClick={() => { onChange(i); setOpen(false) }}>
+              <span>{o}</span>{i === value && <IcCheck />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 인앱 확인 모달(네이티브 window.confirm 대체). danger=파괴적 액션(빨강 버튼)
+function ConfirmModal({ open, title, message, confirmLabel, danger, onConfirm, onCancel }) {
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e) => { if (e.key === 'Escape') onCancel() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, onCancel])
+  if (!open) return null
+  return (
+    <div className="cfm-overlay" onClick={onCancel}>
+      <div className="cfm-box" role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
+        {title && <div className="cfm-title">{title}</div>}
+        <div className="cfm-msg">{message}</div>
+        <div className="cfm-act">
+          <button className="act-btn ghost" onClick={onCancel}>취소</button>
+          <button className={`act-btn ${danger ? 'stop' : 'train'}`} onClick={onConfirm} autoFocus>{confirmLabel || '확인'}</button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -1204,6 +1249,20 @@ function PartsApp() {
   const openTrain = () => { loadTrain(); setPage('training') }
   const backToLabel = () => setPage('label')               // 학습은 계속 진행(폴링 유지), 라벨 화면으로 복귀
   const newRun = () => { setJob(null); setStatus(null); setCmpJob(null); setCmp(null); setApplied(false); setPage('training') }
+
+  const [confirmState, setConfirmState] = useState(null)   // 인앱 확인 모달 {title,message,confirmLabel,danger,onOk}
+  const ask = (opts) => setConfirmState(opts)
+  const onBackFromTrain = () => {                          // 부품 학습 뒤로가기: 학습 중이면 종료 확인
+    if (running) ask({ title: '학습 종료', message: '학습을 종료하시겠습니까? 진행 중인 학습이 중단됩니다.',
+                       confirmLabel: '종료', danger: true, onOk: () => { doCancel(); backToLabel() } })
+    else backToLabel()
+  }
+  const askRollbackTo = (mid) => {                         // 과거 버전 롤백 확인(네이티브 confirm 대신 인앱 모달)
+    const m = (models || []).find(x => x.model_id === mid)
+    const when = (m && (m.time || fmtId(m.model_id))) || mid
+    ask({ title: '과거 모델로 롤백', message: `이 버전(${when})으로 롤백할까요? 현재 서비스 모델이 됩니다.`,
+          confirmLabel: '롤백', onOk: () => doRollbackTo(mid) })
+  }
 
   const runTrain = async () => {
     const classes = selected.map(it => it.part)
@@ -1378,8 +1437,8 @@ function PartsApp() {
         // ===== 2단계: 학습 (설정 → 진행 → 결과 요약) =====
         <div className="train-page">
           <PageHead
-            title={trainDone ? '학습 결과' : (status?.stage === 'cancelled' ? '학습 중단' : '학습 설정')}
-            back={backToLabel}
+            title="부품 학습"
+            back={onBackFromTrain}
             right={<>
               {!job && <button className="icon-back" onClick={goManage} title="모델관리" aria-label="모델관리"><IcChevronRight /></button>}
               {trainDone && <button className="icon-back" onClick={goEvaluate} title="모델 평가 · 적용" aria-label="다음 단계: 모델 평가·적용"><IcChevronRight /></button>}
@@ -1425,6 +1484,7 @@ function PartsApp() {
                     {running && <span className="prog-sub"><span className="spinner" /> 진행 중...</span>}
                   </div>
                   {running && <button className="act-btn stop" onClick={doCancel} style={{ marginLeft: 'auto' }}>■ 학습 중단</button>}
+                  {(trainDone || status?.stage === 'cancelled') && <button className="act-btn ghost" onClick={newRun} style={{ marginLeft: 'auto' }}>↻ 새 학습</button>}
                 </div>
               )}
               {!job && (
@@ -1472,20 +1532,14 @@ function PartsApp() {
               )}
             </section>
           </div>
-
-          {(trainDone || status?.stage === 'cancelled') && (
-            <div className="ev2-footer">
-              <button className="act-btn ghost" onClick={newRun}>↻ 새 학습</button>
-            </div>
-          )}
         </div>
       ) : (
         // ===== 3단계: 모델 평가 · 적용 (버전 비교 → 서비스 적용 / 선택형 롤백) =====
         <div className="ev2">
-          <PageHead title={cmpDone ? '모델 평가 · 적용' : cmp?.running ? '모델 평가 중' : '모델관리'} back={() => setPage('training')}
+          <PageHead title={cmpDone ? '모델 평가' : cmp?.running ? '모델 평가 중' : '모델관리'} back={() => setPage('training')}
                     right={(!cmp?.running && !cmp?.error) ? (
                       <RollbackMenu models={models} servedId={served?.model_id}
-                                    onRollbackTo={doRollbackTo} onDeleteModel={doDeleteModel}
+                                    onRollbackTo={askRollbackTo} onDeleteModel={doDeleteModel}
                                     onKeep={null} onApply={null} applied={applied} />
                     ) : null} />
           {cmp?.running && (
@@ -1519,7 +1573,7 @@ function PartsApp() {
                           ) : (
                             <>
                               <button className="act-btn train big" onClick={doApply}>신규 모델 적용</button>
-                              <button className="act-btn ghost" onClick={doRollback}>기존 모델 유지</button>
+                              <button className="act-btn ghost big" onClick={doRollback}>기존 모델 유지</button>
                             </>
                           )}
                         </div>
@@ -1540,43 +1594,14 @@ function PartsApp() {
                       const g = baGroups[gi]
                       return (
                         <section className="ev2-card ba-primary">
-                          <h4 className="ev2-h">눈으로 확인 · 검출 결과 <span className="al-hint">(기존 모델 → 신규 모델)</span></h4>
+                          <h4 className="ev2-h">모델 결과 비교</h4>
                           {baGroups.length > 1 && (
-                            <div className="fv-srcs" style={{ marginBottom: 12 }}>
-                              {baGroups.map((x, i) => (
-                                <button key={x.part + '_' + i} className={i === gi ? 'pb-btn sm on' : 'pb-btn sm'}
-                                        onClick={() => setBaSel(i)}>{x.part}</button>
-                              ))}
-                            </div>
+                            <PartSelect options={baGroups.map(x => x.part)} value={gi} onChange={setBaSel} />
                           )}
                           <BaGroup key={g.part + '_' + gi} part={g.part} kind={g.kind} frames={g.frames} />
                         </section>
                       )
                     })()}
-
-                    {/* 4) 접이식 상세 — 모델 버전 메타(비전문가는 접힌 채 무시) */}
-                    <details className="ev2-detail">
-                      <summary>모델 상세 · 학습 부품 구성</summary>
-                      {baseModel ? (
-                        <div className="verc-grid">
-                          <VerCard tag={selVer ? '비교 기준 (선택 버전)' : '기존 서비스 모델'} cls="base"
-                                   id={baseModel?.model_id}
-                                   time={baseModel?.time || baseModel?.applied}
-                                   classes={baseModel?.classes || []} map50={baseModel?.map50} baseSet={baseSet} />
-                          <div className="verc-vs" aria-hidden="true"><IcChevronRight /></div>
-                          <VerCard tag="신규 학습 모델" cls="new" id={status?.model_id}
-                                   time={fmtId(status?.model_id)}
-                                   classes={newClasses} map50={status?.cur_map} baseSet={baseSet} highlightNew />
-                        </div>
-                      ) : (
-                        <div className="verc-solo">
-                          <VerCard tag="신규 학습 모델" cls="new" id={status?.model_id}
-                                   time={fmtId(status?.model_id)}
-                                   classes={newClasses} map50={status?.cur_map} baseSet={baseSet} highlightNew />
-                          <p className="verc-solo-note"><IcInfo /> 현재 서비스 중인 모델이 없습니다. 위 [신규 모델 서비스 적용]으로 첫 배포를 진행하세요.</p>
-                        </div>
-                      )}
-                    </details>
                   </>
                 ) : (
                   <>
@@ -1616,9 +1641,7 @@ function PartsApp() {
                           <div className="verdetail-act">
                             {sel.is_active
                               ? <span className="ok-flash"><IcCheck /> 현재 서비스 중인 버전입니다</span>
-                              : <button className="act-btn train" onClick={() => {
-                                  if (window.confirm(`이 버전(${sel.time || fmtId(sel.model_id)})으로 롤백할까요? 현재 서비스 모델이 됩니다.`)) doRollbackTo(selVer)
-                                }}>이 버전으로 롤백</button>}
+                              : <button className="act-btn train" onClick={() => askRollbackTo(selVer)}>이 버전으로 롤백</button>}
                           </div>
                         </section>
                       )
@@ -1631,6 +1654,9 @@ function PartsApp() {
 
         </div>
       )}
+      <ConfirmModal open={!!confirmState} {...(confirmState || {})}
+                    onCancel={() => setConfirmState(null)}
+                    onConfirm={() => { const ok = confirmState?.onOk; setConfirmState(null); if (ok) ok() }} />
     </div>
   )
 }

@@ -1,13 +1,13 @@
 """exp_epochs.py - 벤치마크 후속 검증 실험 3종 (일회성).
 
-100ep 벤치마크(results/benchmark/benchmark.md)의 결정 보강용:
+100ep 벤치마크(results/dashboard/benchmark/benchmark.md)의 결정 보강용:
   ① 300ep 연장 + 조기종료: v8s / 11n (100ep 시점까지 상승 중이던 두 조합의 상한 확인)
   ② 26n 레시피 조건(245ep, lr0 0.0054, MuSGD): 동일 100ep 벤치의 26n 저평가 가설 검증
   ③ 시드 반복(26s / v8s x seed 1,2): 1위-4위 간 1.1%p 차이가 노이즈인지 판별
 
 실행(GPU별 그룹):
   CUDA_VISIBLE_DEVICES=N python scripts/exp_epochs.py --group gpuN
-결과: results/benchmark/exp_epochs_<group>.json (test split 기준, 벤치마크와 동일 평가)
+결과: results/dashboard/benchmark/exp_epochs_<group>.json (test split 기준, 벤치마크와 동일 평가)
 """
 import argparse
 import csv
@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용(
 import config
 from gpu_utils import free_cuda
 
-BENCH = config.BASE_DIR / "results/benchmark"
+BENCH = config.BASE_DIR / "results/dashboard/benchmark"
 DATA = BENCH / "bench_data.yaml"  # experiments/benchmark 가 생성해 둔 것을 재사용(동일 분할 보장)
 
 # 부하 균형: 긴 작업을 앞에, 총 소요 30~50분/GPU

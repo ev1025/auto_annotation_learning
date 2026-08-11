@@ -12,8 +12,8 @@ import sam2_autolabel as sa   # _img_predictor, _rd, _bbox, free_sam2, DEV 재�
 
 random.seed(0); np.random.seed(0)
 LABELS = BASE + "/results/gearbox/260731_102307/train"                  # 재탭 라벨(실촬영)
-CUT = BASE + "/data/bell412/gearbox/cutouts"
-SYN = BASE + "/data/bell412/gearbox/synthetic"
+CUT = BASE + "/results/experiments/gearbox_augtrain/cutouts"
+SYN = BASE + "/results/experiments/gearbox_augtrain/synthetic"
 BGS = glob.glob(BASE + "/data/bell412/backgrounds/hangar/*.jpg") + glob.glob(BASE + "/data/bell412/backgrounds/factory/*.jpg")
 OCCL = [o for o in (cv2.imread(p, cv2.IMREAD_UNCHANGED) for p in glob.glob(BASE + "/data/bell412/occluders/*.png")) if o is not None and o.ndim == 3 and o.shape[2] == 4]
 AUG = dict(erasing=0.5, scale=0.9, mixup=0.15)
