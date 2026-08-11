@@ -1011,24 +1011,23 @@ function VerCard({ tag, cls, id, time, classes, map50, baseSet, highlightNew }) 
   )
 }
 
-// 스코어 타일: 한 지표(기존 부품 유지 / 신규 부품)의 기존→신규 인식률 + 변화 pill.
-// warnDown=하락이 치명적(≤-10%p)이면 붉게 강조(기존 부품 망각 경보용)
-function ScoreTile({ label, hint, before, after, pctv, deltaEl, warnDown }) {
+// 스코어 타일(모던 SaaS 위젯): 상단 제목·종수(좌) + 증감 뱃지(우), 중앙 큰 숫자(무채색), 하단 이전값(옅게).
+// 하락 경고(≤-10%p)는 배경/숫자색이 아니라 카드 왼쪽 빨간 포인트선(inset)으로만 은은하게 표시.
+function ScoreTile({ label, n, before, after, pctv, deltaEl, warnDown }) {
   const d = (before != null && after != null) ? Math.round((after - before) * 100) : null
   const bad = warnDown && d != null && d <= -10
   return (
     <div className={`score-tile${bad ? ' bad' : ''}`}>
-      <div className="score-label">{label}<span className="score-hint">{hint}</span></div>
+      <div className="score-top">
+        <div className="score-title">{label}{n != null && <span className="score-n">{n}종</span>}</div>
+        {before != null && after != null && deltaEl(before, after)}
+      </div>
       {after == null ? (                          /* 신규 모델 결과 자체가 없음 */
         <div className="score-na">비교 대상 없음 · 첫 배포</div>
       ) : (
-        /* 현재(신규) 인식률을 크게 + 변화 pill 바로 옆, 이전값은 아래 작게 = 한눈에 "지금 X%, Y%p 변화" */
         <>
-          <div className="score-row">
-            <span className="score-new">{pctv(after)}</span>
-            {before != null && deltaEl(before, after)}
-          </div>
-          {before != null && <div className="score-prev">이전 {pctv(before)}</div>}
+          <div className="score-big">{pctv(after)}</div>
+          {before != null && <div className="score-foot">이전 {pctv(before)}</div>}
         </>
       )}
     </div>
@@ -1611,9 +1610,9 @@ function PartsApp() {
 
                     {/* 2) 스코어보드 — 판정을 뒷받침하는 인식률 2종(기존 유지 / 신규 학습) */}
                     <section className="scoreboard">
-                      <ScoreTile label="기존 부품 유지" hint={`전체 일반화 · ${cmp.gen?.n ?? 0}종`}
+                      <ScoreTile label="기존 부품 인식" n={cmp.gen?.n ?? 0}
                                  before={cmp.gen?.before} after={cmp.gen?.after} pctv={pctv} deltaEl={deltaEl} warnDown />
-                      <ScoreTile label="신규 부품 인식" hint={`신규 학습 · ${cmp.newp?.n ?? 0}종`}
+                      <ScoreTile label="신규 부품 인식" n={cmp.newp?.n ?? 0}
                                  before={cmp.newp?.before} after={cmp.newp?.after} pctv={pctv} deltaEl={deltaEl} />
                     </section>
 
