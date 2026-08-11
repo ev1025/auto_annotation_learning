@@ -1221,6 +1221,8 @@ function PartsApp() {
   const [cmp, setCmp] = useState(null)               // 신규↔기존 모델 비교(평가) 상태
   const [applied, setApplied] = useState(false)      // 신규 모델 서비스 적용 완료
   const [served, setServed] = useState(null)         // 현재 서비스(기존) 모델 정보
+  const [servedLoaded, setServedLoaded] = useState(false)   // served fetch 완료 여부(기본선택 타이밍용)
+  const didInitPick = useRef(false)                  // 학습됨 부품 기본선택을 최초 1회만 적용
   const [models, setModels] = useState([])           // 등록소 버전 목록(타임라인)
   const [rolledTo, setRolledTo] = useState(null)     // 롤백 완료된 model_id
   const [selVer, setSelVer] = useState(null)         // 타임라인에서 고른 비교 기준 버전(null=현재 서비스)
@@ -1249,10 +1251,12 @@ function PartsApp() {
   const allOn = items.length > 0 && selected.length === items.length
   const toggle = (p) => setPicked(c => c.includes(p) ? c.filter(x => x !== p) : [...c, p])
   const toggleAll = () => setPicked(allOn ? [] : items.map(it => it.part))
+  // 이미 학습된(현재 서비스 모델 보유) 부품 = 학습됨. 배지 판정과 동일 기준. 망각 방지 위해 기본 선택 대상.
+  const trainedPartList = () => items.filter(it => served ? (served.classes || []).includes(it.part) : it.trained).map(it => it.part)
 
   const openTrain = () => { loadTrain(); setPage('training') }
   const backToLabel = () => setPage('label')               // 학습은 계속 진행(폴링 유지), 라벨 화면으로 복귀
-  const newRun = () => { setJob(null); setStatus(null); setCmpJob(null); setCmp(null); setApplied(false); setPage('training') }
+  const newRun = () => { setJob(null); setStatus(null); setCmpJob(null); setCmp(null); setApplied(false); setPicked(trainedPartList()); setPage('training') }
 
   const [confirmState, setConfirmState] = useState(null)   // 인앱 확인 모달 {title,message,confirmLabel,danger,onOk}
   const ask = (opts) => setConfirmState(opts)
@@ -1340,11 +1344,11 @@ function PartsApp() {
   useEffect(() => {
     const jb = sessionStorage.getItem('xr_job')
     const cj = sessionStorage.getItem('xr_cmpJob')
-    if (page === 'training' && jb) {
-      loadTrain()
-      fetch(`/api/sam2/status?job=${jb}`).then(r => r.json())
-        .then(d => { if (d && !d.error) setStatus(d); else { setJob(null); setPage('label') } })
-        .catch(() => { setJob(null); setPage('label') })
+    if (page === 'training') {
+      loadTrain()                                    // 학습 설정/결과 어느 쪽이든 부품목록 재로딩
+      if (jb) fetch(`/api/sam2/status?job=${jb}`).then(r => r.json())
+        .then(d => { if (d && !d.error) setStatus(d); else { setJob(null) } })
+        .catch(() => { setJob(null) })
     } else if (page === 'evaluate') {
       fetch('/api/sam2/served').then(r => r.json()).then(d => setServed(d && !d.none ? d : null)).catch(() => {})
       fetch('/api/sam2/models').then(r => r.json()).then(d => setModels(d.models || [])).catch(() => {})
@@ -1386,9 +1390,20 @@ function PartsApp() {
 
   // 현재 서비스(기존) 모델 로드 — 라벨/학습 화면에서 '학습됨 vs 신규' 비교 기준
   const loadServed = useCallback(() => {
-    fetch('/api/sam2/served').then(r => r.json()).then(d => setServed(d && !d.none ? d : null)).catch(() => {})
+    fetch('/api/sam2/served').then(r => r.json())
+      .then(d => { setServed(d && !d.none ? d : null); setServedLoaded(true) })
+      .catch(() => setServedLoaded(true))
   }, [])
   useEffect(() => { loadServed() }, [loadServed])
+
+  // 학습 대상 기본 선택: 이미 학습된(학습됨) 부품을 기본으로 체크(망각 방지). served·부품목록이 준비되면 최초 1회.
+  useEffect(() => {
+    // folders 로드 전엔 it.part 가 원본 영상명이라 served.classes 매칭이 안 됨 → folders 까지 준비된 뒤 1회 초기화
+    if (didInitPick.current || !servedLoaded || items.length === 0 || folders.length === 0) return
+    setPicked(trainedPartList())
+    didInitPick.current = true
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [servedLoaded, items, folders])
   // 평가 완료 시 버전 목록도 로드
   useEffect(() => {
     if (cmp?.stage !== 'done') return
