@@ -1,59 +1,95 @@
 # -*- coding: utf-8 -*-
-"""a_test ablation: 모델·라벨수·에포크 축을 각각 독립으로(서로 안 곱함) 학습 → 실측 GT mAP 측정.
-기본값 고정: yolo11s · 100ep · 전체 라벨. 각 축은 한 변수만 변경.
-사용: XR_BASE=$HOME/xr_autolearning CUDA_VISIBLE_DEVICES=3 python scripts/experiments/ablation_atest.py
-결과: results/experiments/ablation/a_test/<시각>/results.json · summary.txt · run.log
+"""라벨데이터 개수별 벤치마크 — 부품별 자동라벨 개수(N)를 스윕해 학습 → 실측 GT mAP.
+
+질문: "부품 하나를 쓸 만한 인식률로 만들려면 자동라벨 몇 장이 필요한가?"
+방법: 부품의 전체 자동라벨(results/autolabels/<부품>/labels)에서 균등간격 N장 서브샘플 →
+      yolo11s·100ep 단일클래스 학습 → 수동 GT(data/bell412/<부품>/gt)로 실측 mAP 측정.
+      라벨수 효과만 격리하려고 모델·에포크 고정, 합성 미적용.
+N = 20·50·100·200·전체, 부품 = a_test·gearbox (ABL_PART 로 단일 지정 가능).
+
+입력(새 저장구조): results/autolabels/<부품>/{images/<영상>/<프레임>.jpg, labels/<영상>_<프레임>.txt}
+      GT = data/bell412/<부품>/gt (gt.yaml 의 절대경로 무시, 서버경로로 재생성)
+사용: XR_BASE=/workspace/data2/jinwoolee/xr_autolearning CUDA_VISIBLE_DEVICES=2 \
+        ./venv/bin/python scripts/experiments/ablation_atest.py   (스모크: ABL_SMOKE=1)
+결과: results/experiments/ablation_labels/<시각>/{results.json,summary.txt,run.log}
 """
-import os, sys, glob, json, time
+import os, sys, glob, json, time, re, shutil
+from pathlib import Path
 from datetime import datetime
 
 BASE = os.environ.get("XR_BASE") or os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-sys.path.insert(0, BASE + "/scripts/experiments")
-import build_multiclass as bm
+AUTOLABELS = os.path.join(BASE, "results", "autolabels")
 
-# PART/GT는 환경변수로 바꿔 다른 부품에도 재사용(기본=a_test). OUT은 부품명으로 분리.
-PART = os.environ.get("ABL_PART", "a_test")
-GT_YAML = os.environ.get("ABL_GT", BASE + "/data/bell412/" + PART + "/gt/gt.yaml")
-OUT = BASE + "/results/experiments/ablation/" + PART
-MODELS = ["yolov8n", "yolov8s", "yolov8m", "yolo11n", "yolo11s", "yolo11m", "yolo26n", "yolo26s", "yolo26m"]
+PARTS = [os.environ["ABL_PART"]] if os.environ.get("ABL_PART") else ["a_test", "gearbox"]
+GRID = [20, 50, 100, 200]          # + 각 부품 전체(ALL) 자동 추가
 DEF_MODEL, DEF_EP = "yolo11s", 100
 
 
-def collect_frames():
-    fr = []
-    for ip in sorted(glob.glob(BASE + "/results/parts/*/train/images/*.jpg")):
-        if bm.stem_to_class(os.path.splitext(os.path.basename(ip))[0]) == PART:
-            fr.append(os.path.abspath(ip))
-    return fr
+def _video_stem(stem):
+    """'train_00012'→'train', 'Gearbox_gearbox1_00007'→'Gearbox_gearbox1' (뒤 프레임번호 제거)."""
+    return re.sub(r"_\d+$", "", stem)
 
 
-def subsample(frames, m):
-    n = len(frames)
+def collect_pairs(part):
+    """부품의 (이미지, 라벨) 쌍 목록. 라벨 <video>_<frame> → 이미지 images/<video>/<frame>.jpg."""
+    ld = os.path.join(AUTOLABELS, part, "labels")
+    pairs = []
+    for lp in sorted(glob.glob(ld + "/*.txt")):
+        stem = Path(lp).stem
+        video = _video_stem(stem)
+        frame = stem[len(video) + 1:]
+        ip = os.path.join(AUTOLABELS, part, "images", video, f"{frame}.jpg")
+        lines = [l for l in Path(lp).read_text(encoding="utf-8").splitlines() if l.strip()]
+        if os.path.exists(ip) and lines:
+            pairs.append((ip, lp, stem))
+    return pairs
+
+
+def subsample(pairs, m):
+    n = len(pairs)
     if m >= n:
-        return frames
-    return [frames[int(i * (n - 1) / (m - 1))] for i in range(m)]   # 균등 간격
+        return pairs
+    return [pairs[int(i * (n - 1) / (m - 1))] for i in range(m)]   # 균등 간격
 
 
-def make_yaml(frames, tag, rundir):
-    d = rundir + f"/data_{tag}"; os.makedirs(d, exist_ok=True)
-    lst = d + "/train.txt"; open(lst, "w").write("\n".join(frames) + "\n")
-    y = d + "/data.yaml"
-    open(y, "w", encoding="utf-8").write(f"train: {os.path.abspath(lst)}\nval: {os.path.abspath(lst)}\nnames:\n  0: {PART}\n")
+def stage(pairs, part, tag, rundir):
+    """선택 쌍을 rundir/data_<tag>/{images,labels} 로 스테이징(이미지·라벨 파일명 일치, class 0 강제).
+    반환 images_dir."""
+    d = Path(rundir) / f"data_{tag}"
+    di, dl = d / "images", d / "labels"
+    di.mkdir(parents=True, exist_ok=True); dl.mkdir(parents=True, exist_ok=True)
+    for ip, lp, stem in pairs:
+        shutil.copy(ip, di / f"{stem}.jpg")
+        out = []
+        for l in Path(lp).read_text(encoding="utf-8").splitlines():
+            p = l.split()
+            if len(p) == 5:
+                out.append("0 " + " ".join(p[1:]))     # 단일클래스 → class 0 강제
+        (dl / f"{stem}.txt").write_text("\n".join(out) + "\n", encoding="utf-8")
+    return di
+
+
+def gt_yaml_for(part, rundir):
+    """GT yaml 을 이 실행 기준 절대경로로 재생성(원본 gt.yaml 의 Windows 절대경로 무시)."""
+    gt_dir = os.path.join(BASE, "data", "bell412", part, "gt")
+    y = os.path.join(rundir, f"gt_{part}.yaml")
+    with open(y, "w", encoding="utf-8") as f:
+        f.write(f"path: {gt_dir}\nval:\n  - images\nnames:\n  0: {part}\n")
     return y
 
 
-def train_eval(frames, model, epochs, tag, rundir):
+def train_eval(images_dir, gt_yaml, part, model, epochs, tag, rundir):
     from ultralytics import YOLO
     import torch, gc
-    y = make_yaml(frames, tag, rundir)
+    y = str(Path(rundir) / f"data_{tag}.yaml")
+    Path(y).write_text(f"train: {os.path.abspath(str(images_dir))}\nval: {os.path.abspath(str(images_dir))}\nnames:\n  0: {part}\n", encoding="utf-8")
     t = time.time()
     m = YOLO(model if model.endswith(".pt") else model + ".pt")
-    m.train(data=y, epochs=epochs, imgsz=640, batch=8, device=0,
+    m.train(data=y, epochs=epochs, imgsz=640, batch=8, device=0, workers=0,
             project=rundir + "/runs", name=tag, exist_ok=True, verbose=False, plots=False)
-    best = m.trainer.best
-    det = YOLO(str(best))
-    r = det.val(data=GT_YAML, imgsz=640, device=0, verbose=False)
-    res = {"tag": tag, "model": model, "epochs": epochs, "n_labels": len(frames),
+    det = YOLO(str(m.trainer.best))
+    r = det.val(data=gt_yaml, imgsz=640, device=0, verbose=False)
+    res = {"tag": tag, "model": model, "epochs": epochs,
            "gt_map50": round(float(r.box.map50), 4), "gt_map5095": round(float(r.box.map), 4),
            "min": round((time.time() - t) / 60, 1)}
     del m, det; gc.collect(); torch.cuda.empty_cache()
@@ -61,51 +97,47 @@ def train_eval(frames, model, epochs, tag, rundir):
 
 
 def main():
-    frames = collect_frames()
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    rundir = OUT + f"/{ts}"; os.makedirs(rundir, exist_ok=True)
+    rundir = BASE + f"/results/experiments/ablation_labels/{ts}"; os.makedirs(rundir, exist_ok=True)
 
     def log(s):
         print(s, flush=True)
         with open(rundir + "/run.log", "a", encoding="utf-8") as f:
             f.write(s + "\n")
 
-    log(f"{PART} train 프레임 {len(frames)}장 · GT {GT_YAML}")
-    if len(frames) < 5:
-        log("프레임 부족 — 중단"); return
-    results = {"model": [], "labels": [], "epochs": []}
-    DEF_N = len(frames)
+    smoke = bool(os.environ.get("ABL_SMOKE"))
+    ep = 3 if smoke else DEF_EP
+    results = {}
 
     def save():
         json.dump(results, open(rundir + "/results.json", "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
-    for md in MODELS:                                   # ① 모델 축(전체 라벨·100ep) = 실측 GT 모델 재선정
-        try:
-            r = train_eval(frames, md, DEF_EP, f"model_{md}", rundir); results["model"].append(r)
-            log(f"[모델] {md}: GT mAP50 {r['gt_map50']} / mAP50-95 {r['gt_map5095']} ({r['min']}분)")
-        except Exception as e:
-            log(f"[모델] {md} 실패: {type(e).__name__}: {e}")
-        save()
-    for m in [20, 50, 100, 200, DEF_N]:                 # ② 라벨수 축(yolo11s·100ep)
-        try:
-            r = train_eval(subsample(frames, m), DEF_MODEL, DEF_EP, f"labels_{m}", rundir); results["labels"].append(r)
-            log(f"[라벨수] {m}: GT mAP50 {r['gt_map50']} / mAP50-95 {r['gt_map5095']}")
-        except Exception as e:
-            log(f"[라벨수] {m} 실패: {type(e).__name__}: {e}")
-        save()
-    for ep in [30, 60, 100, 200]:                       # ③ 에포크 축(yolo11s·전체 라벨)
-        try:
-            r = train_eval(frames, DEF_MODEL, ep, f"epoch_{ep}", rundir); results["epochs"].append(r)
-            log(f"[에포크] {ep}: GT mAP50 {r['gt_map50']} / mAP50-95 {r['gt_map5095']}")
-        except Exception as e:
-            log(f"[에포크] {ep} 실패: {type(e).__name__}: {e}")
-        save()
+    for part in PARTS:
+        gt = gt_yaml_for(part, rundir)
+        pairs = collect_pairs(part)
+        log(f"[{part}] 자동라벨 {len(pairs)}장 · GT {gt}")
+        if len(pairs) < 5:
+            log(f"[{part}] 라벨 부족 — 건너뜀"); continue
+        alln = len(pairs)
+        grid = [10, 20] if smoke else sorted(set([g for g in GRID if g < alln] + [alln]))
+        results[part] = []
+        for m in grid:
+            try:
+                sel = subsample(pairs, m)
+                images_dir = stage(sel, part, f"{part}_N{m}", rundir)
+                r = train_eval(images_dir, gt, part, DEF_MODEL, ep, f"{part}_N{m}", rundir)
+                row = {"N": len(sel), **r}
+                results[part].append(row)
+                log(f"[{part}] N={len(sel)}: GT mAP50 {r['gt_map50']} / 50-95 {r['gt_map5095']} ({r['min']}분)")
+            except Exception as e:
+                log(f"[{part}] N={m} 실패: {type(e).__name__}: {e}")
+            save()
 
-    lines = [f"{PART} 단독(단일클래스) ablation — 실측 GT mAP"]
-    for axis, rows in results.items():
-        lines.append(f"\n== {axis} ==")
+    lines = ["라벨데이터 개수별 벤치마크 — 실측 GT mAP (모델 yolo11s·100ep·합성없음)"]
+    for part, rows in results.items():
+        lines.append(f"\n== {part} ==")
         for r in rows:
-            lines.append(f"  {r['tag']:16} mAP50 {r['gt_map50']:.4f}  mAP50-95 {r['gt_map5095']:.4f}  (n={r['n_labels']}, {r['epochs']}ep, {r['min']}분)")
+            lines.append(f"  N={r['N']:4d}: mAP50 {r['gt_map50']:.4f}  mAP50-95 {r['gt_map5095']:.4f}  ({r['epochs']}ep, {r['min']}분)")
     open(rundir + "/summary.txt", "w", encoding="utf-8").write("\n".join(lines))
     log("DONE → " + rundir + "/summary.txt")
     print("\n".join(lines))
