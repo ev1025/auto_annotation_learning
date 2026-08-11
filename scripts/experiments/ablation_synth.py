@@ -7,7 +7,7 @@ ablation_atest.py 와 동일 구조지만, 학습 전 sam2_autolabel._synth_augm
 
 사용:
   XR_BASE=$HOME/xr_autolearning CUDA_VISIBLE_DEVICES=2 ABL_PART=gearbox \
-    ABL_GT=$HOME/xr_autolearning/data/bell412/_gearbox_domaingap/gt/gt.yaml \
+    ABL_GT=$HOME/xr_autolearning/data/bell412/gearbox/gt/gt.yaml \
     python scripts/experiments/ablation_synth.py
   # 스모크(1모델·3ep·합성 8장): 위에 ABL_SMOKE=1 ABL_NSYN=8 추가
 결과: results/ablation_synth/<part>/<시각>/results.json · summary.txt · run.log

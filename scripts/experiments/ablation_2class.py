@@ -19,7 +19,7 @@ import build_multiclass as bm
 CLASSES = ["gearbox", "a_test"]            # 인덱스 = 리스트 순서(gearbox=0, a_test=1)
 IDX = {c: i for i, c in enumerate(CLASSES)}
 GT_SRC = {                                  # 각 부품 수동 GT(단일 class0로 저장됨)
-    "gearbox": BASE + "/data/bell412/_gearbox_domaingap/gt",
+    "gearbox": BASE + "/data/bell412/gearbox/gt",
     "a_test":  BASE + "/data/bell412/a_test/gt",
 }
 OUT = BASE + "/results/ablation/gearbox_atest"

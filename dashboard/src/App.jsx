@@ -315,7 +315,9 @@ const takeRoles = (videos) => {
 function AutoLabelView() {
   const [folders, setFolders] = useState([])        // [{folder,label,videos:[{name,count,ready}]}]
   const [partIdx, setPartIdx] = useState(0)         // 부품(폴더) 인덱스
-  const [takeIdx, setTakeIdx] = useState(0)         // 부품 안 학습 테이크 인덱스(보통 0)
+  const [takeIdx, setTakeIdx] = useState(0)         // (구) 학습 테이크 인덱스
+  const [selVideo, setSelVideo] = useState(null)    // 선택해서 보고 있는 영상(없으면 기본=첫 학습영상)
+  const [showVideoPick, setShowVideoPick] = useState(false)  // 영상 선택 모달(라벨검수식)
   const [count, setCount] = useState(0)             // 현재 테이크 프레임 수
   const [idx, setIdx] = useState(0)                 // 현재 프레임
   const [ptsBySrc, setPtsBySrc] = useState(() => {  // { 영상: { 프레임: [{rx,ry,lab}] } } 영상별 보관
@@ -358,16 +360,24 @@ function AutoLabelView() {
   const curPartFolder = partFolders[partIdx]
   const folderVideos = curPartFolder?.videos || []                       // 이 부품의 테이크들
   const roles = takeRoles(folderVideos)
-  const src = roles.train[takeIdx] || roles.train[0] || null             // 지금 탭할 학습 테이크
+  const src = (selVideo && folderVideos.some(v => v.name === selVideo))   // 선택한 영상(없으면 기본=첫 학습영상 or 첫 영상)
+    ? selVideo : (roles.train[0] || folderVideos[0]?.name || null)
   const testTake = roles.test                                            // 이 부품 테스트 테이크(2 또는 학습영상 자체)
   const testIsSelf = testTake && roles.train.includes(testTake)
+  // 부품경로 기반 유니크 키(bell412/<부품>/videos/<stem>). 같은 이름 영상이 다른 부품에 있어도 안 꼬이게
+  // API(prepare·frame·mask·parts_label)엔 이 키를 넘긴다. 화면/상태 키는 여전히 stem(부품 폴더 내 유니크).
+  const keyOf = (name) => {
+    const v = folderVideos.find(x => x.name === name)
+    return v?.key || (curPartFolder ? `${curPartFolder.folder}/${name}` : name)
+  }
+  const srcKey = src ? keyOf(src) : null
 
   const markReady = (name, cnt) => setFolders(prev => prev.map(f => ({
     ...f, videos: f.videos.map(v => v.name === name ? { ...v, ready: true, count: cnt } : v)
   })))
-  const prepareSrc = async (name) => {   // 프레임 미컷이면 컷
+  const prepareSrc = async (name, key) => {   // 프레임 미컷이면 컷 (key=부품경로 키, 없으면 name)
     setPreparing(true)
-    const d = await fetch(`/api/autolabel/prepare?src=${encodeURIComponent(name)}`).then(r => r.json())
+    const d = await fetch(`/api/autolabel/prepare?src=${encodeURIComponent(key || name)}`).then(r => r.json())
     setPreparing(false); setCount(d.count || 0); markReady(name, d.count || 0)
   }
   const prepareAll = async (pfs) => {   // 그룹 전체 프레임 미리 컷(탭 전에 자동, 백그라운드)
@@ -375,7 +385,8 @@ function AutoLabelView() {
       for (const v of pf.videos) {
         if (v.ready) continue
         setPrepProg(`프레임 미리 컷: ${v.name}`)
-        try { const d = await fetch(`/api/autolabel/prepare?src=${encodeURIComponent(v.name)}`).then(r => r.json()); markReady(v.name, d.count || 0) } catch { /* skip */ }
+        const k = v.key || `${pf.folder}/${v.name}`
+        try { const d = await fetch(`/api/autolabel/prepare?src=${encodeURIComponent(k)}`).then(r => r.json()); markReady(v.name, d.count || 0) } catch { /* skip */ }
       }
     }
     setPrepProg('')
@@ -387,8 +398,8 @@ function AutoLabelView() {
   const loadSessions = useCallback(() => {
     fetch('/api/sam2/parts_sessions').then(r => r.json()).then(list => {
       const saved = localStorage.getItem('parts_session_v1')
-      const found = list.find(s => s.session === saved)   // 내가 쓰던 세션만 복원(자동탭 baseline 등 남의 세션 자동 채택 안 함)
-      if (found) { setSession(found.session); setLabeledMap(found.videos || {}) }
+      const found = list.find(s => s.session === saved) || list[0]   // 단일 영속 세션(부품별 저장소 합성) 자동 채택
+      if (found) { setSession(found.session); setLabeledMap(found.videos || {}); localStorage.setItem('parts_session_v1', found.session) }
     }).catch(() => {})
   }, [])
   useEffect(() => { loadFolders() }, [loadFolders])
@@ -406,7 +417,7 @@ function AutoLabelView() {
     if (!src) { setCount(0); return }
     setIdx(0); setActiveShot(null); setLabelStatus(null); setLabelJob(null)
     const v = folderVideos.find(x => x.name === src)
-    if (v?.ready) setCount(v.count || 0); else prepareSrc(src)
+    if (v?.ready) setCount(v.count || 0); else prepareSrc(src, srcKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src])
 
@@ -462,16 +473,16 @@ function AutoLabelView() {
   const toggleExcluded = (p) => setExcluded(c => c.includes(p) ? c.filter(x => x !== p) : [...c, p])
   const curShots = buildShots(src)                 // 현재 학습 테이크의 유효 참조샷
   const shotFrames = Object.keys(pts).map(Number).filter(i => (pts[i] || []).length).sort((a, b) => a - b)  // 이 영상에서 탭한 프레임들
-  // 탭해둔(참조샷 있는) 학습 테이크 전체 → 한 번에 라벨 생성용
-  const tappedItems = partFolders.map(pf => pfTrain(pf)[0]).filter(Boolean)
-    .filter(v => buildShots(v).length > 0).map(v => ({ video: v, shots: buildShots(v) }))
+  // 탭해둔(참조샷 있는) 학습 테이크 전체 → 한 번에 라벨 생성용 (video=부품경로 키)
+  const tappedItems = partFolders.map(pf => ({ pf, stem: pfTrain(pf)[0] })).filter(x => x.stem)
+    .filter(x => buildShots(x.stem).length > 0).map(x => ({ video: `${x.pf.folder}/${x.stem}`, shots: buildShots(x.stem) }))
   // 부품 선택(체크박스) → 선택한 부품 중 참조샷 있는 것들 일괄 라벨 생성 대상
   const toggleSelPart = (folder) => setSelParts(s => { const n = new Set(s); n.has(folder) ? n.delete(folder) : n.add(folder); return n })
   const allPartsSelected = partFolders.length > 0 && partFolders.every(pf => selParts.has(pf.folder))
   const toggleAllParts = () => setSelParts(allPartsSelected ? new Set() : new Set(partFolders.map(pf => pf.folder)))
   const selItems = partFolders.filter(pf => selParts.has(pf.folder))
-    .map(pf => pfTrain(pf)[0]).filter(Boolean)
-    .filter(v => buildShots(v).length > 0).map(v => ({ video: v, shots: buildShots(v) }))
+    .map(pf => ({ pf, stem: pfTrain(pf)[0] })).filter(x => x.stem)
+    .filter(x => buildShots(x.stem).length > 0).map(x => ({ video: `${x.pf.folder}/${x.stem}`, shots: buildShots(x.stem) }))
   const batchMode = selParts.size > 0
   // 학습 체크박스 전체선택/해제
   const allSelected = labeledParts.length > 0 && labeledParts.every(p => !excluded.includes(p))
@@ -489,7 +500,7 @@ function AutoLabelView() {
     setMaskBusy(true)
     const d = await fetch('/api/sam2/mask', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ src, frame: idx, points: cur.map(p => [p.rx, p.ry, p.lab]) })
+      body: JSON.stringify({ src: srcKey, frame: idx, points: cur.map(p => [p.rx, p.ry, p.lab]) })
     }).then(r => r.json()).catch(() => ({ error: '요청 실패' }))
     setMasks(m => ({ ...m, [shotKey(src, idx)]: d }))
     setActiveShot(shotKey(src, idx))
@@ -501,7 +512,7 @@ function AutoLabelView() {
     if (!curShots.length) return
     const r = await fetch('/api/sam2/parts_label', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session, video: src, shots: curShots })
+      body: JSON.stringify({ session, video: srcKey, shots: curShots })
     }).then(x => x.json())
     if (r.error) { setLabelStatus({ error: r.error }); return }
     if (r.session) { setSession(r.session); localStorage.setItem('parts_session_v1', r.session) }
@@ -537,7 +548,7 @@ function AutoLabelView() {
     return () => clearInterval(t)
   }, [labelJob, labelStatus?.running])
 
-  const goPart = (i) => { setPartIdx(Math.max(0, Math.min(i, partFolders.length - 1))); setTakeIdx(0) }
+  const goPart = (i) => { setPartIdx(Math.max(0, Math.min(i, partFolders.length - 1))); setTakeIdx(0); setSelVideo(null) }
 
   // 멀티클래스 학습: 세션 누적 라벨 → 클래스 통합 → YOLO 학습 → 부품별 테스트 테이크 검출 평가
   const testSrcs = () => {   // 라벨된 부품마다 테스트 테이크(끝수 "2" 또는 학습영상 자체)
@@ -579,30 +590,35 @@ function AutoLabelView() {
   }
   const delReviewFrame = async (f) => {   // 잘못된 프레임 삭제(그 프레임이 속한 세션에서 제거)
     await fetch('/api/sam2/delete_train_frame', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session: f.session, name: f.name })
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session: f.session, name: f.name, part: f.part })
     }).catch(() => {})
     setReviewFrames(fs => fs.filter(x => !(x.session === f.session && x.name === f.name)))
+  }
+  // 영상 삭제(모달): 원본은 서버 _trash 로 이동(복구 가능), 프레임캐시·오토라벨은 삭제
+  const deleteVideo = async (name) => {
+    if (running) return
+    if (!window.confirm(`'${name}' 영상을 삭제할까요?\n· 원본은 _trash 폴더로 이동(복구 가능)\n· 이 영상의 프레임캐시와 자동생성 라벨은 삭제됩니다.`)) return
+    const key = keyOf(name)
+    const r = await fetch('/api/sam2/delete_video', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ src: key })
+    }).then(x => x.json()).catch(() => ({ error: '삭제 요청 실패' }))
+    if (r.error) { window.alert(r.error); return }
+    setPtsBySrc(prev => { const n = { ...prev }; delete n[name]; return n })   // 이 영상 탭 정리
+    if (selVideo === name) setSelVideo(null)
+    loadFolders(); loadSessions()
+    fetch('/api/sam2/labeled_parts').then(x => x.json()).then(x => setLabeledAnywhere(new Set(x.parts || []))).catch(() => {})
   }
 
   return (
     <div>
       {!src ? <p className="al-hint">부품 폴더가 없습니다. (data/bell412/parts/&lt;부품&gt;/videos)</p> : (
         <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 196px)', minHeight: 420, overflow: 'hidden' }}>
-          {/* 헤더: 안내만(장비명 미표시) */}
-          <div className="wiz-head" style={{ flexShrink: 0 }}>
-            <div className="mask-panel" style={{ marginTop: 0 }}>
-              <div className="mask-legend">
-                <span className="lg-title">사용법</span>
-                <span className="lg-item"><i className="lg-dot" style={{ background: '#3b82f6' }} />좌클릭 포함점</span>
-                <span className="lg-item"><i className="lg-dot" style={{ background: '#f87171' }} />우클릭 제외점</span>
-                <span className="lg-item"><i className="lg-dot" style={{ background: '#34d399' }} />마스크</span>
-                <span className="lg-item"><i className="lg-dot" style={{ background: '#fb923c' }} />박스</span>
-                {prepProg && <span className="al-hint" style={{ marginLeft: 'auto' }}>⏳ {prepProg}</span>}
-              </div>
-            </div>
-          </div>
+          {/* 상단 범례 제거 — 범례는 이미지·입력마스크 아래로 이동 */}
           {/* 상단 액션 버튼줄 */}
           <div className="al-controls" style={{ flexShrink: 0 }}>
+            {roles.train.length >= 1 && (
+              <button className="act-btn neutral" onClick={() => setShowVideoPick(true)} disabled={running} title="학습 영상 선택·미리보기">영상 선택</button>
+            )}
             <button className="act-btn neutral" onClick={undo} disabled={running || !cur.length}>점 취소</button>
             <button className="act-btn neutral" onClick={clearFrame} disabled={running || !cur.length}>지우기</button>
             <button className="act-btn primary" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
@@ -618,9 +634,11 @@ function AutoLabelView() {
             </button>
             <button className="act-btn neutral" onClick={openReview} disabled={running || !(isLabeled(src) || labeledAnywhere.has(partName))}
                     title="현재 부품에 생성된 학습 라벨 프레임을 확인하고 잘못된 사진을 삭제">라벨 검수</button>
-            {labelStatus && !labelStatus.error && labelStatus.video === src &&
-              <span className="al-hint">{labelStatus.running ? '전파 중...' : (labelStatus.stage === 'done' ? `✓ 라벨 ${labelStatus.labels}장` : '')}</span>}
+            {labelStatus && !labelStatus.error && labelStatus.video === src && labelStatus.running &&
+              <span className="al-hint">전파 중...</span>}
           </div>
+
+          {/* (영상 선택 버튼은 상단 액션줄로 이동) */}
 
           {/* 참조샷: 액션 버튼 바로 아래, 가로 칩 리스트 */}
           {shotFrames.length > 0 && (
@@ -656,7 +674,7 @@ function AutoLabelView() {
                   {preparing
                     ? <span className="al-hint">프레임 컷 중...</span>
                     : <div className="tap-box" onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
-                        {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false}
+                        {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(srcKey)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false}
                                      style={{ maxHeight: 'calc(100vh - 444px)', maxWidth: '100%' }} />}
                         {cur.map((p, i) => (
                           <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
@@ -673,6 +691,17 @@ function AutoLabelView() {
                 </div>
               </div>
 
+
+              {/* 범례: 이미지·입력마스크 아래, 작은 배경 박스(존) 안에 색상만 */}
+              <div className="mask-panel" style={{ flexShrink: 0, marginTop: 8 }}>
+                <div className="mask-legend">
+                  <span className="lg-item"><i className="lg-dot" style={{ background: '#3b82f6' }} />포함점</span>
+                  <span className="lg-item"><i className="lg-dot" style={{ background: '#f87171' }} />제외점</span>
+                  <span className="lg-item"><i className="lg-dot" style={{ background: '#34d399' }} />마스크</span>
+                  <span className="lg-item"><i className="lg-dot" style={{ background: '#fb923c' }} />박스</span>
+                  {prepProg && <span className="al-hint" style={{ marginLeft: 'auto' }}>⏳ {prepProg}</span>}
+                </div>
+              </div>
 
               {/* 재생 컨트롤 바: 이미지 바로 아래, 이미지 폭에 꽉(비디오 플레이어 느낌) */}
               <div className="al-controls" style={{ flexShrink: 0, marginTop: 8 }}>
@@ -738,7 +767,7 @@ function AutoLabelView() {
               {reviewFrames.map(f => (
                 <figure key={`${f.session}/${f.name}`} className="review-cell">
                   <img loading="lazy" alt={f.part}
-                       src={`/api/sam2/train_frame?session=${encodeURIComponent(f.session)}&name=${encodeURIComponent(f.name)}&w=240`} />
+                       src={`/api/sam2/train_frame?session=${encodeURIComponent(f.session)}&name=${encodeURIComponent(f.name)}&w=240&part=${encodeURIComponent(f.part || '')}`} />
                   <figcaption title={f.name}>{f.part}</figcaption>
                   <button className="review-del" title="이 프레임 삭제" onClick={() => delReviewFrame(f)}><IcX /></button>
                 </figure>
@@ -747,6 +776,41 @@ function AutoLabelView() {
             <div className="modal-foot">
               <span className="al-hint" style={{ marginRight: 'auto' }}>잘못 잡힌 프레임은 ×로 삭제하세요. 삭제 즉시 학습셋에서 빠집니다.</span>
               <button className="act-btn neutral" onClick={() => setShowReview(false)}>닫기</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 영상 선택 모달: 이 부품 학습 영상(test 제외) 중 골라 보기 */}
+      {showVideoPick && (
+        <div className="modal-scrim" onClick={() => setShowVideoPick(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <b>{partName} 영상 선택</b>
+              <button className="icon-x" onClick={() => setShowVideoPick(false)} aria-label="닫기"><IcX /></button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, padding: 16, maxHeight: '64vh', overflow: 'auto' }}>
+              {roles.train.map(v => {
+                const on = v === src
+                return (
+                  <div key={v} role="button" tabIndex={0} onClick={() => { setSelVideo(v); setShowVideoPick(false) }}
+                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setSelVideo(v); setShowVideoPick(false) } }}
+                       style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 6, padding: 8, borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+                                border: on ? '2px solid var(--accent)' : '1px solid var(--line-strong)', background: on ? 'var(--accent-bg)' : 'var(--surface)' }}>
+                    {on && <span style={{ position: 'absolute', top: 12, left: 12, zIndex: 1, background: 'var(--accent)', color: '#fff',
+                                          fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 6 }}>선택됨</span>}
+                    {/* 영상 삭제(X): 원본은 _trash 로 이동(복구 가능), 캐시·라벨은 삭제 */}
+                    <button className="review-del" title="이 영상 삭제" disabled={running}
+                            onClick={(e) => { e.stopPropagation(); deleteVideo(v) }}
+                            style={{ position: 'absolute', top: 10, right: 10, zIndex: 2 }}><IcX /></button>
+                    <img src={`/api/autolabel/frame?src=${encodeURIComponent(keyOf(v))}&idx=0&w=360`} alt={v} loading="lazy"
+                         style={{ width: '100%', aspectRatio: '16 / 10', objectFit: 'cover', borderRadius: 6, background: 'var(--bg)' }} />
+                    <span style={{ fontSize: 14, fontWeight: on ? 700 : 500, color: on ? 'var(--accent-ink)' : 'var(--ink-strong)' }}>
+                      {isLabeled(v) ? '✓ ' : ''}{v}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>
@@ -902,7 +966,7 @@ function fmtId(s) {
 }
 
 // 모델 버전 카드(기존/신규 나란히 비교). highlightNew=신규 부품 뱃지 강조
-// 표시 항목은 딱 4가지: ①모델 ID ②생성 일시 ③학습 부품 뱃지 ④포착률(있으면). 중복 캡션 없음
+// 표시 항목은 딱 4가지: ①모델 ID ②생성 일시 ③학습 부품 뱃지 ④인식률(있으면). 중복 캡션 없음
 function VerCard({ tag, cls, id, time, classes, map50, baseSet, highlightNew }) {
   const list = classes || []
   return (
@@ -912,7 +976,7 @@ function VerCard({ tag, cls, id, time, classes, map50, baseSet, highlightNew }) 
       <dl className="verc-meta">
         <div><dt>생성 일시</dt><dd>{time || '—'}</dd></div>
         {map50 != null && (
-          <div><dt>포착률<span className="verc-qual">(자동라벨)</span></dt><dd className="verc-map">{map50}</dd></div>
+          <div><dt>인식률<span className="verc-qual">(자동라벨)</span></dt><dd className="verc-map">{map50}</dd></div>
         )}
       </dl>
       <div className="verc-parts">
@@ -929,8 +993,9 @@ function VerCard({ tag, cls, id, time, classes, map50, baseSet, highlightNew }) 
   )
 }
 
-// 하단 액션바의 [과거 모델로 롤백 ▾] 드롭다운. 최근 10개 버전 · 항목 클릭=롤백 · ×=삭제 · 바깥 클릭 시 닫힘
-function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep }) {
+// 하단 액션바 모델 액션. onApply(신규 적용) 있으면 주 CTA=분할버튼(적용 + ▾메뉴: 폐기·과거 롤백),
+// 없으면(관리 모드) [과거 모델로 롤백 ▾] 단일 드롭다운. 항목 클릭=롤백 · ×=삭제 · 바깥 클릭 시 닫힘
+function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, onApply, applied }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   useEffect(() => {                         // 팝업이 열려 있을 때만 바깥 클릭 감지 리스너 부착
@@ -943,23 +1008,37 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep })
   }, [open])
   const recent = (models || []).slice(0, 10)     // 최근 10개 버전만
   return (
-    <div className="rbmenu" ref={ref}>
-      <button className="act-btn ghost rbmenu-btn" onClick={() => setOpen(o => !o)}
-              aria-haspopup="true" aria-expanded={open}>
-        과거 모델로 롤백 <IcChevronDown />
-      </button>
+    <div className={`rbmenu${onApply ? ' split' : ''}`} ref={ref}>
+      {onApply ? (
+        // 주 CTA(분할버튼): 왼쪽=신규 적용, 오른쪽 ▾=다른 작업 메뉴
+        <>
+          <button className="act-btn train big split-main" onClick={onApply} disabled={applied}>
+            {applied ? '✓ 서비스 적용됨' : '신규 모델 서비스 적용'}
+          </button>
+          <button className="act-btn train big split-caret" onClick={() => setOpen(o => !o)}
+                  aria-haspopup="true" aria-expanded={open} aria-label="다른 작업 (과거 롤백 · 신규 폐기)">
+            <IcChevronDown />
+          </button>
+        </>
+      ) : (
+        <button className="act-btn ghost rbmenu-btn" onClick={() => setOpen(o => !o)}
+                aria-haspopup="true" aria-expanded={open}>
+          과거 모델로 롤백 <IcChevronDown />
+        </button>
+      )}
       {open && (
         <div className="rbmenu-pop" role="menu">
-          <div className="rbmenu-head">버전 선택 · 클릭 시 롤백 · ×: 삭제</div>
+          <div className="rbmenu-head">{onApply ? '다른 작업' : '버전 선택 · 클릭 시 롤백 · ×: 삭제'}</div>
           {onKeep && (
             <button className="rbmenu-item keep" role="menuitem"
                     onClick={() => { setOpen(false); onKeep() }}>
               <span className="rbmenu-main">
-                <span className="rbmenu-t">현재 모델 유지</span>
-                <span className="rbmenu-s">신규 학습을 폐기하고 라벨 화면으로</span>
+                <span className="rbmenu-t">신규 학습 폐기</span>
+                <span className="rbmenu-s">라벨 화면으로 돌아가기</span>
               </span>
             </button>
           )}
+          {onApply && <div className="rbmenu-sec">과거 버전으로 롤백</div>}
           {recent.length === 0 && <div className="rbmenu-empty">등록된 과거 버전이 없습니다.</div>}
           {recent.map(m => {
             const active = m.is_active || m.model_id === servedId
@@ -975,7 +1054,7 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep })
                    }}>
                 <span className="rbmenu-main">
                   <span className="rbmenu-t">{m.time || fmtId(m.model_id)}</span>
-                  <span className="rbmenu-s">{m.n_classes}종 · 포착률 {m.map50 != null ? m.map50 : '—'}</span>
+                  <span className="rbmenu-s">{m.n_classes}종 · 인식률 {m.map50 != null ? m.map50 : '—'}</span>
                 </span>
                 {active
                   ? <span className="rbmenu-cur">현재</span>
@@ -1040,7 +1119,6 @@ function PartsApp() {
   const [trainedVideos, setTrainedVideos] = useState([])   // 기존 모델에 이미 학습된 영상
   const [picked, setPicked] = useState([])           // 선택한 부품(기본 = 선택 없음)
   const [epochs, setEpochs] = useState(100)
-  const [augment, setAugment] = useState(true)   // 배경 합성 증강(누끼→실배경 copy-paste) 기본 켜짐
   const [job, setJob] = useState(null)
   const [status, setStatus] = useState(null)
   const [page, setPage] = useState('label')          // 'label' | 'training' (학습 전용 페이지)
@@ -1051,21 +1129,25 @@ function PartsApp() {
   const [models, setModels] = useState([])           // 등록소 버전 목록(타임라인)
   const [rolledTo, setRolledTo] = useState(null)     // 롤백 완료된 model_id
   const [selVer, setSelVer] = useState(null)         // 타임라인에서 고른 비교 기준 버전(null=현재 서비스)
+  const [baSel, setBaSel] = useState(0)              // 인식 결과 비교: 한 번에 보는 부품 인덱스
   const running = !!status?.running
 
   const loadTrain = useCallback(() => {   // 모달 열 때 폴더+라벨 현황 갱신
     fetch('/api/autolabel/folders').then(r => r.json()).then(setFolders).catch(() => {})
     fetch('/api/sam2/parts_sessions').then(r => r.json()).then(list => {
       const saved = localStorage.getItem('parts_session_v1')
-      const found = list.find(s => s.session === saved)   // 내 세션만(자동탭 baseline 자동 채택 금지)
-      if (found) { setSession(found.session); setLabeledMap(found.videos || {}); setTrainedVideos(found.trained || []) }
+      const found = list.find(s => s.session === saved) || list[0]   // 단일 영속 세션(부품별 저장소 합성) 자동 채택
+      if (found) { setSession(found.session); setLabeledMap(found.videos || {}); setTrainedVideos(found.trained || []); localStorage.setItem('parts_session_v1', found.session) }
     }).catch(() => {})
   }, [])
 
   const folderOf = (video) => folders.find(f => f.videos.some(v => v.name === video))
   const items = Object.keys(labeledMap).map(video => {   // 라벨 1장 이상 생성된 부품만 학습 대상
     const f = folderOf(video)
-    return { video, part: f ? partOf(f.folder) : video, test: f ? takeRoles(f.videos).test : video,
+    const teststem = f ? takeRoles(f.videos).test : video
+    // test_srcs 는 부품경로 키로 넘긴다(같은 이름 test 영상이 다른 부품에 있어도 평가 대상 안 꼬임)
+    const test = f && teststem ? `${f.folder}/${teststem}` : teststem
+    return { video, part: f ? partOf(f.folder) : video, test,
              labels: labeledMap[video].labels, trained: trainedVideos.includes(video) }
   }).filter(it => it.labels > 0).sort((a, b) => a.part.localeCompare(b.part))
   const selected = items.filter(it => picked.includes(it.part))
@@ -1082,7 +1164,7 @@ function PartsApp() {
     const tests = [...new Set(selected.map(it => it.test).filter(Boolean))]
     const r = await fetch('/api/sam2/multiclass', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session, epochs, test_srcs: tests, classes, augment })
+      body: JSON.stringify({ session, epochs, test_srcs: tests, classes, augment: true })   // 배경 합성 증강 항상 적용
     }).then(x => x.json())
     if (r.error) { setJob('err'); setStatus({ error: r.error, running: false, log: [] }); return }
     setJob(r.job); setStatus({ stage: 'start', running: true, log: [] })   // 학습 시작 → 로그 뷰어로 전환
@@ -1253,9 +1335,8 @@ function PartsApp() {
             title={trainDone ? '학습 결과' : (status?.stage === 'cancelled' ? '학습 중단' : '학습 설정')}
             back={backToLabel}
             right={<>
-              {!job && <span className="al-hint">학습 대상 {selected.length}/{items.length}종</span>}
               {!job && <button className="icon-back" onClick={goManage} title="모델 관리 · 롤백" aria-label="모델 관리"><IcChevronRight /></button>}
-              {running && <button className="act-btn stop" onClick={doCancel}>■ 학습 중단</button>}
+              {trainDone && <button className="icon-back" onClick={goEvaluate} title="모델 평가 · 적용" aria-label="다음 단계: 모델 평가·적용"><IcChevronRight /></button>}
             </>}
           />
 
@@ -1297,6 +1378,7 @@ function PartsApp() {
                     <b className="prog-head-title">{headText}</b>
                     {running && <span className="prog-sub"><span className="spinner" /> 진행 중...</span>}
                   </div>
+                  {running && <button className="act-btn stop" onClick={doCancel} style={{ marginLeft: 'auto' }}>■ 학습 중단</button>}
                 </div>
               )}
               {!job && (
@@ -1305,12 +1387,7 @@ function PartsApp() {
                   <span className="al-hint">Epoch</span>
                   <input className="ep-in" type="number" min={1} value={epochs}
                          onChange={(e) => setEpochs(Math.max(1, Math.floor(+e.target.value) || 1))} />
-                  <label className="aug-toggle" title="객체를 오려 실제 배경에 합성한 이미지를 추가해 배경 과적합을 줄입니다(학습 시간 늘어남)">
-                    <input type="checkbox" checked={augment} onChange={(e) => setAugment(e.target.checked)} />
-                    <span>배경 합성 증강</span>
-                  </label>
                   <button className="act-btn train" onClick={runTrain} disabled={selected.length === 0}>학습 시작</button>
-                  <span className="al-hint" style={{ marginLeft: 4 }}>{selected.length === 0 ? '좌측에서 학습할 부품을 선택하세요' : `${selected.length}종 선택됨`}</span>
                 </div>
               )}
               {job && status?.curve?.length > 0 && (
@@ -1344,21 +1421,7 @@ function PartsApp() {
                       <div className="rcard"><span>데이터 종류</span><b>{status?.n_classes ?? '—'}종</b></div>
                     </div>
                   </div>
-                  {/* 검출 평가 카드 */}
-                  {status?.eval?.length > 0 && (
-                    <div className="ev2-card">
-                      <h4 className="ev2-h">검출 평가</h4>
-                      <table className="eval-table"><thead><tr>
-                        <th>프레임</th><th>검출</th><th>검출률</th><th>평균 신뢰도</th><th>주요 클래스</th>
-                      </tr></thead><tbody>
-                        {status.eval.map(e => (
-                          <tr key={e.src}><td>{e.frames}</td><td>{e.detected}</td>
-                            <td><b>{Math.round(e.rate * 100)}%</b></td><td>{e.mean_conf}</td>
-                            <td>{(e.top_classes || []).map(([c, n]) => `${c}(${n})`).join(', ')}</td></tr>
-                        ))}
-                      </tbody></table>
-                    </div>
-                  )}
+                  {/* 검출 평가 카드 삭제(사용자 요청). 인식 결과는 '모델 평가·적용' 화면의 인식 결과 비교에서 확인 */}
                 </div>
               )}
             </section>
@@ -1367,16 +1430,19 @@ function PartsApp() {
           {(trainDone || status?.stage === 'cancelled') && (
             <div className="ev2-footer">
               <button className="act-btn ghost" onClick={newRun}>↻ 새 학습</button>
-              <div className="ev2-footer-right">
-                {trainDone && <button className="act-btn train big" onClick={goEvaluate}>모델 평가 · 적용 →</button>}
-              </div>
             </div>
           )}
         </div>
       ) : (
         // ===== 3단계: 모델 평가 · 적용 (버전 비교 → 서비스 적용 / 선택형 롤백) =====
         <div className="ev2">
-          <PageHead title={cmpDone ? '모델 평가 · 적용' : cmp?.running ? '모델 평가 중' : '모델 관리 · 롤백'} back={() => setPage('training')} />
+          <PageHead title={cmpDone ? '모델 평가 · 적용' : cmp?.running ? '모델 평가 중' : '모델 관리 · 롤백'} back={() => setPage('training')}
+                    right={(!cmp?.running && !cmp?.error) ? (
+                      <RollbackMenu models={models} servedId={served?.model_id}
+                                    onRollbackTo={doRollbackTo} onDeleteModel={doDeleteModel}
+                                    onKeep={cmpDone ? doRollback : null}
+                                    onApply={cmpDone ? doApply : null} applied={applied} />
+                    ) : null} />
           {cmp?.running && (
             <div className="ev2-progress">
               <CircularProgress pct={cmpPct} done={false} />
@@ -1396,16 +1462,8 @@ function PartsApp() {
                     <span>
                       {cmp.recommend.msg}
                       {cmp.recommend.level !== 'apply' &&
-                        <b className="reco-cta">오검출이 의심되면 아래 검출 샘플을 확인한 뒤 롤백하세요.</b>}
+                        <b className="reco-cta">오검출이 의심되면 아래 인식 결과 비교를 확인한 뒤 롤백하세요.</b>}
                     </span>
-                  </div>
-                )}
-
-                {/* 상시 안내: 이 수치는 자동라벨 기준 포착률 → 오검출은 육안 확인 필요 */}
-                {cmpDone && (
-                  <div className="eval-note">
-                    <IcInfo />
-                    <span>이 수치는 <b>자동 생성 라벨 기준 포착률</b>입니다. 엉뚱한 부품을 잡는 오검출 여부는 반드시 아래 <b>‘검출 결과 비교’</b> 이미지를 육안으로 확인하세요.</span>
                   </div>
                 )}
 
@@ -1419,17 +1477,25 @@ function PartsApp() {
                   </div>
                 )}
 
-                {/* [최우선] 검출 결과 비교 — 권고배너 바로 아래에 크게 (스크롤 없이 즉시 육안 확인) */}
-                {baGroups.length > 0 && (
-                  <section className="ev2-card ba-primary">
-                    <h4 className="ev2-h">검출 결과 비교 <span className="al-hint">(부품별 · 좌우 화살표로 여러 프레임 확인 · 기존 모델 → 신규 모델)</span></h4>
-                    <div className="ba-list">
-                      {baGroups.map((g, i) => (
-                        <BaGroup key={g.part + '_' + i} part={g.part} kind={g.kind} frames={g.frames} />
-                      ))}
-                    </div>
-                  </section>
-                )}
+                {/* [최우선] 인식 결과 비교 — 권고배너 바로 아래에 크게, 부품 하나씩 육안 확인 */}
+                {baGroups.length > 0 && (() => {
+                  const gi = baSel < baGroups.length ? baSel : 0    // 선택 부품(범위 밖이면 첫 부품)
+                  const g = baGroups[gi]
+                  return (
+                    <section className="ev2-card ba-primary">
+                      <h4 className="ev2-h">인식 결과 비교</h4>
+                      {baGroups.length > 1 && (
+                        <div className="fv-srcs" style={{ marginBottom: 12 }}>
+                          {baGroups.map((x, i) => (
+                            <button key={x.part + '_' + i} className={i === gi ? 'pb-btn sm on' : 'pb-btn sm'}
+                                    onClick={() => setBaSel(i)}>{x.part}</button>
+                          ))}
+                        </div>
+                      )}
+                      <BaGroup key={g.part + '_' + gi} part={g.part} kind={g.kind} frames={g.frames} />
+                    </section>
+                  )
+                })()}
 
                 {/* 모델 버전 비교. 비교할 기존 모델이 없으면 신규 카드 1개만 중앙 배치 + 첫 배포 안내 */}
                 {cmpDone && (
@@ -1488,19 +1554,21 @@ function PartsApp() {
                 {/* 성능 비교(검출 인식률) - 컴팩트 표, 신규 학습이 있을 때만 */}
                 {cmpDone && (
                 <section className="ev2-card">
-                  <h4 className="ev2-h">자동라벨 포착률 (Recall) <span className="al-hint">(자동 생성 라벨 기준 · 기존→신규)</span></h4>
+                  <h4 className="ev2-h">자동라벨 인식률
+                    <span className="ev2-tip" title="자동 생성 라벨을 정답으로 본 인식률입니다 (기존 모델 → 신규 모델)"><IcInfo /></span>
+                  </h4>
                   <table className="perf-tbl">
                     <thead><tr><th>부품군</th><th>기존</th><th></th><th>신규</th><th>변화</th></tr></thead>
                     <tbody>
                       <tr>
-                        <td className="perf-name">전체 일반화 <span className="al-hint">기존 {cmp.gen?.n ?? 0}종 · 포착률 유지 여부</span></td>
+                        <td className="perf-name">전체 일반화 <span className="al-hint">기존 {cmp.gen?.n ?? 0}종 · 인식률 유지 여부</span></td>
                         <td className="perf-v">{pctv(cmp.gen?.before)}</td>
                         <td className="perf-arr">→</td>
                         <td className="perf-v new">{pctv(cmp.gen?.after)}</td>
                         <td className="perf-d">{deltaEl(cmp.gen?.before, cmp.gen?.after)}</td>
                       </tr>
                       <tr>
-                        <td className="perf-name">신규 부품 <span className="al-hint">{cmp.newp?.n ?? 0}종 · 신규 학습 포착률</span></td>
+                        <td className="perf-name">신규 부품 <span className="al-hint">{cmp.newp?.n ?? 0}종 · 신규 학습 인식률</span></td>
                         <td className="perf-v">{pctv(cmp.newp?.before)}</td>
                         <td className="perf-arr">→</td>
                         <td className="perf-v new">{pctv(cmp.newp?.after)}</td>
@@ -1512,20 +1580,8 @@ function PartsApp() {
                 )}
               </div>
 
-              {/* 하단 고정 액션바 */}
-              <div className="ev2-footer">
-                <RollbackMenu models={models} servedId={served?.model_id}
-                              onRollbackTo={doRollbackTo} onDeleteModel={doDeleteModel}
-                              onKeep={cmpDone ? doRollback : null} />
-                <div className="ev2-footer-right">
-                  {rolledTo && <span className="ok-flash"><IcCheck /> #{rolledTo} 롤백됨</span>}
-                  {cmpDone && (
-                    <button className="act-btn train big" onClick={doApply} disabled={applied}>
-                      {applied ? '✓ 서비스 적용됨' : '신규 모델 서비스 적용'}
-                    </button>
-                  )}
-                </div>
-              </div>
+              {/* 액션(적용·롤백·폐기)은 상단 헤더 우측으로 이동. 여기는 롤백 완료 플래시만 */}
+              {rolledTo && <div className="ev2-footer"><span className="ok-flash"><IcCheck /> #{rolledTo} 롤백됨</span></div>}
             </>
           )}
 

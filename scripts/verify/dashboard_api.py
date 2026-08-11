@@ -188,8 +188,8 @@ def api_sam2_labeled_parts():
 
 
 @app.get("/api/sam2/train_frame")
-def api_sam2_train_frame(session: str, name: str, w: int = 360):
-    b = sa.train_frame_jpeg(session, name, w)
+def api_sam2_train_frame(session: str, name: str, w: int = 360, part: str = None):
+    b = sa.train_frame_jpeg(session, name, w, part)
     if b is None:
         return JSONResponse({"error": "not found"}, status_code=404)
     return Response(content=b, media_type="image/jpeg")
@@ -197,7 +197,12 @@ def api_sam2_train_frame(session: str, name: str, w: int = 360):
 
 @app.post("/api/sam2/delete_train_frame")
 def api_sam2_delete_train_frame(payload: dict = Body(...)):
-    return sa.delete_train_frame(payload.get("session"), payload.get("name"))
+    return sa.delete_train_frame(payload.get("session"), payload.get("name"), payload.get("part"))
+
+
+@app.post("/api/sam2/delete_video")
+def api_sam2_delete_video(payload: dict = Body(...)):
+    return sa.delete_video(payload.get("src") or payload.get("video"))
 
 
 @app.post("/api/sam2/apply_model")

@@ -18,6 +18,7 @@ import gc
 import json
 import logging
 import logging.handlers
+import re
 import shutil
 import sys
 import threading
@@ -137,13 +138,17 @@ def _run_propagate(job_id, src, shots):
     j = JOBS[job_id]
     try:
         from sam2.build_sam import build_sam2_video_predictor
+        vp = autolabel.resolve_video(src)
+        if not vp:
+            raise RuntimeError(f"영상을 찾지 못함: {src}")
+        stem = vp.stem
         fs = autolabel._frames(src)
-        cache_dir = autolabel.FRAME_CACHE / src
+        cache_dir = autolabel.frames_dir_for(src)          # 부품별 프레임 캐시 디렉토리(부품경로 기반 유니크)
         j.update(stage="load", total=len(fs))
         predictor = build_sam2_video_predictor(CFG, str(CKPT), device=DEV)
         h, w = _rd(fs[0]).shape[:2]
         runid = datetime.now().strftime("%y%m%d_%H%M%S")   # 실행마다 폴더 하나 (덮어쓰지 않음)
-        work = RESULTS / f"{src}_{runid}"                  # 영상_실행시각
+        work = RESULTS / f"{stem}_{runid}"                 # 영상_실행시각 (폴더명은 stem, 슬래시 방지)
         ref_d = work / "tap"    # 탭 프레임: 점+마스크+박스를 한 장에
         seed_i, seed_l = work / "train" / "images", work / "train" / "labels"
         box_d = work / "train_box"   # 학습 이미지에 바운딩박스 그린 확인용
@@ -277,13 +282,19 @@ def _draw_pred(im, r):
 
 
 def _propagate_into(video, shots, pi, pl, box_d, ref_d):
-    """영상 하나를 SAM2 전파 → train/train_box/tap 에 '영상이름_프레임' 이름으로 통합 저장. 라벨수 반환."""
+    """영상 하나를 SAM2 전파 → train/train_box/tap 에 '영상stem_프레임' 이름으로 통합 저장. 라벨수 반환.
+    video = 부품경로 키(bell412/<부품>/videos/<stem>) 또는 stem. 파일명 접두어는 항상 stem(슬래시 방지)."""
     from sam2.build_sam import build_sam2_video_predictor
+    vp = autolabel.resolve_video(video)
+    if not vp:
+        raise RuntimeError(f"영상을 찾지 못함: {video}")
+    stem = vp.stem                                     # 파일명 접두어(부품 폴더 안에서 유니크)
     fs = autolabel._frames(video)
+    cache_dir = autolabel.frames_dir_for(video)        # 부품별 프레임 캐시(부품경로 기반)
     predictor = build_sam2_video_predictor(CFG, str(CKPT), device=DEV)
     h, w = _rd(fs[0]).shape[:2]
     with torch.inference_mode(), torch.autocast(DEV, dtype=torch.bfloat16):
-        state = predictor.init_state(video_path=str(autolabel.FRAME_CACHE / video),
+        state = predictor.init_state(video_path=str(cache_dir),
                                      offload_video_to_cpu=True, offload_state_to_cpu=True)
         for fi, pts in shots:
             p = np.array([[rx * w, ry * h] for rx, ry, _ in pts], dtype=np.float32)
@@ -303,7 +314,7 @@ def _propagate_into(video, shots, pi, pl, box_d, ref_d):
         for rx, ry, lab in pts:
             cv2.circle(vis, (int(rx * w), int(ry * h)), 10, (255, 60, 0) if lab else (0, 0, 255), -1)
             cv2.circle(vis, (int(rx * w), int(ry * h)), 10, (255, 255, 255), 2)
-        cv2.imwrite(str(ref_d / f"{video}_{Path(fs[int(fi)]).stem}.jpg"), vis)
+        cv2.imwrite(str(ref_d / f"{stem}_{Path(fs[int(fi)]).stem}.jpg"), vis)
 
     n = 0
     for i, p in enumerate(fs):
@@ -311,16 +322,17 @@ def _propagate_into(video, shots, pi, pl, box_d, ref_d):
         if mk is not None and mk.shape != (h, w):
             mk = cv2.resize(mk.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool)
         bb = _bbox(mk) if mk is not None else None
-        nm = f"{video}_{p.stem}"   # 영상이름_번호 → 한 폴더에 통합해도 안 겹침
+        nm = f"{stem}_{p.stem}"   # 영상stem_번호 → 한 폴더에 통합해도 안 겹침
         if bb and (bb[2] - bb[0]) > 10 and (bb[3] - bb[1]) > 10:
             cv2.imwrite(str(pi / f"{nm}.jpg"), im)
             cx, cy = (bb[0] + bb[2]) / 2 / w, (bb[1] + bb[3]) / 2 / h
             bw, bh = (bb[2] - bb[0]) / w, (bb[3] - bb[1]) / h
             (pl / f"{nm}.txt").write_text(f"0 {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}\n", encoding="utf-8")
-            boxed = im.copy()
-            cv2.rectangle(boxed, (bb[0], bb[1]), (bb[2], bb[3]), (0, 165, 255), 3)
-            cv2.putText(boxed, "part", (bb[0], max(bb[1] - 6, 16)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
-            cv2.imwrite(str(box_d / f"{nm}.jpg"), boxed)
+            if box_d is not None:                 # box(확인용) 저장은 선택. 영속 저장소에는 생략(None) 가능.
+                boxed = im.copy()
+                cv2.rectangle(boxed, (bb[0], bb[1]), (bb[2], bb[3]), (0, 165, 255), 3)
+                cv2.putText(boxed, "part", (bb[0], max(bb[1] - 6, 16)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
+                cv2.imwrite(str(box_d / f"{nm}.jpg"), boxed)
             n += 1
     return n, len(fs)
 
@@ -463,65 +475,106 @@ if not logger.handlers:
     logger.propagate = False
 
 
+# ==================== 부품별 영속 오토라벨 저장소 ====================
+# 오토라벨 산출(입력마스크+학습라벨)을 실험결과(results/)와 분리해 부품 폴더 아래 영속 보관한다.
+#   data/bell412/<부품>/autolabel/{images,labels,masks}  (파일명=<영상>_<프레임>)
+# 프론트는 여전히 '세션' 개념으로 동작하므로, 이 영속 저장소 전체를 단일 세션(PERSIST)처럼 합성해 노출한다.
+DATA_BELL = config.DATA_DIR / "bell412"
+PERSIST = "autolabel"          # 프론트에 노출하는 단일 영속 세션 이름
+
+
+def _video_stem(name):
+    """파일명/stem에서 뒤 프레임번호 제거 → 영상 stem. 'train_00012'→'train', 'Gearbox_gearbox1_00007'→'Gearbox_gearbox1'."""
+    return re.sub(r"_\d+$", "", Path(name).stem)
+
+
+def _part_root_for_video(video):
+    """영상(부품경로 키 또는 stem) → 그 부품 폴더(data/bell412/<부품>).
+    resolve_video 로 부품경로 기반 유니크 해석(같은 stem 이 다른 부품에 있어도 안 꼬임).
+    못 찾으면 안전 폴백(data/bell412/_unmapped)."""
+    vp = autolabel.resolve_video(video)
+    if vp is not None:
+        return autolabel.part_root_of(vp)
+    return DATA_BELL / "_unmapped"
+
+
+def _autolabel_store(video):
+    """영상(부품경로 키/stem) → 그 부품 영속 저장소 경로 dict {root,images,labels,masks}."""
+    base = _part_root_for_video(video) / "autolabel"
+    return {"root": base, "images": base / "images", "labels": base / "labels", "masks": base / "masks"}
+
+
+def _store_for_part(part):
+    """부품 폴더명 → 그 부품 영속 저장소 경로 dict. (검수 썸네일/삭제에서 part 를 알 때 유니크)."""
+    base = DATA_BELL / part / "autolabel"
+    return {"root": base, "images": base / "images", "labels": base / "labels", "masks": base / "masks"}
+
+
+def _store_for_frame(name):
+    """프레임 파일명(<영상>_<프레임>.jpg) → 그 부품 저장소."""
+    return _autolabel_store(_video_stem(name))
+
+
+def _persist_videos():
+    """부품별 영속 저장소를 스캔 → {영상stem: {labels, frames}}. 프론트 labeledMap 재료(세션 무관 통합)."""
+    videos = {}
+    if DATA_BELL.exists():
+        for lbl_dir in DATA_BELL.glob("*/autolabel/labels"):
+            for tp in lbl_dir.glob("*.txt"):
+                v = _video_stem(tp.name)
+                d = videos.setdefault(v, {"labels": 0, "frames": 0})
+                d["labels"] += 1
+                d["frames"] += 1
+    return videos
+
+
 def parts_sessions():
-    """results/parts/<세션>/ 목록(최근순) + 세션별 라벨된 영상·라벨수 + 기존 모델에 학습된 영상."""
-    out = []
-    if PARTS_ROOT.exists():
-        try:   # 학습과 동일한 영상명→클래스 규칙 재사용
+    """부품별 영속 저장소(data/bell412/<부품>/autolabel)를 단일 세션(PERSIST)으로 합성해 반환(프론트 호환).
+    videos={영상stem:{labels,frames}}, trained=현재 서비스 모델이 이미 가진 부품의 영상."""
+    videos = _persist_videos()
+    trained = []
+    sv = served_model()          # 현재 서비스 모델이 보유한 부품 → 그 부품의 영상은 '학습됨'으로 표시
+    if sv:
+        classes = set(sv.get("classes", []))
+        try:
             sys.path.insert(0, str(config.BASE_DIR / "scripts" / "experiments"))
             import build_multiclass as bm
-            s2c = bm.stem_to_class
+            trained = [v for v in videos if bm.stem_to_class(f"{v}_0") in classes]
         except Exception:
-            s2c = None
-        for d in sorted(PARTS_ROOT.glob("*"), reverse=True):
-            if not d.is_dir() or d.name.startswith("_"):
-                continue   # _models·_active 등 내부 폴더는 세션 아님
-            mp = d / "labeling.json"
-            m = json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}
-            vids = m.get("videos", {})
-            trained = []   # 이 세션의 최신 학습 모델(meta.json)에 이미 들어간 영상
-            meta_p = d / "multiclass" / "meta.json"
-            if meta_p.exists() and s2c:
-                try:
-                    pc = json.loads(meta_p.read_text(encoding="utf-8")).get("per_class", {})
-                    tc = set(pc.keys())
-                    trained = [v for v in vids if s2c(f"{v}_0") in tc]
-                except Exception:
-                    trained = []
-            out.append({"session": d.name, "videos": vids,
-                        "n_videos": len(vids),
-                        "total_labels": sum(v.get("labels", 0) for v in vids.values()),
-                        "trained": trained,
-                        "updated": m.get("updated", "")})
-    return out
+            trained = []
+    return [{"session": PERSIST, "videos": videos, "n_videos": len(videos),
+             "total_labels": sum(v["labels"] for v in videos.values()),
+             "trained": trained, "updated": ""}]
+
+
+def _clear_video(store, video):
+    """이 영상의 기존 라벨/이미지/마스크 제거(재탭 반영). 부품 저장소 안에서 <영상>_* 만 지운다."""
+    for g in (store["images"].glob(f"{video}_*.jpg"),
+              store["labels"].glob(f"{video}_*.txt"),
+              store["masks"].glob(f"{video}_*.jpg")):
+        for f in list(g):
+            f.unlink()
 
 
 def _run_parts_label(job_id, session, video, shots):
-    """부품 영상 하나 → SAM2 전파 → results/parts/<세션>/train 등에 <영상>_<프레임>로 누적."""
+    """부품 영상 하나 → SAM2 전파 → 그 부품 영속 저장소(data/bell412/<부품>/autolabel)에 <stem>_<프레임>로 누적.
+    video = 부품경로 키 또는 stem. 저장소는 부품경로 기반으로 유니크 해석, 파일명 접두어·반환 식별자는 stem."""
     j = JOBS[job_id]
     try:
-        sess = PARTS_ROOT / session
-        pi, pl = sess / "train" / "images", sess / "train" / "labels"
-        box_d, ref_d = sess / "train_box", sess / "tap"
-        for d in (pi, pl, box_d, ref_d):
+        vp = autolabel.resolve_video(video)
+        if not vp:
+            raise RuntimeError(f"영상을 찾지 못함: {video}")
+        stem = vp.stem
+        store = _autolabel_store(video)
+        pi, pl, mk_d = store["images"], store["labels"], store["masks"]
+        for d in (pi, pl, mk_d):
             d.mkdir(parents=True, exist_ok=True)
-        j.update(stage="propagate", note=f"{video} 라벨 생성 중")
-        # 이 영상의 기존 라벨 있으면 지우고 새로(재탭 반영)
-        for g in (pi.glob(f"{video}_*.jpg"), pl.glob(f"{video}_*.txt"),
-                  box_d.glob(f"{video}_*.jpg"), ref_d.glob(f"{video}_*.jpg")):
-            for f in list(g):
-                f.unlink()
-        n, tot = _propagate_into(video, shots, pi, pl, box_d, ref_d)
-        # 세션 메타 갱신
-        mp = sess / "labeling.json"
-        meta = json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {"session": session, "videos": {}}
-        meta["videos"][video] = {"labels": n, "frames": tot,
-                                 "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-        meta["updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        mp.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-        taps = [_b64(_rd(p), w=520) for p in sorted(ref_d.glob(f"{video}_*.jpg"))][:6]
-        j.update(stage="done", running=False, video=video, labels=n, frames=tot,
-                 session=session, taps=taps)
+        j.update(stage="propagate", note=f"{stem} 라벨 생성 중")
+        _clear_video(store, stem)                  # 재탭이면 이 영상분(stem_*)만 새로
+        n, tot = _propagate_into(video, shots, pi, pl, None, mk_d)   # box 생략, masks=tap 시각화
+        taps = [_b64(_rd(p), w=520) for p in sorted(mk_d.glob(f"{stem}_*.jpg"))][:6]
+        j.update(stage="done", running=False, video=stem, labels=n, frames=tot,
+                 session=PERSIST, taps=taps)
     except Exception as e:
         logger.exception("백그라운드 작업 오류")
         j.update(stage="error", error=f"{type(e).__name__}: {e}", running=False)
@@ -537,41 +590,37 @@ def start_parts_label(session, video, shots):
         if not video or not shots:
             return {"error": "이 부품에 점(참조샷)이 없습니다."}
         _BUSY["on"] = True
-    session = session or datetime.now().strftime("%y%m%d_%H%M%S")
     jid = uuid.uuid4().hex[:8]
-    JOBS[jid] = {"stage": "start", "running": True, "error": None, "session": session, "video": video}
-    threading.Thread(target=_run_parts_label, args=(jid, session, video, shots), daemon=True).start()
-    return {"job": jid, "session": session}
+    _vp = autolabel.resolve_video(video)
+    JOBS[jid] = {"stage": "start", "running": True, "error": None, "session": PERSIST,
+                 "video": _vp.stem if _vp else video}
+    threading.Thread(target=_run_parts_label, args=(jid, PERSIST, video, shots), daemon=True).start()
+    return {"job": jid, "session": PERSIST}
 
 
 def _run_parts_label_batch(job_id, session, items):
-    """탭한 부품 여러 개를 한 번에: 각 영상 SAM2 전파 → 세션 폴더 누적. items=[{video,shots},...]."""
+    """탭한 부품 여러 개를 한 번에: 각 영상 SAM2 전파 → 각 부품 영속 저장소 누적. items=[{video,shots},...]."""
     j = JOBS[job_id]
     try:
-        sess = PARTS_ROOT / session
-        pi, pl = sess / "train" / "images", sess / "train" / "labels"
-        box_d, ref_d = sess / "train_box", sess / "tap"
-        for d in (pi, pl, box_d, ref_d):
-            d.mkdir(parents=True, exist_ok=True)
-        mp = sess / "labeling.json"
-        meta = json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {"session": session, "videos": {}}
         results = []
         total = len(items)
         for k, it in enumerate(items, 1):
             video, shots = it.get("video"), it.get("shots")
             if not video or not shots:
                 continue
-            j.update(stage="propagate", note=f"{k}/{total} · {video}", done=k - 1, total=total)
-            for g in (pi.glob(f"{video}_*.jpg"), pl.glob(f"{video}_*.txt"),
-                      box_d.glob(f"{video}_*.jpg"), ref_d.glob(f"{video}_*.jpg")):
-                for f in list(g):
-                    f.unlink()
-            n, tot = _propagate_into(video, shots, pi, pl, box_d, ref_d)
-            meta["videos"][video] = {"labels": n, "frames": tot, "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-            results.append({"video": video, "labels": n, "frames": tot})
-        meta["updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        mp.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-        j.update(stage="done", running=False, session=session, done=total, total=total, results=results)
+            vp = autolabel.resolve_video(video)
+            if not vp:
+                continue
+            stem = vp.stem
+            store = _autolabel_store(video)
+            pi, pl, mk_d = store["images"], store["labels"], store["masks"]
+            for d in (pi, pl, mk_d):
+                d.mkdir(parents=True, exist_ok=True)
+            j.update(stage="propagate", note=f"{k}/{total} · {stem}", done=k - 1, total=total)
+            _clear_video(store, stem)
+            n, tot = _propagate_into(video, shots, pi, pl, None, mk_d)
+            results.append({"video": stem, "labels": n, "frames": tot})
+        j.update(stage="done", running=False, session=PERSIST, done=total, total=total, results=results)
     except Exception as e:
         logger.exception("백그라운드 작업 오류")
         j.update(stage="error", error=f"{type(e).__name__}: {e}", running=False)
@@ -588,11 +637,10 @@ def start_parts_label_batch(session, items):
         if not items:
             return {"error": "탭한 부품이 없습니다."}
         _BUSY["on"] = True
-    session = session or datetime.now().strftime("%y%m%d_%H%M%S")
     jid = uuid.uuid4().hex[:8]
-    JOBS[jid] = {"stage": "start", "running": True, "error": None, "session": session}
-    threading.Thread(target=_run_parts_label_batch, args=(jid, session, items), daemon=True).start()
-    return {"job": jid, "session": session}
+    JOBS[jid] = {"stage": "start", "running": True, "error": None, "session": PERSIST}
+    threading.Thread(target=_run_parts_label_batch, args=(jid, PERSIST, items), daemon=True).start()
+    return {"job": jid, "session": PERSIST}
 
 
 def _synth_augment(oi, ol, logln, n_syn=400):
@@ -703,13 +751,15 @@ def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None, augme
         logger.log(logging.ERROR if level == "err" else logging.INFO, f"[multiclass:{job_id}] {msg}")
 
     try:
+        session = PERSIST                          # 입력=부품별 영속 저장소, 출력=results/parts/autolabel 로 통일
         sys.path.insert(0, str(config.BASE_DIR / "scripts" / "experiments"))
         import build_multiclass as bm
         names, name2idx = bm.load_classes()
         sess = PARTS_ROOT / session
-        st = sess / "train"
-        if not (st / "images").exists():
-            raise RuntimeError("이 세션에 라벨이 없습니다. 부품을 먼저 탭·라벨 생성하세요.")
+        # 학습 입력 = 부품별 영속 저장소(data/bell412/<부품>/autolabel/images). 실험폴더(train) 아님.
+        store_imgs = sorted(p for d in sorted(DATA_BELL.glob("*/autolabel/images")) for p in d.glob("*.jpg"))
+        if not store_imgs:
+            raise RuntimeError("오토라벨 라벨이 없습니다. 부품을 먼저 탭·라벨 생성하세요.")
 
         # 1) 클래스 매핑 통합
         j.update(stage="build", note="라벨 클래스 매핑 통합")
@@ -732,30 +782,45 @@ def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None, augme
         input_cnt = 0        # 선택한 클래스의 자동생성 라벨(입력 데이터) 총수
         drop_nolabel = 0     # 라벨 파일 없음으로 산입 제외
         drop_empty = 0       # 빈 라벨(유효 박스 없음)로 산입 제외
-        imgs = sorted((st / "images").glob("*.jpg"))
+        imgs = store_imgs
+        if sel is not None:   # 선택한 부품만 산입 대상 → 진행바 분모도 선택분만(전체 1206 아님)
+            imgs = [p for p in store_imgs if re.sub(r"\s+", "_", p.parent.parent.parent.name.lower()) in sel]
         n_total = len(imgs)
-        j.update(ingest_total=n_total, ingest_done=0)         # 산입 진행바(실시간)
+        j.update(ingest_total=n_total, ingest_done=0)         # 산입 진행바(선택 부품 기준)
+        # 1차 스캔: 유효 라벨이 있는 이미지를 부품별로 수집(파일 기록은 재색인 뒤 2차에서).
+        # classes.txt 전역(35종)을 그대로 모델 클래스공간으로 쓰면, 학습하지 않은 부품(예: split_gearbox)의
+        # 출력 뉴런이 남아 검출평가에서 엉뚱한 부품을 오검출로 내뱉는다. → 실제 학습되는 부품만 0..N-1로 재색인.
+        staged = []          # [(원본이미지경로, stem, 부품클래스, [박스4값,...]), ...]
         for k, ip in enumerate(imgs, 1):
             if k % 20 == 0 or k == n_total:
                 j.update(ingest_done=k)                       # 산입 진행 실시간 갱신
             stem = ip.stem
-            cls = bm.stem_to_class(stem)
+            # 부품 판정 = 라벨이 놓인 부품 폴더명(data/bell412/<부품>/autolabel/images/<file>).
+            # 파일명(stem_to_class) 대신 폴더로 직접 → 같은 이름 영상이 다른 부품에 있어도 클래스 안 꼬임.
+            part = ip.parent.parent.parent.name
+            cls = re.sub(r"\s+", "_", part.lower())
             if sel is not None and cls not in sel:
                 continue                                     # 선택 안 한 클래스 → 입력 집계 제외
             input_cnt += 1
-            idx = name2idx.get(cls)
-            if idx is None:
-                miss[cls] = miss.get(cls, 0) + 1; continue   # 클래스 미매핑 → 산입 실패
-            lp = st / "labels" / f"{stem}.txt"
+            if cls not in name2idx:
+                miss[cls] = miss.get(cls, 0) + 1; continue   # classes.txt 미등록 → 산입 실패
+            lp = ip.parent.parent / "labels" / f"{stem}.txt"   # <부품>/autolabel/labels
             if not lp.exists():
                 drop_nolabel += 1; continue                  # 라벨 없음 → 산입 실패
-            lines = [f"{idx} {p[1]} {p[2]} {p[3]} {p[4]}"
-                     for p in (l.split() for l in lp.read_text(encoding="utf-8").splitlines()) if len(p) == 5]
-            if not lines:
+            boxes = [p[1:5] for p in (l.split() for l in lp.read_text(encoding="utf-8").splitlines()) if len(p) == 5]
+            if not boxes:
                 drop_empty += 1; continue                    # 빈 라벨 → 산입 실패
-            shutil.copy(ip, oi / f"{stem}.jpg")
-            (ol / f"{stem}.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+            staged.append((ip, stem, cls, boxes))
             per[cls] = per.get(cls, 0) + 1
+        # 압축 클래스공간: 실제 학습되는 부품만 정렬해 0..N-1 로 재색인(모델 nc = 학습 부품 수)
+        train_names = sorted(per.keys())
+        cidx = {c: i for i, c in enumerate(train_names)}
+        for ip, stem, cls, boxes in staged:                   # 2차: 재색인한 인덱스로 이미지·라벨 기록
+            shutil.copy(ip, oi / f"{stem}.jpg")
+            (ol / f"{stem}.txt").write_text(
+                "\n".join(f"{cidx[cls]} {b[0]} {b[1]} {b[2]} {b[3]}" for b in boxes) + "\n",
+                encoding="utf-8")
+        names = train_names        # 이하 클래스 표기·인덱스는 모두 압축공간 기준(model.names·검출평가와 일치)
         n_img = sum(per.values())
         if replay:
             missing = sorted(replay - set(per))
@@ -962,9 +1027,8 @@ def start_multiclass(session, epochs, test_srcs, only_classes=None, augment=Fals
     with _LOCK:
         if _BUSY["on"]:
             return {"error": "이미 실행 중입니다."}
-        if not session:
-            return {"error": "세션이 없습니다. 부품을 먼저 라벨 생성하세요."}
         _BUSY["on"] = True
+    session = PERSIST                              # 단일 영속 세션(입력=부품폴더, 출력=results/parts/autolabel)
     jid = uuid.uuid4().hex[:8]
     JOBS[jid] = {"stage": "start", "running": True, "error": None, "log": [], "curve": []}
     _ACTIVE.update(job=jid, kind="multiclass", session=session)
@@ -1070,8 +1134,8 @@ def _write_active(session, dst, classes, label, model_id):
 
 
 def apply_model(session):
-    """세션의 학습 가중치를 서비스(active) 모델로 적용(복사). 이전 것은 prev.pt로 백업."""
-    meta_p = PARTS_ROOT / session / "multiclass" / "meta.json"
+    """최근 학습 가중치를 서비스(active) 모델로 적용(복사). 이전 것은 prev.pt로 백업."""
+    meta_p = PARTS_ROOT / PERSIST / "multiclass" / "meta.json"
     if not meta_p.exists():
         return {"error": "학습된 모델이 없습니다."}
     meta = json.loads(meta_p.read_text(encoding="utf-8"))
@@ -1084,8 +1148,8 @@ def apply_model(session):
         shutil.copy(dst, ACTIVE_DIR / "prev.pt")
     shutil.copy(w, dst)
     classes = list(meta.get("per_class", {}).keys())
-    _write_active(session, dst, classes, meta.get("label", ""), meta.get("model_id"))
-    return {"ok": True, "session": session, "label": meta.get("label", ""), "n_classes": len(classes)}
+    _write_active(PERSIST, dst, classes, meta.get("label", ""), meta.get("model_id"))
+    return {"ok": True, "session": PERSIST, "label": meta.get("label", ""), "n_classes": len(classes)}
 
 
 def rollback_to(model_id):
@@ -1118,6 +1182,7 @@ def _run_compare(job_id, session, base_model_id=None):
     """신규 모델 vs 기존(서비스) 모델을 같은 테스트 영상에 돌려 '정답 클래스 검출률'(인식률) 비교.
     기존 부품(망각 여부)/신규 부품 성능을 분리 집계하고 적용·롤백을 권장한다."""
     j = JOBS[job_id]
+    session = PERSIST                              # 학습 산출은 results/parts/autolabel 에 저장됨
     logger.info(f"[compare:{job_id}] 시작 (session={session})")
     try:
         sys.path.insert(0, str(config.BASE_DIR / "scripts" / "experiments"))
@@ -1125,7 +1190,7 @@ def _run_compare(job_id, session, base_model_id=None):
         from ultralytics import YOLO
         meta_p = PARTS_ROOT / session / "multiclass" / "meta.json"
         if not meta_p.exists():
-            raise RuntimeError("이 세션에 학습된 모델이 없습니다.")
+            raise RuntimeError("학습된 모델이 없습니다. 먼저 학습을 실행하세요.")
         meta = json.loads(meta_p.read_text(encoding="utf-8"))
         new_w = meta.get("weights")
         new_classes = list(meta.get("per_class", {}).keys())
@@ -1301,14 +1366,14 @@ def delete_model(model_id):
 
 def eval_frames(session, src):
     """학습 검출평가 예측 이미지(박스 그려진 것) 개수 — 마지막 화면에서 넘겨보기용."""
-    d = PARTS_ROOT / session / "multiclass" / "model" / "eval" / src
+    d = PARTS_ROOT / PERSIST / "multiclass" / "model" / "eval" / src
     n = len(list(d.glob("*.jpg"))) if d.exists() else 0
-    return {"session": session, "src": src, "count": n}
+    return {"session": PERSIST, "src": src, "count": n}
 
 
 def eval_frame(session, src, idx, w=720):
     """예측 이미지 한 장(JPEG 바이트). 없으면 None."""
-    d = PARTS_ROOT / session / "multiclass" / "model" / "eval" / src
+    d = PARTS_ROOT / PERSIST / "multiclass" / "model" / "eval" / src
     fs = sorted(d.glob("*.jpg")) if d.exists() else []
     if not fs:
         return None
@@ -1321,62 +1386,59 @@ def eval_frame(session, src, idx, w=720):
 
 
 # ==================== 학습 데이터(생성 라벨) 검수·삭제 ====================
+# 라벨은 부품별 영속 저장소(data/bell412/<부품>/autolabel)에 있고, 프론트에는 단일 세션(PERSIST)으로 노출.
+# 프레임 파일명(<영상>_<프레임>)만으로 어느 부품 저장소인지 역추적한다(session 인자는 무시).
 def list_train_frames(session):
-    """세션에 생성된 학습 프레임 목록(부품별). 잘못된 사진 검수·삭제용."""
-    st = PARTS_ROOT / session / "train" / "images"
-    if not st.exists():
-        return {"session": session, "count": 0, "frames": []}
-    sys.path.insert(0, str(config.BASE_DIR / "scripts" / "experiments"))
-    import build_multiclass as bm
-    frames = [{"session": session, "name": ip.name, "part": bm.stem_to_class(ip.stem)}
-              for ip in sorted(st.glob("*.jpg"))]
-    return {"session": session, "count": len(frames), "frames": frames}
+    """생성된 학습 프레임 목록(부품별, 세션 무관). 잘못된 사진 검수·삭제용."""
+    frames = []
+    if DATA_BELL.exists():
+        for img_dir in sorted(DATA_BELL.glob("*/autolabel/images")):
+            part = img_dir.parent.parent.name
+            for ip in sorted(img_dir.glob("*.jpg")):
+                frames.append({"session": PERSIST, "name": ip.name, "part": part})
+    return {"session": PERSIST, "count": len(frames), "frames": frames}
 
 
 def labeled_parts():
-    """train 라벨이 하나라도 있는 부품(클래스) 집합 — 라벨 검수 활성 판단용(세션 무관).
-    단 auto_baseline(시스템 초기 자동탭·느슨한 라벨)은 검수 대상에서 제외."""
-    sys.path.insert(0, str(config.BASE_DIR / "scripts" / "experiments"))
-    import build_multiclass as bm
+    """autolabel 라벨이 하나라도 있는 부품(폴더=클래스) 집합 — 기존/신규 판정·검수 활성 판단용."""
     parts = set()
-    for st in PARTS_ROOT.glob("*/train/images"):
-        if st.parent.parent.name == "auto_baseline":
-            continue
-        for ip in st.glob("*.jpg"):
-            parts.add(bm.stem_to_class(ip.stem))
+    if DATA_BELL.exists():
+        for lbl_dir in DATA_BELL.glob("*/autolabel/labels"):
+            if any(lbl_dir.glob("*.txt")):
+                parts.add(lbl_dir.parent.parent.name)     # data/bell412/<부품>/autolabel/labels → <부품>
     return {"parts": sorted(parts)}
 
 
 def list_part_frames(part, limit=400):
-    """특정 부품(클래스)의 생성된 학습 프레임을 모든 세션에서 수집(세션 무관 라벨 검수용)."""
+    """특정 부품(폴더=클래스)의 생성된 학습 프레임 수집(라벨 검수용). part = 폴더명."""
     if not part:
         return {"part": part, "count": 0, "frames": []}
-    sys.path.insert(0, str(config.BASE_DIR / "scripts" / "experiments"))
-    import build_multiclass as bm
+    img_dir = DATA_BELL / part / "autolabel" / "images"
     out = []
-    for st in sorted(PARTS_ROOT.glob("*/train/images")):
-        session = st.parent.parent.name
-        if session == "auto_baseline":          # 초기 자동탭 베이스라인(느슨한 라벨)은 검수 제외
-            continue
-        for ip in sorted(st.glob("*.jpg")):
-            if bm.stem_to_class(ip.stem) == part:
-                out.append({"session": session, "name": ip.name, "part": part})
-                if len(out) >= limit:
-                    return {"part": part, "count": len(out), "frames": out, "truncated": True}
+    if img_dir.exists():
+        for ip in sorted(img_dir.glob("*.jpg")):
+            out.append({"session": PERSIST, "name": ip.name, "part": part})
+            if len(out) >= limit:
+                return {"part": part, "count": len(out), "frames": out, "truncated": True}
     return {"part": part, "count": len(out), "frames": out}
 
 
-def train_frame_jpeg(session, name, w=360):
+def train_frame_jpeg(session, name, w=360, part=None):
     """학습 프레임에 YOLO 라벨 bbox(초록)를 그려 JPEG 바이트로. 검수에서 어떤 라벨이 생성됐는지 확인용.
-    ※ 썸네일로 축소한 뒤 박스를 그린다(고해상도에 그린 뒤 축소하면 선이 1px 미만으로 뭉개져 안 보임)."""
+    ※ 썸네일로 축소한 뒤 박스를 그린다(고해상도에 그린 뒤 축소하면 선이 1px 미만으로 뭉개져 안 보임).
+    part 지정 시 그 부품 저장소를 직접 사용(같은 이름 영상 모호성 제거), 없으면 파일명으로 역추적."""
     if not name or "/" in name or ".." in name:
         return None
-    ip = PARTS_ROOT / session / "train" / "images" / name
+    if part and "/" not in part and ".." not in part:
+        store = _store_for_part(part)
+    else:
+        store = _store_for_frame(name)              # 파일명 → 그 부품 저장소(폴백)
+    ip = store["images"] / name
     if not ip.exists():
         return None
     im = _rd(ip)
     boxes = []
-    lp = PARTS_ROOT / session / "train" / "labels" / (Path(name).stem + ".txt")
+    lp = store["labels"] / (Path(name).stem + ".txt")
     if lp.exists():
         for line in lp.read_text(encoding="utf-8").splitlines():
             p = line.split()
@@ -1392,13 +1454,63 @@ def train_frame_jpeg(session, name, w=360):
     return buf.tobytes() if ok else None
 
 
-def delete_train_frame(session, name):
-    """검수에서 잘못된 프레임(이미지+라벨) 삭제."""
+def delete_train_frame(session, name, part=None):
+    """검수에서 잘못된 프레임(이미지+라벨+마스크) 삭제. part 지정 시 그 부품 저장소 직접, 없으면 파일명 역추적."""
     if not name or "/" in name or ".." in name:
         return {"error": "잘못된 이름"}
-    st = PARTS_ROOT / session / "train"
+    if part and "/" not in part and ".." not in part:
+        store = _store_for_part(part)
+    else:
+        store = _store_for_frame(name)
+    stem = Path(name).stem
     removed = False
-    for p in (st / "images" / name, st / "labels" / (Path(name).stem + ".txt")):
+    for p in (store["images"] / name, store["labels"] / (stem + ".txt"), store["masks"] / name):
         if p.exists():
             p.unlink(missing_ok=True); removed = True
     return {"ok": True, "name": name} if removed else {"error": "대상 없음"}
+
+
+# ==================== 영상 삭제(모달) — 원본은 _trash 로 이동(복구 가능), 캐시·오토라벨은 정리 ====================
+def delete_video(src):
+    """영상 삭제: 원본 파일은 하드삭제하지 않고 data/bell412/<부품>/_trash/ 로 이동(복구 가능),
+    그 영상의 프레임캐시(부품별+레거시 중앙)와 오토라벨 산출(images/labels/masks 의 <stem>_*)은 삭제.
+    src = 부품경로 키(bell412/<부품>/videos/<stem>) 또는 stem."""
+    vp = autolabel.resolve_video(src)
+    if not vp:
+        return {"error": f"영상을 찾지 못함: {src}"}
+    vp = vp.resolve()
+    stem = vp.stem
+    part_root = autolabel.part_root_of(vp)
+    part = part_root.name
+
+    # 1) 원본 영상 → _trash 로 이동(같은 이름 있으면 시각 접미어)
+    trash = part_root / "_trash"
+    trash.mkdir(parents=True, exist_ok=True)
+    dst = trash / vp.name
+    if dst.exists():
+        dst = trash / f"{vp.stem}_{datetime.now().strftime('%y%m%d_%H%M%S')}{vp.suffix}"
+    moved_to = None
+    if vp.exists():
+        shutil.move(str(vp), str(dst))
+        moved_to = str(dst)
+
+    # 2) 프레임 캐시 삭제(부품별 + 레거시 중앙) — 재생성 가능 산출물
+    removed_cache = 0
+    for d in (autolabel.cache_dir_of(vp), autolabel.FRAME_CACHE / stem):
+        if d.exists():
+            removed_cache += len(list(d.glob("*.jpg")))
+            shutil.rmtree(d, ignore_errors=True)
+
+    # 3) 오토라벨 산출(이 영상분 <stem>_*)만 삭제 — 다른 영상 라벨은 보존
+    store = _store_for_part(part)
+    removed_labels = 0
+    for g in (store["images"].glob(f"{stem}_*.jpg"),
+              store["labels"].glob(f"{stem}_*.txt"),
+              store["masks"].glob(f"{stem}_*.jpg")):
+        for f in list(g):
+            f.unlink(missing_ok=True); removed_labels += 1
+
+    autolabel._videos(force=True)   # 영상 목록 캐시 무효화(삭제 즉시 목록/폴더 반영)
+    logger.info(f"[delete_video] {part}/{stem} → trash={moved_to}, cache={removed_cache}, labels={removed_labels}")
+    return {"ok": True, "part": part, "stem": stem, "moved_to": moved_to,
+            "removed_cache_frames": removed_cache, "removed_label_files": removed_labels}

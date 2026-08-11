@@ -38,21 +38,95 @@ JOBS = {}             # job_id -> 진행상태 dict
 _BUSY = {"on": False}  # GPU 라벨생성 동시 1건만
 
 
-def _videos():
+_VIDX = {"t": 0.0, "vids": None}   # _videos() 결과 짧은 TTL 캐시(프레임 요청마다 rglob 반복 방지)
+
+
+def _videos(force=False):
+    """data/ 하위 모든 영상(부품 폴더 재귀). '_' 로 시작하는 폴더(_frame_cache·_trash 등)는 제외.
+    프레임 요청마다 호출되므로 3초 TTL로 결과를 재사용(새 영상은 몇 초 내 반영)."""
+    now = time.time()
+    if not force and _VIDX["vids"] is not None and now - _VIDX["t"] < 3.0:
+        return _VIDX["vids"]
     if not config.DATA_DIR.exists():
-        return []
+        _VIDX.update(t=now, vids=[]); return []
     vids = []
     for ext in VIDEO_EXT:
         vids += config.DATA_DIR.rglob(f"*{ext}")   # data/ 어느 주제 폴더든 재귀 탐색
     base = config.DATA_DIR.resolve()
     # data/ 아래에서 '_' 로 시작하는 폴더(_frame_cache·보관용 _gearbox 등)는 제외
-    return sorted(p for p in vids if p.is_file()
-                  and not any(part.startswith("_") for part in p.resolve().relative_to(base).parts[:-1]))
+    out = sorted(p for p in vids if p.is_file()
+                 and not any(part.startswith("_") for part in p.resolve().relative_to(base).parts[:-1]))
+    _VIDX.update(t=now, vids=out)
+    return out
 
 
-def _cached_frames(stem):
-    d = FRAME_CACHE / stem
+def part_root_of(vp):
+    """영상 Path → 그 부품 루트 폴더(data/bell412/<부품>). 'videos' 폴더 아래면 상위, 아니면 부모."""
+    return vp.parent.parent if vp.parent.name == "videos" else vp.parent
+
+
+def video_key(vp):
+    """영상 Path → 부품경로 기반 유니크 키 = data/ 기준 상대경로(확장자 제거).
+    예: data/bell412/gearbox/videos/test1.mp4 → 'bell412/gearbox/videos/test1'."""
+    return vp.resolve().relative_to(config.DATA_DIR.resolve()).with_suffix("").as_posix()
+
+
+def cache_dir_of(vp):
+    """영상 Path → 부품별 프레임 캐시 디렉토리(data/bell412/<부품>/_frame_cache/<stem>).
+    '_' 로 시작하므로 list_folders 의 videos 스캔에 안 잡힌다."""
+    return part_root_of(vp) / "_frame_cache" / vp.stem
+
+
+def resolve_video(src):
+    """src → 실제 영상 Path. 부품경로 기반 유니크 식별(같은 stem 이 다른 부품에 있어도 안 꼬임).
+    허용 형태:
+      - 부품경로 상대: 'bell412/<부품>/videos/<stem>' (확장자 유무 무관)  ← 프론트 기본
+      - '<부품>/<stem>' 축약
+      - bare stem (레거시, 전역 유니크 가정) — 하위호환
+    """
+    if not src:
+        return None
+    s = str(src).replace("\\", "/").strip("/")
+    base = config.DATA_DIR.resolve()
+    vids = _videos()
+    # 1) 부품경로 상대(전체/확장자무시) 정확 매칭
+    for vp in vids:
+        rel = vp.resolve().relative_to(base).as_posix()          # bell412/<부품>/videos/<stem>.mp4
+        if s == rel or s == rel.rsplit(".", 1)[0]:
+            return vp
+    # 2) '<부품>/<stem>' 축약 매칭
+    if "/" in s:
+        for vp in vids:
+            if s == f"{part_root_of(vp).name}/{vp.stem}":
+                return vp
+    # 3) bare stem (레거시)
+    return next((vp for vp in vids if vp.stem == s), None)
+
+
+def _cached_frames(d):
+    """디렉토리 d 안의 프레임(jpg) 정렬 목록. 없으면 빈 리스트."""
     return sorted(d.glob("*.jpg")) if d.exists() else []
+
+
+def _frames_dir(vp):
+    """이 영상의 프레임이 실제 있는 디렉토리를 고른다.
+    ① 부품별 캐시(data/bell412/<부품>/_frame_cache/<stem>) 우선
+    ② 없으면 레거시 중앙 캐시(data/_frame_cache/<stem>) — 이관 전/미매핑 영상 하위호환
+    ③ 둘 다 없으면 부품별 캐시로 새로 컷."""
+    part_cache = cache_dir_of(vp)
+    if _cached_frames(part_cache):
+        return part_cache
+    legacy = FRAME_CACHE / vp.stem
+    if _cached_frames(legacy):
+        return legacy
+    _extract(vp, part_cache)
+    return part_cache
+
+
+def frames_dir_for(src):
+    """src(부품경로/stem) → 프레임 디렉토리(SAM2 init_state 의 video_path 용). 없으면 컷."""
+    vp = resolve_video(src)
+    return _frames_dir(vp) if vp else None
 
 
 def _estimate_count(vp):
@@ -65,16 +139,14 @@ def _estimate_count(vp):
     return (total + stride - 1) // stride
 
 
-def _extract(vp):
-    """영상 -> 서브샘플 프레임 컷(캐시). 이미 있으면 그대로 반환."""
-    stem = vp.stem
-    if _cached_frames(stem):
-        return _cached_frames(stem)
+def _extract(vp, dest):
+    """영상 -> 서브샘플 프레임 컷(부품별 캐시 dest 로). 이미 있으면 그대로 반환."""
+    if _cached_frames(dest):
+        return _cached_frames(dest)
     with _CUT_LOCK:
-        if _cached_frames(stem):          # 락 안에서 재확인(중복 컷 방지)
-            return _cached_frames(stem)
-        d = FRAME_CACHE / stem
-        d.mkdir(parents=True, exist_ok=True)
+        if _cached_frames(dest):          # 락 안에서 재확인(중복 컷 방지)
+            return _cached_frames(dest)
+        dest.mkdir(parents=True, exist_ok=True)
         cap = cv2.VideoCapture(str(vp))
         total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         stride = max(1, total // TARGET_FRAMES) if total else 1
@@ -84,25 +156,25 @@ def _extract(vp):
             if not ok:
                 break
             if i % stride == 0:
-                cv2.imwrite(str(d / f"{out:05d}.jpg"), fr)
+                cv2.imwrite(str(dest / f"{out:05d}.jpg"), fr)
                 out += 1
             i += 1
         cap.release()
-    return _cached_frames(stem)
+    return _cached_frames(dest)
 
 
-def _frames(stem):
-    """소스(영상 stem)의 프레임 목록. 캐시 없으면 컷해서 생성."""
-    fs = _cached_frames(stem)
-    if fs:
-        return fs
-    vp = next((p for p in _videos() if p.stem == stem), None)
-    return _extract(vp) if vp else []
+def _frames(src):
+    """소스(부품경로/stem)의 프레임 목록. 부품별 캐시 우선, 레거시 중앙 캐시 폴백, 없으면 컷."""
+    vp = resolve_video(src)
+    if not vp:
+        return []
+    return _cached_frames(_frames_dir(vp))
 
 
 def _source_info(vp):
-    cached = _cached_frames(vp.stem)
-    return {"name": vp.stem,
+    d = cache_dir_of(vp)
+    cached = _cached_frames(d) or _cached_frames(FRAME_CACHE / vp.stem)   # 부품캐시→레거시 순
+    return {"name": vp.stem, "key": video_key(vp),
             "count": len(cached) if cached else _estimate_count(vp),
             "ready": bool(cached)}
 

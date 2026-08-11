@@ -747,7 +747,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 
 /* 터미널 스타일 로그 창 */
 .term {
-  background: var(--term-bg); border-radius: 10px; padding: 12px 14px; height: 280px; overflow-y: auto;
+  background: var(--term-bg); border-radius: 10px; padding: 12px 14px; height: 150px; overflow-y: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word;
 }
@@ -862,9 +862,12 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .ev2-h { font-size: 14px; font-weight: 700; color: var(--ink-strong); margin: 0 0 12px;
   display: flex; align-items: baseline; gap: 8px; }
 .ev2-h .al-hint { font-weight: 400; }
+.ev2-tip { display: inline-flex; align-items: center; color: var(--faint); cursor: help; }
+.ev2-tip svg { width: 14px; height: 14px; }
 
 .ev2-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px;
   background: var(--surface); border-top: 1px solid var(--line); padding: 12px 16px; margin-top: 2px; }
+.ev2-footer-left { display: flex; align-items: center; gap: 12px; min-height: 1px; }
 .ev2-footer-right { display: flex; align-items: center; gap: 12px; }
 .ok-flash { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--success-ink); }
 .ok-flash svg { width: 15px; height: 15px; }
@@ -878,7 +881,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .rbmenu-btn { display: inline-flex; align-items: center; gap: 6px; }
 .rbmenu-btn:hover:not(:disabled) { border-color: var(--accent-line); color: var(--accent-ink); }
 .rbmenu-btn svg { width: 15px; height: 15px; }
-.rbmenu-pop { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 60;
+.rbmenu-pop { position: absolute; top: calc(100% + 8px); right: 0; left: auto; z-index: 60;
   width: 340px; max-height: 360px; overflow-y: auto; background: var(--surface);
   border: 1px solid var(--line-strong); border-radius: var(--r-md); box-shadow: var(--shadow-lg);
   padding: 6px; display: flex; flex-direction: column; gap: 2px; }
@@ -891,7 +894,16 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .rbmenu-item.active { cursor: default; }
 .rbmenu-item.active:hover { background: none; border-color: transparent; }
 .rbmenu-item.keep { border-bottom: 1px solid var(--line); border-radius: 0; margin-bottom: 3px; padding-bottom: 11px; }
-.rbmenu-item.keep .rbmenu-t { color: var(--muted); }
+.rbmenu-item.keep .rbmenu-t { color: var(--danger-ink); }
+/* 과거 버전 롤백 구역 제목(분할버튼 메뉴 내) */
+.rbmenu-sec { font-size: 11px; color: var(--muted); padding: 8px 8px 5px; }
+/* 주 CTA 분할버튼: [신규 모델 서비스 적용 | ▾] — 우측 정렬이라 메뉴는 오른쪽 기준 위로 펼침 */
+.rbmenu.split { display: inline-flex; align-items: stretch; }
+.split-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split-caret { display: inline-flex; align-items: center; justify-content: center; padding: 11px 12px;
+  border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: 1px; }
+.split-caret svg { width: 16px; height: 16px; }
+.rbmenu.split .rbmenu-pop { left: auto; right: 0; }
 .rbmenu-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
 .rbmenu-t { font-size: 13px; font-weight: 600; color: var(--ink-strong); font-variant-numeric: tabular-nums; }
 .rbmenu-s { font-size: 11px; color: var(--muted); }
@@ -1013,8 +1025,6 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .review-del svg { width: 13px; height: 13px; }
 .review-del:hover { background: var(--danger); }
 
-.aug-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); cursor: pointer; margin-left: 8px; white-space: nowrap; }
-.aug-toggle input { accent-color: var(--accent); }
 .act-btn { white-space: nowrap; }
 .train-setup-bar { flex-wrap: wrap; row-gap: 8px; }
 

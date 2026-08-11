@@ -26,7 +26,7 @@ import autolabel                  # _frames, FRAME_CACHE
 
 LABELS_DIR = BASE + "/results/parts/260806_081743/train/labels"   # 기존 전체 전파 라벨(탭점 부트스트랩용)
 PARTS = [
-    {"name": "gearbox", "video": "Gearbox_gearbox1", "gt": BASE + "/data/bell412/_gearbox_domaingap/gt/gt.yaml"},
+    {"name": "gearbox", "video": "Gearbox_gearbox1", "gt": BASE + "/data/bell412/gearbox/gt/gt.yaml"},
     {"name": "a_test",  "video": "train",            "gt": BASE + "/data/bell412/a_test/gt/gt.yaml"},
 ]
 NS = [1, 2, 4, 6]

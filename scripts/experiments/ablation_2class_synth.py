@@ -51,7 +51,7 @@ def stem_to_class(stem):
 CLASSES = ["gearbox", "a_test"]        # 인덱스 = 순서(gearbox=0, a_test=1)
 IDX = {c: i for i, c in enumerate(CLASSES)}
 GT_SRC = {
-    "gearbox": BASE + "/data/bell412/_gearbox_domaingap/gt",
+    "gearbox": BASE + "/data/bell412/gearbox/gt",
     "a_test":  BASE + "/data/bell412/a_test/gt",
 }
 N_SYN = int(os.environ.get("ABL_NSYN", "500"))
