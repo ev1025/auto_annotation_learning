@@ -29,6 +29,9 @@ CKPT = os.path.join(BASE, "models", "sam2", "sam2.1_hiera_base_plus.pt")
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 
 AUTOLABELS = os.path.join(BASE, "results", "autolabels")
+BG = os.path.join(BASE, "data", "bell412", "backgrounds")   # 배경 합성 증강용 실배경
+SYNTH = bool(os.environ.get("ABL_SYNTH"))                    # ABL_SYNTH=1이면 각 지점에 배경합성 증강 추가
+N_SYN = int(os.environ.get("ABL_NSYN", "400"))
 PARTS = [
     {"name": "gearbox", "video": "Gearbox_gearbox1"},
     {"name": "a_test",  "video": "train"},
@@ -155,7 +158,8 @@ def train_eval(images_dir, gt_yaml, part, epochs, tag, rundir):
 
 def main():
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    rundir = BASE + f"/results/experiments/ablation_refshots/{ts}"; os.makedirs(rundir, exist_ok=True)
+    top = "ablation_refshots_synth" if SYNTH else "ablation_refshots"
+    rundir = BASE + f"/results/experiments/{top}/{ts}"; os.makedirs(rundir, exist_ok=True)
 
     def log(s):
         print(s, flush=True)
@@ -189,20 +193,27 @@ def main():
                 masks, hw = propagate(name, video, fs, shots)
                 images_dir, n_valid = build_labels(name, fs, masks, hw, rundir, f"{name}_N{n}")
                 cov = round(n_valid / len(fs), 4)
+                n_syn = 0
+                if SYNTH:                                    # 배경 합성 증강: 전파 라벨 → 누끼 → 실배경 합성 추가
+                    from synth_aug import synth_augment
+                    lbl_dir = Path(rundir) / f"{name}_N{n}" / "labels"
+                    n_syn = synth_augment(images_dir, lbl_dir, BG, CFG, CKPT, DEV, log, n_syn=N_SYN)
                 r = train_eval(images_dir, gt, name, ep, f"{name}_N{n}", rundir)
                 row = {"N": n, "ref_frames": refs, "coverage": cov, "n_labeled": n_valid,
-                       "total_frames": len(fs), **r}
+                       "n_synth": n_syn, "total_frames": len(fs), **r}
                 results[name].append(row)
-                log(f"[{name}] N={n}: 커버리지 {cov} ({n_valid}/{len(fs)}) · GT mAP50 {r['gt_map50']} / 50-95 {r['gt_map5095']} ({r['min']}분)")
+                log(f"[{name}] N={n}: 커버리지 {cov} ({n_valid}/{len(fs)}) · 합성 {n_syn} · GT mAP50 {r['gt_map50']} / 50-95 {r['gt_map5095']} ({r['min']}분)")
             except Exception as e:
                 log(f"[{name}] N={n} 실패: {type(e).__name__}: {e}")
             save()
 
-    lines = ["참조샷 개수 스윕 — SAM2 전파 커버리지 + 실측 GT mAP (모델 yolov8n·100ep·합성없음)"]
+    tag = f"합성증강 on(n_syn={N_SYN})" if SYNTH else "합성없음"
+    lines = [f"참조샷 개수 스윕 — SAM2 전파 커버리지 + 실측 GT mAP (모델 yolov8n·100ep·{tag})"]
     for name, rows in results.items():
         lines.append(f"\n== {name} ==")
         for r in rows:
-            lines.append(f"  N={r['N']}: 커버리지 {r['coverage']:.3f} ({r['n_labeled']}/{r['total_frames']})  GT mAP50 {r['gt_map50']:.4f}  mAP50-95 {r['gt_map5095']:.4f}  ({r['min']}분)")
+            syn = f" +합성{r.get('n_synth', 0)}" if SYNTH else ""
+            lines.append(f"  N={r['N']}: 커버리지 {r['coverage']:.3f} ({r['n_labeled']}/{r['total_frames']}){syn}  GT mAP50 {r['gt_map50']:.4f}  mAP50-95 {r['gt_map5095']:.4f}  ({r['min']}분)")
     open(rundir + "/summary.txt", "w", encoding="utf-8").write("\n".join(lines))
     log("DONE → " + rundir + "/summary.txt")
     print("\n".join(lines))

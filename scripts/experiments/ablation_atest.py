@@ -19,6 +19,13 @@ from datetime import datetime
 
 BASE = os.environ.get("XR_BASE") or os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 AUTOLABELS = os.path.join(BASE, "results", "autolabels")
+BG = os.path.join(BASE, "data", "bell412", "backgrounds")   # 배경 합성 증강용 실배경
+SYNTH = bool(os.environ.get("ABL_SYNTH"))                    # ABL_SYNTH=1이면 각 지점에 배경합성 증강 추가
+N_SYN = int(os.environ.get("ABL_NSYN", "400"))
+# SAM2 (누끼용, 증강 켤 때만 사용)
+CFG = "configs/sam2.1/sam2.1_hiera_b+.yaml"
+CKPT = os.path.join(BASE, "models", "sam2", "sam2.1_hiera_base_plus.pt")
+DEV = "cuda"
 
 PARTS = [os.environ["ABL_PART"]] if os.environ.get("ABL_PART") else ["a_test", "gearbox"]
 GRID = [20, 50, 100, 200]          # + 각 부품 전체(ALL) 자동 추가
@@ -98,7 +105,8 @@ def train_eval(images_dir, gt_yaml, part, model, epochs, tag, rundir):
 
 def main():
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    rundir = BASE + f"/results/experiments/ablation_labels/{ts}"; os.makedirs(rundir, exist_ok=True)
+    top = "ablation_labels_synth" if SYNTH else "ablation_labels"
+    rundir = BASE + f"/results/experiments/{top}/{ts}"; os.makedirs(rundir, exist_ok=True)
 
     def log(s):
         print(s, flush=True)
@@ -125,19 +133,26 @@ def main():
             try:
                 sel = subsample(pairs, m)
                 images_dir = stage(sel, part, f"{part}_N{m}", rundir)
+                n_syn = 0
+                if SYNTH:                                    # 배경 합성 증강: 오토라벨 → 누끼 → 실배경 합성 추가
+                    from synth_aug import synth_augment
+                    lbl_dir = Path(rundir) / f"data_{part}_N{m}" / "labels"
+                    n_syn = synth_augment(images_dir, lbl_dir, BG, CFG, CKPT, DEV, log, n_syn=N_SYN)
                 r = train_eval(images_dir, gt, part, DEF_MODEL, ep, f"{part}_N{m}", rundir)
-                row = {"N": len(sel), **r}
+                row = {"N": len(sel), "n_synth": n_syn, **r}
                 results[part].append(row)
-                log(f"[{part}] N={len(sel)}: GT mAP50 {r['gt_map50']} / 50-95 {r['gt_map5095']} ({r['min']}분)")
+                log(f"[{part}] N={len(sel)}: 합성 {n_syn} · GT mAP50 {r['gt_map50']} / 50-95 {r['gt_map5095']} ({r['min']}분)")
             except Exception as e:
                 log(f"[{part}] N={m} 실패: {type(e).__name__}: {e}")
             save()
 
-    lines = ["라벨데이터 개수별 벤치마크 — 실측 GT mAP (모델 yolo11s·100ep·합성없음)"]
+    tag = f"합성증강 on(n_syn={N_SYN})" if SYNTH else "합성없음"
+    lines = [f"라벨데이터 개수별 벤치마크 — 실측 GT mAP (모델 yolo11s·100ep·{tag})"]
     for part, rows in results.items():
         lines.append(f"\n== {part} ==")
         for r in rows:
-            lines.append(f"  N={r['N']:4d}: mAP50 {r['gt_map50']:.4f}  mAP50-95 {r['gt_map5095']:.4f}  ({r['epochs']}ep, {r['min']}분)")
+            syn = f" +합성{r.get('n_synth', 0)}" if SYNTH else ""
+            lines.append(f"  N={r['N']:4d}{syn}: mAP50 {r['gt_map50']:.4f}  mAP50-95 {r['gt_map5095']:.4f}  ({r['epochs']}ep, {r['min']}분)")
     open(rundir + "/summary.txt", "w", encoding="utf-8").write("\n".join(lines))
     log("DONE → " + rundir + "/summary.txt")
     print("\n".join(lines))
