@@ -1131,10 +1131,32 @@ def _served_runid():
     return None
 
 
+def _sync_served_files(runid):
+    """현재 서비스 모델(run 의 best.pt·model.onnx)을 고정 경로로 복사한다.
+    run 폴더(results/<시각>/model)는 버전 이력=소스로 유지하고, 외부 서빙·Thor TensorRT 는
+    항상 같은 고정 경로(config.NEW_MODEL_PT=models/model.pt, NEW_MODEL_ONNX=models/model.onnx)를 쓴다.
+    onnx 가 없으면(구 run) 고정 onnx 를 지워 pt 와 안 맞는 낡은 onnx 서빙을 막는다."""
+    m = _run_meta(runid) or {}
+    src_pt = Path(m.get("weights", ""))
+    if not src_pt.exists():
+        return
+    config.MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copy(src_pt, config.NEW_MODEL_PT)
+    src_onnx = src_pt.parent / "model.onnx"
+    if src_onnx.exists():
+        shutil.copy(src_onnx, config.NEW_MODEL_ONNX)
+    elif config.NEW_MODEL_ONNX.exists():
+        try:
+            config.NEW_MODEL_ONNX.unlink()
+        except Exception:
+            pass
+
+
 def _set_served(runid):
     SERVED_PTR.write_text(json.dumps(
         {"run": runid, "applied": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
         ensure_ascii=False, indent=2), encoding="utf-8")
+    _sync_served_files(runid)   # 현재 모델을 고정 경로(models/model.pt·onnx)로 동기화
 
 
 def _prune_runs(keep=10):
