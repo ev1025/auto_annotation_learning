@@ -356,7 +356,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .score-tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
   box-shadow: var(--shadow-sm); padding: 18px 20px; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
 .score-tile.bad { box-shadow: inset 3px 0 0 0 var(--danger), var(--shadow-sm); }   /* 경고=왼쪽 빨간 포인트선 */
-.score-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.score-head { display: flex; justify-content: flex-start; align-items: baseline; gap: 8px; }   /* 종은 이름 바로 옆 */
 .score-title { font-size: 15px; font-weight: 500; color: var(--muted); letter-spacing: -.01em; }
 .score-n { font-size: 12.5px; font-weight: 600; color: var(--faint); flex: 0 0 auto; }   /* 종 개수: 헤더 우측 */
 .score-row { display: flex; align-items: baseline; gap: 9px; }                            /* 현재값 + 등락 인라인 */
