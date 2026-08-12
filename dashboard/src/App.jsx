@@ -1122,7 +1122,7 @@ function BaGroup({ part, kind, frames }) {
   return (
     <div className="ba-group">
       <div className="ba-stage">
-        {n > 1 && <button className="ba-nav" onClick={() => go(-1)} aria-label="이전 프레임"><IcChevronLeft /></button>}
+        {n > 1 && <button className="ba-nav prev" onClick={() => go(-1)} aria-label="이전 프레임"><IcChevronLeft /></button>}
         <div className="ba-pair big">
           <figure className="ba-fig">
             <figcaption>기존 모델</figcaption>
@@ -1134,7 +1134,7 @@ function BaGroup({ part, kind, frames }) {
             {cur.after ? <img src={cur.after} alt={`${part} 신규 모델 검출`} /> : <div className="ba-none">신규 모델 없음</div>}
           </figure>
         </div>
-        {n > 1 && <button className="ba-nav" onClick={() => go(1)} aria-label="다음 프레임"><IcChevronRight /></button>}
+        {n > 1 && <button className="ba-nav next" onClick={() => go(1)} aria-label="다음 프레임"><IcChevronRight /></button>}
       </div>
       <div className="ba-legend">
         <span className="lg-item"><i className="lg-sw green" /> 정답 부품 검출</span>
@@ -1633,17 +1633,6 @@ function PartsApp() {
                             : '검토 후 결정'}</span>
                         </div>
                         <p className="verdict-msg">{cmp.recommend.msg}</p>
-                        <div className="verdict-act">
-                          {applied ? (
-                            <span className="ok-flash big"><IcCheck /> 신규 모델이 서비스에 적용되었습니다</span>
-                          ) : (
-                            /* 강조색(채운 버튼)은 항상 '권장 액션'에 — 롤백 권장이면 '기존 모델 유지'가 강조 */
-                            <>
-                              <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'ghost' : 'train'} big`} onClick={doApply}>신규 모델 적용</button>
-                              <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'danger' : 'ghost'} big`} onClick={doRollback}>기존 모델 유지</button>
-                            </>
-                          )}
-                        </div>
                       </section>
                     )}
 
@@ -1718,6 +1707,19 @@ function PartsApp() {
                   </>
                 )}
               </div>
+              {/* 최종 결정 영역 — 배너 밖 하단 고정 액션 존(권장 액션이 강조색) */}
+              {cmpDone && cmp.recommend && (
+                <div className="ev2-actionbar">
+                  {applied ? (
+                    <span className="ok-flash big"><IcCheck /> 신규 모델이 서비스에 적용되었습니다</span>
+                  ) : (
+                    <>
+                      <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'danger' : 'ghost'} big`} onClick={doRollback}>기존 모델 유지</button>
+                      <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'ghost' : 'train'} big`} onClick={doApply}>신규 모델 적용</button>
+                    </>
+                  )}
+                </div>
+              )}
             </>
           )}
 
