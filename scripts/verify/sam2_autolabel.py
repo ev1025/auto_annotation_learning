@@ -47,10 +47,8 @@ _LOCK = threading.Lock()
 JOBS = {}
 _BUSY = {"on": False}
 
-
 def _rd(p):
     return cv2.imdecode(np.fromfile(str(p), np.uint8), cv2.IMREAD_COLOR)
-
 
 def _b64(img, w=640, q=80):
     if w and img.shape[1] > w:
@@ -58,18 +56,15 @@ def _b64(img, w=640, q=80):
     ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, q])
     return "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode()
 
-
 def _overlay(im, mask, color=(0, 200, 0), alpha=0.45):
     ov = im.copy(); ov[mask] = color
     return cv2.addWeighted(ov, alpha, im, 1 - alpha, 0)
-
 
 def _bbox(mask):
     ys, xs = np.where(mask)
     if len(xs) == 0:
         return None
     return int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())
-
 
 # ==================== (1) 마스크 확인: 단일 프레임 ====================
 def _img_predictor():
@@ -78,7 +73,6 @@ def _img_predictor():
         from sam2.sam2_image_predictor import SAM2ImagePredictor
         _IMG["p"] = SAM2ImagePredictor(build_sam2(CFG, str(CKPT), device=DEV))
     return _IMG["p"]
-
 
 def mask_preview(src, frame_idx, points):
     """탭 점으로 그 프레임 SAM2 마스크 생성 → 포인트·마스크·박스를 한 이미지에 합쳐 반환 + 면적/박스. (학습 무관, 가벼움)"""
@@ -119,143 +113,13 @@ def mask_preview(src, frame_idx, points):
     gc.collect(); torch.cuda.empty_cache()
     return {"combo": _b64(vis), "area_frac": round(float(m.sum()) / (w * h), 4), "bbox": bb, "verdict": verdict}
 
-
 def free_sam2():
     _IMG.clear()
     gc.collect(); torch.cuda.empty_cache()
 
-
 # ==================== (2) 영상 전파 → 라벨 생성 ====================
-def _run_propagate(job_id, src, shots):
-    """shots=[[frame_idx,[[rx,ry,lab],...]],...] → SAM2 전파 → train 라벨 + train_box(박스표기) + tap(탭확인)."""
-    j = JOBS[job_id]
-    try:
-        from sam2.build_sam import build_sam2_video_predictor
-        vp = autolabel.resolve_video(src)
-        if not vp:
-            raise RuntimeError(f"영상을 찾지 못함: {src}")
-        stem = vp.stem
-        fs = autolabel._frames(src)
-        cache_dir = autolabel.frames_dir_for(src)          # 부품별 프레임 캐시 디렉토리(부품경로 기반 유니크)
-        j.update(stage="load", total=len(fs))
-        predictor = build_sam2_video_predictor(CFG, str(CKPT), device=DEV)
-        h, w = _rd(fs[0]).shape[:2]
-        runid = datetime.now().strftime("%y%m%d_%H%M%S")   # 실행마다 폴더 하나 (덮어쓰지 않음)
-        work = RESULTS / f"{stem}_{runid}"                 # 영상_실행시각 (폴더명은 stem, 슬래시 방지)
-        ref_d = work / "tap"    # 탭 프레임: 점+마스크+박스를 한 장에
-        seed_i, seed_l = work / "train" / "images", work / "train" / "labels"
-        box_d = work / "train_box"   # 학습 이미지에 바운딩박스 그린 확인용
-        for d in (ref_d, seed_i, seed_l, box_d, work / "unlabeled"):
-            d.mkdir(parents=True, exist_ok=True)
-
-        j.update(stage="propagate")
-        with torch.inference_mode(), torch.autocast(DEV, dtype=torch.bfloat16):
-            state = predictor.init_state(video_path=str(cache_dir), offload_video_to_cpu=True,
-                                         offload_state_to_cpu=True)
-            for fi, pts in shots:
-                p = np.array([[rx * w, ry * h] for rx, ry, _ in pts], dtype=np.float32)
-                l = np.array([int(lab) for *_, lab in pts], dtype=np.int32)
-                predictor.add_new_points_or_box(inference_state=state, frame_idx=int(fi), obj_id=1,
-                                                points=p, labels=l)
-            masks = {}
-            for fidx, _ids, logits in predictor.propagate_in_video(state):
-                m = logits[0].cpu().numpy()
-                masks[fidx] = (m[0] if m.ndim == 3 else m) > 0.0
-        del predictor, state
-        free_sam2()
-
-        # tap (탭한 프레임: 마스크 초록 + 박스 주황 + 점(파랑=부품/빨강=제외) 한 장에)
-        for fi, pts in shots:
-            mk = masks.get(int(fi))
-            base = _rd(fs[int(fi)])
-            has_mk = mk is not None and mk.shape == (h, w)
-            vis = _overlay(base, mk) if has_mk else base
-            bb = _bbox(mk) if has_mk else None
-            if bb:
-                cv2.rectangle(vis, (bb[0], bb[1]), (bb[2], bb[3]), (0, 165, 255), 3)
-            for rx, ry, lab in pts:
-                cv2.circle(vis, (int(rx * w), int(ry * h)), 10, (255, 60, 0) if lab else (0, 0, 255), -1)
-                cv2.circle(vis, (int(rx * w), int(ry * h)), 10, (255, 255, 255), 2)
-            cv2.imwrite(str(ref_d / f"{Path(fs[int(fi)]).stem}.jpg"), vis)
-
-        # 전 프레임: 마스크→박스 라벨(train) + 박스표기(train_box) / 빈 마스크=unlabeled
-        labeled = unlabeled = 0
-        for i, p in enumerate(fs):
-            mk = masks.get(i)
-            im = _rd(p)
-            if mk is not None and mk.shape != (h, w):
-                mk = cv2.resize(mk.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool)
-            bb = _bbox(mk) if mk is not None else None
-            if bb and (bb[2] - bb[0]) > 10 and (bb[3] - bb[1]) > 10:
-                cv2.imwrite(str(seed_i / f"{p.stem}.jpg"), im)   # 학습용 원본
-                cx, cy = (bb[0] + bb[2]) / 2 / w, (bb[1] + bb[3]) / 2 / h
-                bw, bh = (bb[2] - bb[0]) / w, (bb[3] - bb[1]) / h
-                (seed_l / f"{p.stem}.txt").write_text(f"0 {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}\n", encoding="utf-8")
-                boxed = im.copy()   # 박스 그린 확인용
-                cv2.rectangle(boxed, (bb[0], bb[1]), (bb[2], bb[3]), (0, 165, 255), 3)
-                cv2.putText(boxed, "part", (bb[0], max(bb[1] - 6, 16)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
-                cv2.imwrite(str(box_d / f"{p.stem}.jpg"), boxed)
-                labeled += 1
-            else:
-                cv2.imwrite(str(work / "unlabeled" / f"{p.stem}.jpg"), im)
-                unlabeled += 1
-            j.update(done=i + 1)
-
-        samples = [_b64(_overlay(_rd(fs[i]), masks[i]) if masks.get(i) is not None and masks[i].shape == (h, w)
-                        else _rd(fs[i]), w=300)
-                   for i in range(0, len(fs), max(1, len(fs) // 8))][:8]
-        (work / "meta.json").write_text(json.dumps(
-            {"run": runid, "src": src, "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-             "shots": [[int(fi), pts] for fi, pts in shots], "labeled": labeled,
-             "unlabeled": unlabeled, "total": len(fs), "trained": False},
-            ensure_ascii=False, indent=2), encoding="utf-8")
-        j.update(stage="done", running=False, labeled=labeled, unlabeled=unlabeled,
-                 total=len(fs), work=str(work), run=runid, samples=samples,
-                 ref_masks=[_b64(_rd(p), w=300) for p in sorted(ref_d.glob("*.jpg"))])
-    except Exception as e:
-        logger.exception("백그라운드 작업 오류")
-        j.update(stage="error", error=f"{type(e).__name__}: {e}", running=False)
-    finally:
-        _BUSY["on"] = False
-        gc.collect(); torch.cuda.empty_cache()
-
-
-def start_propagate(src, shots):
-    with _LOCK:
-        if _BUSY["on"]:
-            return {"error": "이미 실행 중입니다. 끝난 뒤 다시 시도하세요."}
-        if not shots:
-            return {"error": "탭한 참조가 없습니다."}
-        _BUSY["on"] = True
-    jid = uuid.uuid4().hex[:8]
-    JOBS[jid] = {"stage": "start", "done": 0, "total": 0, "running": True, "error": None}
-    threading.Thread(target=_run_propagate, args=(jid, src, shots), daemon=True).start()
-    return {"job": jid}
-
 
 # ==================== (3) 학습 ====================
-def list_labeled():
-    """라벨 생성된 실행 목록을 영상별로. 학습 세트 구성용 (train 영상 고르기)."""
-    out = {}
-    for stem in sorted({p.stem for p in autolabel._videos()}):
-        runs = [r for r in list_runs(stem) if r.get("labeled", 0) > 0]
-        if runs:
-            out[stem] = runs
-    return out
-
-
-def _draw_pred(im, r):
-    """예측 박스·신뢰도 그리기 → 검출 신뢰도 목록 반환."""
-    confs = []
-    for b, c in zip(r.boxes.xyxy.cpu().numpy(), r.boxes.conf.cpu().numpy()):
-        x1, y1, x2, y2 = map(int, b)
-        cv2.rectangle(im, (x1, y1), (x2, y2), (0, 150, 255), 3)
-        cv2.putText(im, f"{float(c):.2f}", (x1, max(y1 - 6, 16)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 150, 255), 2)
-        confs.append(float(c))
-    return confs
-
 
 def _propagate_into(video, shots, labels_dir, boxs_dir):
     """영상 하나를 SAM2 전파 → labels_dir 에 <stem>_<frame>.txt(YOLO 라벨),
@@ -312,124 +176,8 @@ def _propagate_into(video, shots, labels_dir, boxs_dir):
         cv2.imwrite(str(boxs_dir / f"{stem}_{Path(fs[int(fi)]).stem}.jpg"), vis)
     return n, len(fs)
 
-
-def _run_session(job_id, part, train_shots, test_srcs):
-    """부품 세션: train 영상들 각자 전파 → 라벨 통합 → YOLO 학습 → test 평가.
-
-    part="gearbox", train_shots={영상:[[fi,[[rx,ry,lab],...]],...]}, test_srcs=["test1",...].
-    한 실행 = 한 시각 폴더 results/<부품>/<시각>/ 에 tap·train·train_box·model/ 이 직접(안에 또 시각 없음).
-    라벨은 영상이름_번호 파일명으로 합침.
-    정답 라벨 없어 mAP 아님 = 검출률(프레임당 검출)+신뢰도+육안.
-    """
-    j = JOBS[job_id]
-    try:
-        runid = datetime.now().strftime("%y%m%d_%H%M%S")
-        sess = RESULTS / part / runid                      # results/<부품>/<시각>/  (한 폴더에 tap·train·train_box·model 직접)
-        pi, pl = sess / "train" / "images", sess / "train" / "labels"
-        box_d, ref_d = sess / "train_box", sess / "tap"
-        for d in (pi, pl, box_d, ref_d):
-            d.mkdir(parents=True, exist_ok=True)
-
-        # 1) 라벨 생성: train 영상마다 전파(영상별) → 한 폴더에 통합
-        vids = [v for v in train_shots if train_shots[v]]
-        total_lbl, used = 0, []
-        for vi, video in enumerate(vids):
-            j.update(stage="propagate", note=f"라벨 생성 {vi + 1}/{len(vids)} · {video}")
-            n, tot = _propagate_into(video, train_shots[video], pi, pl, box_d, ref_d)
-            total_lbl += n
-            used.append({"video": video, "labels": n, "frames": tot})
-        if total_lbl < 5:
-            raise RuntimeError(f"학습 라벨 부족({total_lbl}) — 학습 영상에 점을 찍어 주세요")
-
-        # 2) 학습: 통합 train 으로 YOLO 학습 (model 은 results/<부품>/<시각>/model/)
-        from ultralytics import YOLO
-        j.update(stage="train", note="", train_labels=total_lbl, train_srcs=[u["video"] for u in used])
-        model_dir = RESULTS / part / runid / "model"       # 같은 runid 아래 labels 와 나란히
-        yaml = sess / "train.yaml"
-        d = pi.resolve().as_posix()
-        yaml.write_text(f"path: {sess.resolve().as_posix()}\ntrain:\n  - {d}\nval:\n  - {d}\nnames:\n  0: part\n",
-                        encoding="utf-8")
-        model = YOLO(config.PRETRAINED)
-        model.train(data=str(yaml), epochs=EPOCHS, imgsz=640, batch=8, device=0, workers=0,
-                    project=str(model_dir / "runs"), name="model", exist_ok=True, verbose=False,
-                    plots=False, degrees=15.0)   # workers=0: 윈도우 멀티프로세싱 spawn 크래시 회피
-        w1 = Path(model.trainer.best)   # 실제 저장 경로
-        del model; gc.collect(); torch.cuda.empty_cache()
-
-        # 3) test 평가
-        j.update(stage="eval", eval_total=len(test_srcs), eval_done=0)
-        det = YOLO(str(w1))
-        eval_res = []
-        for ts in test_srcs:
-            fs = autolabel._frames(ts)
-            outd = model_dir / "eval" / ts
-            outd.mkdir(parents=True, exist_ok=True)
-            hit, confs = 0, []
-            for p in fs:
-                im = _rd(p)
-                r = det.predict(source=im, conf=VAL_CONF, imgsz=640, verbose=False)[0]
-                if len(r.boxes):
-                    confs += _draw_pred(im, r); hit += 1
-                cv2.imwrite(str(outd / f"{p.stem}.jpg"), im)
-            rate = hit / len(fs) if fs else 0.0
-            eval_res.append({
-                "src": ts, "frames": len(fs), "detected": hit, "rate": round(rate, 3),
-                "mean_conf": round(float(np.mean(confs)), 3) if confs else 0.0,
-                "samples": [_b64(_rd(p), w=300) for p in sorted(outd.glob("*.jpg"))[::max(1, len(fs) // 6)]][:6]})
-            j.update(eval_done=len(eval_res))
-        gc.collect(); torch.cuda.empty_cache()
-
-        meta = {"part": part, "run": runid, "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "labels_dir": str(sess), "model_dir": str(model_dir), "train": used,
-                "train_labels": total_lbl, "weights": str(w1),
-                "eval": [{k: r[k] for k in ("src", "frames", "detected", "rate", "mean_conf")} for r in eval_res]}
-        (sess / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-        (model_dir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-        j.update(stage="done", running=False, run=runid, part=part, train_labels=total_lbl,
-                 train_srcs=[u["video"] for u in used], weights=str(w1), eval=eval_res)
-    except Exception as e:
-        logger.exception("백그라운드 작업 오류")
-        j.update(stage="error", error=f"{type(e).__name__}: {e}", running=False)
-    finally:
-        _BUSY["on"] = False
-        gc.collect(); torch.cuda.empty_cache()
-
-
-def start_session(part, train_shots, test_srcs):
-    with _LOCK:
-        if _BUSY["on"]:
-            return {"error": "이미 실행 중입니다."}
-        if not part or not train_shots:
-            return {"error": "학습 영상(점 찍은 것)이 필요합니다."}
-        if not test_srcs:
-            return {"error": "평가할 test 영상을 하나 이상 고르세요."}
-        _BUSY["on"] = True
-    jid = uuid.uuid4().hex[:8]
-    JOBS[jid] = {"stage": "start", "running": True, "error": None}
-    threading.Thread(target=_run_session, args=(jid, part, train_shots, test_srcs), daemon=True).start()
-    return {"job": jid}
-
-
-def list_runs(src):
-    """그 영상의 지난 실행 목록(최근순). results/<영상>_<실행시각>/meta.json 기반."""
-    out = []
-    for d in sorted(RESULTS.glob(f"{src}_*"), reverse=True):
-        mp = d / "meta.json"
-        if not mp.exists():
-            continue
-        try:
-            m = json.loads(mp.read_text(encoding="utf-8"))
-        except Exception:
-            m = {}
-        out.append({"run": d.name[len(src) + 1:], "time": m.get("time", ""), "labeled": m.get("labeled", 0),
-                    "total": m.get("total", 0), "trained": bool(m.get("trained")),
-                    "detected": m.get("detected")})
-    return out
-
-
 def job_status(jid):
     return JOBS.get(jid, {"error": "unknown job"})
-
 
 # ==================== 멀티클래스 부품 라벨링 (장비별 위저드) ====================
 # 여러 부품 영상을 한 세션 폴더(results/parts/<세션>/)에 누적. 파일명=<영상>_<프레임>.
@@ -448,7 +196,6 @@ if not logger.handlers:
     logger.addHandler(_fh)
     logger.propagate = False
 
-
 # ==================== 부품별 영속 오토라벨 저장소 ====================
 # 오토라벨 산출(입력마스크+학습라벨)을 실험결과(results/)와 분리해 부품 폴더 아래 영속 보관한다.
 #   data/bell412/<부품>/autolabel/{images,labels,masks}  (파일명=<영상>_<프레임>)
@@ -456,11 +203,9 @@ if not logger.handlers:
 DATA_BELL = config.DATA_DIR / "bell412"
 PERSIST = "autolabel"          # 프론트에 노출하는 단일 영속 세션 이름
 
-
 def _video_stem(name):
     """파일명/stem에서 뒤 프레임번호 제거 → 영상 stem. 'train_00012'→'train', 'Gearbox_gearbox1_00007'→'Gearbox_gearbox1'."""
     return re.sub(r"_\d+$", "", Path(name).stem)
-
 
 def _part_root_for_video(video):
     """영상(부품경로 키 또는 stem) → 그 부품 폴더(data/bell412/<부품>).
@@ -471,7 +216,6 @@ def _part_root_for_video(video):
         return autolabel.part_root_of(vp)
     return DATA_BELL / "_unmapped"
 
-
 def _autolabel_store(video):
     """영상(부품경로 키/stem) → 그 부품 영속 오토라벨 저장소 dict.
     results/autolabels/<부품>/{images/<stem>/, labels, boxs} (영속 = '라벨됨' 유지).
@@ -479,17 +223,14 @@ def _autolabel_store(video):
     base = autolabel.AUTOLABELS / _part_root_for_video(video).name
     return {"root": base, "images": base / "images", "labels": base / "labels", "boxs": base / "boxs"}
 
-
 def _store_for_part(part):
     """부품 폴더명 → 그 부품 영속 저장소 dict. (검수 썸네일/삭제에서 part 를 알 때 유니크)."""
     base = autolabel.AUTOLABELS / part
     return {"root": base, "images": base / "images", "labels": base / "labels", "boxs": base / "boxs"}
 
-
 def _store_for_frame(name):
     """프레임 파일명(<영상>_<프레임>.jpg) → 그 부품 저장소."""
     return _autolabel_store(_video_stem(name))
-
 
 def _persist_videos():
     """부품별 영속 저장소를 스캔 → {영상stem: {labels, frames}}. 프론트 labeledMap 재료(세션 무관 통합)."""
@@ -502,7 +243,6 @@ def _persist_videos():
                 d["labels"] += 1
                 d["frames"] += 1
     return videos
-
 
 def parts_sessions():
     """부품별 영속 저장소(data/bell412/<부품>/autolabel)를 단일 세션(PERSIST)으로 합성해 반환(프론트 호환).
@@ -522,14 +262,12 @@ def parts_sessions():
              "total_labels": sum(v["labels"] for v in videos.values()),
              "trained": trained, "updated": ""}]
 
-
 def _clear_video(store, video):
     """재탭 반영: 그 영상(stem)의 기존 라벨·boxs 만 제거. 프레임 이미지(images/<stem> 캐시)는 재사용하므로 보존."""
     for g in (store["labels"].glob(f"{video}_*.txt"),
               store["boxs"].glob(f"{video}_*.jpg")):
         for f in list(g):
             f.unlink()
-
 
 # ==================== 참조샷(탭 포인트) 영속 저장/로드 ====================
 # 라벨은 서버(autolabel/labels)에 영속하지만, 참조샷(사람이 찍은 탭 포인트)은 여태 프론트
@@ -558,7 +296,6 @@ def _save_shots(video, shots):
     data[stem] = frames
     fp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
-
 def load_shots():
     """모든 부품 shots.json 취합 → {"<영상stem>": {"<프레임>": [[rx,ry,lab],...]}}. 프론트 참조샷 복원용."""
     out = {}
@@ -574,7 +311,6 @@ def load_shots():
                 if isinstance(frames, dict):
                     out.setdefault(video, {}).update(frames)
     return out
-
 
 def _run_parts_label(job_id, session, video, shots):
     """부품 영상 하나 → SAM2 전파 → 그 부품 영속 저장소(data/bell412/<부품>/autolabel)에 <stem>_<프레임>로 누적.
@@ -603,7 +339,6 @@ def _run_parts_label(job_id, session, video, shots):
         _BUSY["on"] = False
         gc.collect(); torch.cuda.empty_cache()
 
-
 def start_parts_label(session, video, shots):
     with _LOCK:
         if _BUSY["on"]:
@@ -617,7 +352,6 @@ def start_parts_label(session, video, shots):
                  "video": _vp.stem if _vp else video}
     threading.Thread(target=_run_parts_label, args=(jid, PERSIST, video, shots), daemon=True).start()
     return {"job": jid, "session": PERSIST}
-
 
 def _run_parts_label_batch(job_id, session, items):
     """탭한 부품 여러 개를 한 번에: 각 영상 SAM2 전파 → 각 부품 영속 저장소 누적. items=[{video,shots},...]."""
@@ -650,7 +384,6 @@ def _run_parts_label_batch(job_id, session, items):
         _BUSY["on"] = False
         gc.collect(); torch.cuda.empty_cache()
 
-
 def start_parts_label_batch(session, items):
     with _LOCK:
         if _BUSY["on"]:
@@ -663,7 +396,6 @@ def start_parts_label_batch(session, items):
     JOBS[jid] = {"stage": "start", "running": True, "error": None, "session": PERSIST}
     threading.Thread(target=_run_parts_label_batch, args=(jid, PERSIST, items), daemon=True).start()
     return {"job": jid, "session": PERSIST}
-
 
 def _synth_augment(oi, ol, logln, n_syn=400):
     """멀티클래스 학습셋(oi/ol)의 객체를 SAM2로 누끼 → 실배경에 copy-paste 합성 n_syn장 추가.
@@ -761,7 +493,6 @@ def _synth_augment(oi, ol, logln, n_syn=400):
             made += 1
     logln(f"배경 합성 증강 완료: {made}장 추가(원본 프레임 + 합성)", "ok")
     return made
-
 
 def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None, augment=False):
     """세션에 누적된 per-part 라벨(class 0) → 영상명→부품→클래스 remap → YOLO 학습 → 검출 평가.
@@ -1031,7 +762,6 @@ def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None, augme
         _BUSY["on"] = False
         gc.collect(); torch.cuda.empty_cache()
 
-
 def start_multiclass(session, epochs, test_srcs, only_classes=None, augment=False):
     with _LOCK:
         if _BUSY["on"]:
@@ -1046,7 +776,6 @@ def start_multiclass(session, epochs, test_srcs, only_classes=None, augment=Fals
                      daemon=True).start()
     return {"job": jid}
 
-
 def cancel_multiclass(job):
     """학습 중단 요청(다음 배치/에폭 경계에서 정지)."""
     j = JOBS.get(job)
@@ -1055,12 +784,10 @@ def cancel_multiclass(job):
     j["cancel"] = True
     return {"ok": True}
 
-
 # ==================== 3단계: 모델 평가·적용 (A/B 비교 → 서비스 적용/롤백) ====================
 SERVED_PTR = RESULTS / "_served.json"        # 현재 서비스 모델 포인터 {"run": "<시각>"}
 _RUN_RE = re.compile(r"^\d{6}_\d{6}$")       # 학습 run 폴더명 = YYMMDD_HHMMSS
 _ACTIVE = {"job": None, "kind": None, "session": None}   # 현재 진행 중인 학습/평가 잡(재진입 복구용)
-
 
 def active_job():
     """지금 진행 중인 학습/평가 잡의 현재 상태. 페이지 재진입 시 이 잡에 다시 붙어 복구한다."""
@@ -1072,7 +799,6 @@ def active_job():
         return {}
     return {"job": a["job"], "kind": a["kind"], "session": a.get("session"), **j}
 
-
 def _last_map50(curve):
     """학습 곡선에서 마지막 유효 mAP@0.5."""
     for e in reversed(curve or []):
@@ -1080,14 +806,12 @@ def _last_map50(curve):
             return round(float(e["map50"]), 3)
     return None
 
-
 def _run_dirs():
     """results/ 아래 학습 run 폴더(최신순). meta.json 있는 시각(YYMMDD_HHMMSS) 폴더만."""
     if not RESULTS.exists():
         return []
     ds = [d for d in RESULTS.iterdir() if d.is_dir() and _RUN_RE.match(d.name) and (d / "meta.json").exists()]
     return sorted(ds, key=lambda d: d.name, reverse=True)
-
 
 def _run_meta(runid):
     mp = RESULTS / str(runid) / "meta.json"
@@ -1098,11 +822,9 @@ def _run_meta(runid):
     except Exception:
         return None
 
-
 def _latest_run():
     ds = _run_dirs()
     return ds[0].name if ds else None
-
 
 def _served_runid():
     if SERVED_PTR.exists():
@@ -1111,7 +833,6 @@ def _served_runid():
         except Exception:
             return None
     return None
-
 
 def _sync_served_files(runid):
     """현재 서비스 모델(run 의 best.pt·model.onnx)을 고정 경로로 복사한다.
@@ -1133,13 +854,11 @@ def _sync_served_files(runid):
         except Exception:
             pass
 
-
 def _set_served(runid):
     SERVED_PTR.write_text(json.dumps(
         {"run": runid, "applied": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
         ensure_ascii=False, indent=2), encoding="utf-8")
     _sync_served_files(runid)   # 현재 모델을 고정 경로(models/model.pt·onnx)로 동기화
-
 
 def _prune_runs(keep=10):
     """오래된 run 폴더 정리. 현재 서비스(served) run 은 10개 밖이어도 보호."""
@@ -1149,7 +868,6 @@ def _prune_runs(keep=10):
             continue
         shutil.rmtree(d, ignore_errors=True)
         logger.info(f"[prune] 오래된 run 파기: {d.name}")
-
 
 def served_model():
     """현재 서비스 중인 모델 = _served.json 이 가리키는 run. 없으면 None."""
@@ -1162,7 +880,6 @@ def served_model():
                 "time": m.get("time", ""), "map50": _last_map50(m.get("curve")),
                 "gen_rate": m.get("gen_rate"), "newp_rate": m.get("newp_rate")}
     return None
-
 
 def list_models():
     """run 버전 목록(최신순) — 버전 히스토리·선택형 롤백 UI 재료."""
@@ -1180,7 +897,6 @@ def list_models():
                     "is_active": (active_mid is not None and active_mid == mid)})
     return {"models": out, "active": active_mid}
 
-
 def apply_model(session=None):
     """학습 run 을 서비스로 지정(_served.json 포인터). session 이 유효 run 이면 그것, 아니면 최신 run."""
     runid = session if _run_meta(session) else _latest_run()
@@ -1190,7 +906,6 @@ def apply_model(session=None):
     _set_served(runid)
     return {"ok": True, "session": runid, "label": m.get("label", ""), "n_classes": m.get("n_classes", 0)}
 
-
 def rollback_to(model_id):
     """선택형 롤백: 과거 run(model_id=<시각>)을 서비스로 지정."""
     m = _run_meta(model_id)
@@ -1199,16 +914,13 @@ def rollback_to(model_id):
     _set_served(model_id)
     return {"ok": True, "model_id": model_id, "label": m.get("label", ""), "n_classes": m.get("n_classes", 0)}
 
-
 def rollback():
     """신규 모델 폐기(서비스 모델 미변경). 프론트가 라벨 화면으로 복귀."""
     return {"ok": True}
 
-
 def _mean(xs):
     xs = [x for x in xs if x is not None]
     return round(sum(xs) / len(xs), 3) if xs else None
-
 
 def _run_compare(job_id, session, base_model_id=None):
     """신규 모델 vs 기존(서비스) 모델을 같은 테스트 영상에 돌려 '정답 클래스 검출률'(인식률) 비교.
@@ -1370,7 +1082,6 @@ def _run_compare(job_id, session, base_model_id=None):
         _BUSY["on"] = False
         gc.collect(); torch.cuda.empty_cache()
 
-
 def start_compare(session, base_model_id=None):
     with _LOCK:
         if _BUSY["on"]:
@@ -1383,7 +1094,6 @@ def start_compare(session, base_model_id=None):
     _ACTIVE.update(job=jid, kind="compare", session=session)
     threading.Thread(target=_run_compare, args=(jid, session, base_model_id or None), daemon=True).start()
     return {"job": jid}
-
 
 def delete_model(model_id):
     """버전(run=<시각>) 폴더 삭제. 현재 서비스 중인 run 은 삭제 금지."""
@@ -1398,50 +1108,9 @@ def delete_model(model_id):
     logger.info(f"[delete_model] run {model_id} 삭제")
     return {"ok": True, "model_id": model_id}
 
-
-def _pred_dir(session, src):
-    """예측 오버레이 폴더 = results/<run>/<부품>/pred. run=유효 세션 or 최신, 부품=src 영상의 부품."""
-    runid = session if _run_meta(session) else _latest_run()
-    if not runid:
-        return None
-    vp = autolabel.resolve_video(src)
-    part = autolabel.part_root_of(vp).name if vp else re.sub(r"[\\/]", "_", str(src))
-    return RESULTS / runid / "pred" / part
-
-
-def eval_frames(session, src):
-    """학습 검출평가 예측 이미지(박스 그려진 것) 개수 — 마지막 화면에서 넘겨보기용."""
-    d = _pred_dir(session, src)
-    n = len(list(d.glob("*.jpg"))) if d and d.exists() else 0
-    return {"session": session, "src": src, "count": n}
-
-
-def eval_frame(session, src, idx, w=720):
-    """예측 이미지 한 장(JPEG 바이트). 없으면 None."""
-    d = _pred_dir(session, src)
-    fs = sorted(d.glob("*.jpg")) if d and d.exists() else []
-    if not fs:
-        return None
-    idx = max(0, min(int(idx), len(fs) - 1))
-    im = _rd(fs[idx])
-    if w and im.shape[1] > w:
-        im = cv2.resize(im, (w, int(im.shape[0] * w / im.shape[1])))
-    ok, buf = cv2.imencode(".jpg", im, [cv2.IMWRITE_JPEG_QUALITY, 82])
-    return buf.tobytes() if ok else None
-
-
 # ==================== 학습 데이터(생성 라벨) 검수·삭제 ====================
 # 라벨은 부품별 영속 저장소(data/bell412/<부품>/autolabel)에 있고, 프론트에는 단일 세션(PERSIST)으로 노출.
 # 프레임 파일명(<영상>_<프레임>)만으로 어느 부품 저장소인지 역추적한다(session 인자는 무시).
-def list_train_frames(session):
-    """생성된 학습 프레임 목록(부품별, 세션 무관). 잘못된 사진 검수·삭제용."""
-    frames = []
-    for lbl_dir in sorted(autolabel.AUTOLABELS.glob("*/labels")):
-        part = lbl_dir.parent.name
-        for lp in sorted(lbl_dir.glob("*.txt")):
-            frames.append({"session": PERSIST, "name": lp.stem + ".jpg", "part": part})
-    return {"session": PERSIST, "count": len(frames), "frames": frames}
-
 
 def labeled_parts():
     """autolabel 라벨이 하나라도 있는 부품(폴더=클래스) 집합 — 기존/신규 판정·검수 활성 판단용."""
@@ -1450,7 +1119,6 @@ def labeled_parts():
         if any(lbl_dir.glob("*.txt")):
             parts.add(lbl_dir.parent.name)     # results/autolabels/<부품>/labels → <부품>
     return {"parts": sorted(parts)}
-
 
 def list_part_frames(part, limit=400):
     """특정 부품(폴더=클래스)의 생성된 학습(라벨) 프레임 수집(검수용). part = 폴더명."""
@@ -1464,7 +1132,6 @@ def list_part_frames(part, limit=400):
             if len(out) >= limit:
                 return {"part": part, "count": len(out), "frames": out, "truncated": True}
     return {"part": part, "count": len(out), "frames": out}
-
 
 def train_frame_jpeg(session, name, w=360, part=None):
     """학습 프레임에 YOLO 라벨 bbox(초록)를 그려 JPEG 바이트로. 검수에서 어떤 라벨이 생성됐는지 확인용.
@@ -1499,7 +1166,6 @@ def train_frame_jpeg(session, name, w=360, part=None):
     ok, buf = cv2.imencode(".jpg", im, [cv2.IMWRITE_JPEG_QUALITY, 85])
     return buf.tobytes() if ok else None
 
-
 def delete_train_frame(session, name, part=None):
     """검수에서 잘못된 프레임(이미지+라벨+마스크) 삭제. part 지정 시 그 부품 저장소 직접, 없으면 파일명 역추적."""
     if not name or "/" in name or ".." in name:
@@ -1514,7 +1180,6 @@ def delete_train_frame(session, name, part=None):
         if p.exists():
             p.unlink(missing_ok=True); removed = True
     return {"ok": True, "name": name} if removed else {"error": "대상 없음"}
-
 
 # ==================== 영상 삭제(모달) — 원본은 _trash 로 이동(복구 가능), 캐시·오토라벨은 정리 ====================
 def delete_video(src):

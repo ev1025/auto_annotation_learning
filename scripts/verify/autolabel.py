@@ -39,9 +39,7 @@ _CUT_LOCK = threading.Lock()   # 프레임 컷 동시 실행 방지
 JOBS = {}             # job_id -> 진행상태 dict
 _BUSY = {"on": False}  # GPU 라벨생성 동시 1건만
 
-
 _VIDX = {"t": 0.0, "vids": None}   # _videos() 결과 짧은 TTL 캐시(프레임 요청마다 rglob 반복 방지)
-
 
 def _videos(force=False):
     """data/ 하위 모든 영상(부품 폴더 재귀). '_' 로 시작하는 폴더(_frame_cache·_trash 등)는 제외.
@@ -61,23 +59,19 @@ def _videos(force=False):
     _VIDX.update(t=now, vids=out)
     return out
 
-
 def part_root_of(vp):
     """영상 Path → 그 부품 루트 폴더(data/bell412/<부품>). 'videos' 폴더 아래면 상위, 아니면 부모."""
     return vp.parent.parent if vp.parent.name == "videos" else vp.parent
-
 
 def video_key(vp):
     """영상 Path → 부품경로 기반 유니크 키 = data/ 기준 상대경로(확장자 제거).
     예: data/bell412/gearbox/videos/test1.mp4 → 'bell412/gearbox/videos/test1'."""
     return vp.resolve().relative_to(config.DATA_DIR.resolve()).with_suffix("").as_posix()
 
-
 def cache_dir_of(vp):
     """영상 Path → 그 영상의 프레임 저장소(results/autolabels/<부품>/images/<stem>).
     _frame_cache 폐지: autolabels/images 가 프레임(전 프레임) 저장소를 겸한다(SAM2 init_state·스크럽·학습이미지 공용)."""
     return AUTOLABELS / part_root_of(vp).name / "images" / vp.stem
-
 
 def resolve_video(src):
     """src → 실제 영상 Path. 부품경로 기반 유니크 식별(같은 stem 이 다른 부품에 있어도 안 꼬임).
@@ -104,11 +98,9 @@ def resolve_video(src):
     # 3) bare stem (레거시)
     return next((vp for vp in vids if vp.stem == s), None)
 
-
 def _cached_frames(d):
     """디렉토리 d 안의 프레임(jpg) 정렬 목록. 없으면 빈 리스트."""
     return sorted(d.glob("*.jpg")) if d.exists() else []
-
 
 def _frames_dir(vp):
     """이 영상의 프레임이 실제 있는 디렉토리를 고른다.
@@ -127,12 +119,10 @@ def _frames_dir(vp):
     _extract(vp, part_cache)
     return part_cache
 
-
 def frames_dir_for(src):
     """src(부품경로/stem) → 프레임 디렉토리(SAM2 init_state 의 video_path 용). 없으면 컷."""
     vp = resolve_video(src)
     return _frames_dir(vp) if vp else None
-
 
 def _estimate_count(vp):
     cap = cv2.VideoCapture(str(vp))
@@ -142,7 +132,6 @@ def _estimate_count(vp):
         return 0
     stride = max(1, total // TARGET_FRAMES)
     return (total + stride - 1) // stride
-
 
 def _extract(vp, dest):
     """영상 -> 서브샘플 프레임 컷(부품별 캐시 dest 로). 이미 있으면 그대로 반환."""
@@ -167,14 +156,12 @@ def _extract(vp, dest):
         cap.release()
     return _cached_frames(dest)
 
-
 def _frames(src):
     """소스(부품경로/stem)의 프레임 목록. 부품별 캐시 우선, 레거시 중앙 캐시 폴백, 없으면 컷."""
     vp = resolve_video(src)
     if not vp:
         return []
     return _cached_frames(_frames_dir(vp))
-
 
 def _source_info(vp):
     d = cache_dir_of(vp)
@@ -183,12 +170,6 @@ def _source_info(vp):
     return {"name": vp.stem, "key": video_key(vp),
             "count": len(cached) if cached else _estimate_count(vp),
             "ready": bool(cached)}
-
-
-def list_sources():
-    """videos 폴더의 영상 목록 (매 호출 스캔 = 새 영상 넣으면 바로 뜸)."""
-    return [_source_info(vp) for vp in _videos()]
-
 
 def list_folders():
     """영상이 있는 폴더별로 묶기. [{folder, label, videos:[{name,count,ready}]}].
@@ -208,19 +189,16 @@ def list_folders():
                     "videos": [_source_info(vp) for vp in sorted(groups[rel])]})
     return out
 
-
 def prepare(src):
     """소스 프레임을 컷(없으면 생성)하고 프레임 수 반환. 소스 선택 시 호출."""
     fs = _frames(src)
     return {"name": src, "count": len(fs), "ready": True}
-
 
 def _b64(img, w=None, q=80):
     if w and img.shape[1] > w:
         img = cv2.resize(img, (w, int(img.shape[0] * w / img.shape[1])))
     ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, q])
     return "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode()
-
 
 def frame_jpeg(src, idx, w=960):
     """프레임 한 장을 JPEG 바이트로 (뷰어 표시용, 다운스케일)."""
@@ -234,110 +212,3 @@ def frame_jpeg(src, idx, w=960):
         im = cv2.resize(im, (w, int(im.shape[0] * w / im.shape[1])))
     ok, buf = cv2.imencode(".jpg", im, [cv2.IMWRITE_JPEG_QUALITY, 85])
     return buf.tobytes()
-
-
-def _load_models():
-    if _MODELS:
-        return _MODELS
-    from segment_anything import SamAutomaticMaskGenerator, SamPredictor, sam_model_registry
-    sam = sam_model_registry["vit_h"](checkpoint=str(SAM_CKPT)).to(DEV)
-    _MODELS["gen"] = SamAutomaticMaskGenerator(sam, points_per_side=16, min_mask_region_area=256)
-    _MODELS["predictor"] = SamPredictor(sam)
-    _MODELS["dino"] = torch.hub.load("facebookresearch/dinov2", "dinov2_vitl14",
-                                     verbose=False).to(DEV).eval()
-    return _MODELS
-
-
-def _run(job_id, src, shots, tau):
-    """백그라운드 라벨 생성. shots = [[프레임번호, [[rx,ry,lab],...]], ...]"""
-    j = JOBS[job_id]
-    try:
-        if not SAM_CKPT.exists():
-            raise RuntimeError(f"SAM 체크포인트 없음: {SAM_CKPT}")
-        fs = _frames(src)
-        if not fs:
-            raise RuntimeError("프레임 소스를 못 찾음")
-        M = _load_models()
-        predictor, gen, dino = M["predictor"], M["gen"], M["dino"]
-
-        # 1) 클릭한 참조점 -> SAM 마스크 -> 참조 크롭 + 미리보기
-        j["stage"] = "ref"
-        ref_crops, previews = [], []
-        for fi, pts_spec in shots:
-            imk = load_img(fs[int(fi)])
-            predictor.set_image(cv2.cvtColor(imk, cv2.COLOR_BGR2RGB))
-            pts = np.array([[int(rx * imk.shape[1]), int(ry * imk.shape[0])] for rx, ry, _ in pts_spec])
-            lbls = np.array([int(lab) for *_, lab in pts_spec])
-            masks, scores, _ = predictor.predict(point_coords=pts, point_labels=lbls, multimask_output=True)
-            m = masks[int(np.argmax(scores))]
-            ys, xs = np.where(m)
-            if len(xs) == 0:
-                continue
-            ref_crops.append(imk[ys.min():ys.max() + 1, xs.min():xs.max() + 1])
-            vis = imk.copy()
-            cv2.rectangle(vis, (int(xs.min()), int(ys.min())), (int(xs.max()), int(ys.max())), (0, 255, 255), 3)
-            for (x, y), lab in zip(pts, lbls):
-                cv2.circle(vis, (int(x), int(y)), 9, (0, 255, 0) if lab == 1 else (0, 0, 255), -1)
-            previews.append(_b64(vis, w=360))
-        if not ref_crops:
-            raise RuntimeError("참조 마스크를 못 만듦(점 위치 확인)")
-        j["ref_previews"] = previews
-        ref_emb = embed(dino, ref_crops)
-
-        # 2) 전 프레임 스캔: SAM 후보 -> DINO 유사도 -> tau 이상이면 라벨(seed)
-        j["stage"] = "scan"
-        work = config.BASE_DIR / "results" / "exp_autolabel_web"
-        seed_dir, pool_dir = work / "seed", work / "pool"
-        for d in (seed_dir / "images", seed_dir / "labels", pool_dir / "images"):
-            d.mkdir(parents=True, exist_ok=True)
-        n_seed = n_pool = 0
-        samples = []
-        for i, p in enumerate(fs):
-            im = load_img(p); h, w = im.shape[:2]
-            boxes, crops = candidates(gen, im)
-            keep = []
-            if crops:
-                emb = embed(dino, crops)
-                sims = (emb @ ref_emb.T).max(dim=1).values.cpu().numpy()
-                keep = nms([(boxes[k], float(sims[k])) for k in range(len(boxes)) if sims[k] >= tau])
-            if keep:
-                cv2.imwrite(str(seed_dir / "images" / f"{p.stem}.jpg"), im)
-                write_label(seed_dir / "labels" / f"{p.stem}.txt", keep, w, h)
-                n_seed += 1
-                if len(samples) < 8 and i % max(1, len(fs) // 12) == 0:
-                    vis = im.copy()
-                    for (x1, y1, x2, y2), sc in keep:
-                        cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 150, 255), 3)
-                        cv2.putText(vis, f"{sc:.2f}", (x1, max(y1 - 6, 12)),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 150, 255), 2)
-                    samples.append(_b64(vis, w=320))
-            else:
-                cv2.imwrite(str(pool_dir / "images" / f"{p.stem}.jpg"), im)
-                n_pool += 1
-            j.update(done=i + 1, total=len(fs), seed=n_seed, pool=n_pool)
-        j.update(stage="done", samples=samples, running=False,
-                 work=str(work), coverage=round(n_seed / len(fs), 3))
-    except Exception as e:
-        j.update(stage="error", error=f"{type(e).__name__}: {e}", running=False)
-    finally:
-        _BUSY["on"] = False
-        torch.cuda.empty_cache()
-
-
-def start_job(src, shots, tau):
-    with _LOCK:
-        if _BUSY["on"]:
-            return {"error": "이미 오토라벨이 실행 중입니다. 끝난 뒤 다시 시도하세요."}
-        if not shots:
-            return {"error": "참조 샷이 없습니다. 프레임에 점을 찍고 저장하세요."}
-        _BUSY["on"] = True
-    job_id = uuid.uuid4().hex[:8]
-    JOBS[job_id] = {"stage": "start", "done": 0, "total": len(_frames(src)),
-                    "seed": 0, "pool": 0, "ref_previews": [], "samples": [],
-                    "error": None, "running": True}
-    threading.Thread(target=_run, args=(job_id, src, shots, float(tau)), daemon=True).start()
-    return {"job": job_id}
-
-
-def job_status(job_id):
-    return JOBS.get(job_id, {"error": "unknown job"})

@@ -81,11 +81,6 @@ def api_export():
     return {"path": core.export_report()}
 
 
-@app.get("/api/autolabel/sources")
-def api_autolabel_sources():
-    return autolabel.list_sources()
-
-
 @app.get("/api/autolabel/folders")
 def api_autolabel_folders():
     return autolabel.list_folders()
@@ -104,36 +99,10 @@ def api_autolabel_prepare(src: str):
     return autolabel.prepare(src)
 
 
-@app.post("/api/autolabel/run")
-def api_autolabel_run(payload: dict = Body(...)):
-    return autolabel.start_job(payload.get("src"), payload.get("shots", []),
-                               payload.get("tau", 0.70))
-
-
-@app.get("/api/autolabel/status")
-def api_autolabel_status(job: str):
-    return autolabel.job_status(job)
-
-
 # ---- SAM2 단계형 오토라벨 ----
 @app.post("/api/sam2/mask")
 def api_sam2_mask(payload: dict = Body(...)):
     return sa.mask_preview(payload.get("src"), int(payload.get("frame", 0)), payload.get("points", []))
-
-
-@app.post("/api/sam2/propagate")
-def api_sam2_propagate(payload: dict = Body(...)):
-    return sa.start_propagate(payload.get("src"), payload.get("shots", []))
-
-
-@app.post("/api/sam2/train_eval")
-def api_sam2_train_eval(payload: dict = Body(...)):
-    return sa.start_train_eval(payload.get("train_runs", []), payload.get("test_srcs", []))
-
-
-@app.post("/api/sam2/session")
-def api_sam2_session(payload: dict = Body(...)):
-    return sa.start_session(payload.get("part"), payload.get("train_shots", {}), payload.get("test_srcs", []))
 
 
 @app.get("/api/sam2/parts_sessions")
@@ -176,11 +145,6 @@ def api_sam2_compare(payload: dict = Body(...)):
 @app.post("/api/sam2/delete_model")
 def api_sam2_delete_model(payload: dict = Body(...)):
     return sa.delete_model(payload.get("model_id"))
-
-
-@app.get("/api/sam2/train_frames")
-def api_sam2_train_frames(session: str):
-    return sa.list_train_frames(session)
 
 
 @app.get("/api/sam2/part_frames")
@@ -239,29 +203,6 @@ def api_sam2_models():
 @app.post("/api/sam2/rollback_to")
 def api_sam2_rollback_to(payload: dict = Body(...)):
     return sa.rollback_to(payload.get("model_id"))
-
-
-@app.get("/api/sam2/eval_frames")
-def api_sam2_eval_frames(session: str, src: str):
-    return sa.eval_frames(session, src)
-
-
-@app.get("/api/sam2/eval_frame")
-def api_sam2_eval_frame(session: str, src: str, idx: int = 0, w: int = 720):
-    b = sa.eval_frame(session, src, idx, w)
-    if b is None:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return Response(content=b, media_type="image/jpeg")
-
-
-@app.get("/api/sam2/runs")
-def api_sam2_runs(src: str):
-    return sa.list_runs(src)
-
-
-@app.get("/api/sam2/labeled")
-def api_sam2_labeled():
-    return sa.list_labeled()
 
 
 @app.get("/api/sam2/status")
