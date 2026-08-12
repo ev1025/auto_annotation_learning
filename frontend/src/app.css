@@ -353,7 +353,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 /* ── 스코어보드: 판정 근거 인식률 2종(기존 유지 / 신규) ── */
 .scoreboard { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .score-tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
-  box-shadow: var(--shadow-sm); padding: 15px 16px; display: flex; flex-direction: column; gap: 14px; }
+  box-shadow: var(--shadow-sm); padding: 11px 14px; display: flex; flex-direction: column; gap: 5px; }
 .score-tile.bad { box-shadow: inset 3px 0 0 0 var(--danger), var(--shadow-sm); }   /* 경고=왼쪽 빨간 포인트선만(배경·숫자색은 통일) */
 .score-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .score-title { display: flex; align-items: baseline; gap: 7px; font-size: 13px; font-weight: 700; color: var(--ink-strong); letter-spacing: -.01em; }
