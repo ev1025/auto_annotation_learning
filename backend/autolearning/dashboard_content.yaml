@@ -6,7 +6,7 @@
 # experiments.<카테고리>.<주제>.loader 도 위 로더 이름을 그대로 씀.
 
 paths:
-  previews: dashboard/previews
+  previews: frontend/previews
   test_images: data/robo/yolo/test/images
   test_labels: data/robo/yolo/test/labels
 

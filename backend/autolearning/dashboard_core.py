@@ -19,7 +19,7 @@ CONTENT = yaml.safe_load((Path(__file__).resolve().parent / "dashboard_content.y
 
 # 프로젝트별 경로·상수도 콘텐츠에서 (코드 재사용 위해)
 _P = CONTENT.get("paths", {})
-PREV_DIR = config.BASE_DIR / _P.get("previews", "dashboard/previews")
+PREV_DIR = config.BASE_DIR / _P.get("previews", "frontend/previews")
 TEST_IMG = config.BASE_DIR / _P.get("test_images", "data/robo/yolo/test/images")
 TEST_LBL = config.BASE_DIR / _P.get("test_labels", "data/robo/yolo/test/labels")
 GT_CLASSES = CONTENT.get("gt_classes", [])

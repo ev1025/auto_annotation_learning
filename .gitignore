@@ -42,8 +42,8 @@ uploads/
 *.mp4
 
 # dashboard frontend
-dashboard/node_modules/
-dashboard/dist/
+frontend/node_modules/
+frontend/dist/
 
 # self-training 영상 실험 산출물 (models/runs/frames 대용량)
 exp_selftrain/

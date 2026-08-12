@@ -25,8 +25,8 @@ import config
 import dashboard_core as core
 import html as _html
 
-OUT = config.BASE_DIR / "dashboard" / "report.html"
-PREV = config.BASE_DIR / "dashboard" / "previews"
+OUT = config.BASE_DIR / "frontend" / "report.html"
+PREV = config.BASE_DIR / "frontend" / "previews"
 TEST_IMG = config.DATA_DIR / "robo" / "yolo" / "test" / "images"
 TEST_LBL = config.DATA_DIR / "robo" / "yolo" / "test" / "labels"
 GT_CLASSES = ["bearing", "bolt", "gear", "nut"]

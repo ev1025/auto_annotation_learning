@@ -29,7 +29,7 @@ PORT = 7862
 # 바인딩 호스트. 기본은 로컬 전용(안전). 서버에서 같이 쓰는 사람이 브라우저로 보게 하려면
 # DASH_HOST=0.0.0.0 으로 띄운다 (대시보드에 인증이 없으니 신뢰된 내부망에서만).
 HOST = os.environ.get("DASH_HOST", "127.0.0.1")
-DIST = config.BASE_DIR / "dashboard" / "dist"
+DIST = config.BASE_DIR / "frontend" / "dist"
 
 app = FastAPI(title="XR 오토러닝 대시보드 API")
 
@@ -223,5 +223,5 @@ if DIST.exists():
 
 if __name__ == "__main__":
     if not DIST.exists():
-        print("경고: dashboard/dist 없음. 먼저 빌드하세요: cd dashboard && npm install && npm run build")
+        print("경고: frontend/dist 없음. 먼저 빌드하세요: cd frontend && npm install && npm run build")
     uvicorn.run(app, host=HOST, port=PORT, log_level="warning")
