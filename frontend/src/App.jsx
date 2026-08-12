@@ -407,7 +407,7 @@ function AutoLabelView() {
           <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0, overflow: 'hidden', marginTop: 8 }}>
             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
              {/* 이미지+범례+재생 = 남는 폭을 채우되 상한(사이드바 넓혀도 겹치지 않게 반응형) */}
-             <div style={{ width: '100%', maxWidth: 720, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+             <div style={{ width: '100%', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
               {/* 마스크 상태: 참조샷과 이미지 사이 */}
               {activeMask && !activeMask.error && (
                 activeMask.verdict === 'over'
