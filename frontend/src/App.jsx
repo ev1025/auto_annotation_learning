@@ -705,19 +705,22 @@ function VerCard({ tag, cls, id, time, classes, map50, baseSet, highlightNew }) 
 
 // 스코어 타일(모던 SaaS 위젯): 상단 제목·종수(좌) + 증감 뱃지(우), 중앙 큰 숫자(무채색), 하단 이전값(옅게).
 // 하락 경고(≤-10%p)는 배경/숫자색이 아니라 카드 왼쪽 빨간 포인트선(inset)으로만 은은하게 표시.
-function ScoreTile({ label, before, after, pctv, deltaEl, warnDown }) {
+function ScoreTile({ label, n, before, after, pctv, deltaEl, warnDown }) {
   const d = (before != null && after != null) ? Math.round((after - before) * 100) : null
   const bad = warnDown && d != null && d <= -10
   return (
-    <div className={`score-tile${bad ? ' bad' : ''}`}>   {/* GA 카드 스타일: 이름 · 현재값 · 증감만 */}
-      <div className="score-title">{label}</div>
+    <div className={`score-tile${bad ? ' bad' : ''}`}>   {/* GA 카드: 헤더(이름·종) · 현재값+등락 */}
+      <div className="score-head">
+        <span className="score-title">{label}</span>
+        {n != null && <span className="score-n">{n}종</span>}     {/* 종 개수는 헤더 우측 */}
+      </div>
       {after == null ? (                          /* 신규 모델 결과 자체가 없음 */
         <div className="score-na">비교 대상 없음 · 첫 배포</div>
       ) : (
-        <>
-          <div className="score-big">{pctv(after)}</div>
+        <div className="score-row">                {/* 현재값 옆에 등락(빨강/파랑) */}
+          <span className="score-big">{pctv(after)}</span>
           {d != null && deltaEl(before, after)}
-        </>
+        </div>
       )}
     </div>
   )
@@ -1161,9 +1164,9 @@ function PartsApp() {
   const deltaEl = (before, after) => {
     if (before == null || after == null) return <span className="delta flat">—</span>
     const d = Math.round((after - before) * 100)
-    if (d > 0) return <span className="delta up">↑ {d}%p</span>
-    if (d < 0) return <span className="delta down">↓ {Math.abs(d)}%p</span>
-    return <span className="delta flat">±0%p</span>
+    if (d > 0) return <span className="delta up">+{d}%p</span>       // 상승 = 빨강
+    if (d < 0) return <span className="delta down">{d}%p</span>      // 하락 = 파랑(d 에 - 포함)
+    return <span className="delta flat">0%p</span>
   }
   // 평가 화면용 파생값
   const newClasses = status?.per_class ? Object.keys(status.per_class)
@@ -1340,9 +1343,9 @@ function PartsApp() {
 
                     {/* 2) 스코어보드 — 판정을 뒷받침하는 인식률 2종(기존 유지 / 신규 학습) */}
                     <section className="scoreboard">
-                      <ScoreTile label="기존 부품 인식"
+                      <ScoreTile label="기존 부품 인식" n={cmp.gen?.n ?? 0}
                                  before={cmp.gen?.before} after={cmp.gen?.after} pctv={pctv} deltaEl={deltaEl} warnDown />
-                      <ScoreTile label="신규 부품 인식"
+                      <ScoreTile label="신규 부품 인식" n={cmp.newp?.n ?? 0}
                                  before={cmp.newp?.before} after={cmp.newp?.after} pctv={pctv} deltaEl={deltaEl} />
                     </section>
 

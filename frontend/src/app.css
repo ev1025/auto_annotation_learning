@@ -354,9 +354,12 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .scoreboard { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 /* GA 카드 스타일: 이름(옅게) · 큰 현재값 · 증감(컬러 텍스트) 만 */
 .score-tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
-  box-shadow: var(--shadow-sm); padding: 18px 20px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+  box-shadow: var(--shadow-sm); padding: 18px 20px; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
 .score-tile.bad { box-shadow: inset 3px 0 0 0 var(--danger), var(--shadow-sm); }   /* 경고=왼쪽 빨간 포인트선 */
+.score-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 .score-title { font-size: 15px; font-weight: 500; color: var(--muted); letter-spacing: -.01em; }
+.score-n { font-size: 12.5px; font-weight: 600; color: var(--faint); flex: 0 0 auto; }   /* 종 개수: 헤더 우측 */
+.score-row { display: flex; align-items: baseline; gap: 9px; }                            /* 현재값 + 등락 인라인 */
 .score-big { font-size: 40px; font-weight: 700; letter-spacing: -.02em; color: var(--ink-strong);
   font-variant-numeric: tabular-nums; line-height: 1.05; }
 .score-na { font-size: 14px; font-weight: 600; color: var(--faint); padding: 4px 0; }
@@ -389,8 +392,8 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .lg-sw { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; }
 .lg-sw.green { background: #00b400; }
 .lg-sw.orange { background: #ff9600; }
-.delta.up { color: var(--success-ink); }
-.delta.down { color: var(--danger-ink); }
+.delta.up { color: #d92d20; }     /* 상승 = 빨강(한국 관례) */
+.delta.down { color: #1d6fe0; }   /* 하락 = 파랑 */
 .delta.flat { color: var(--muted); }
 .samp-tag.new { background: var(--accent-bg); color: var(--accent-ink); }
 .samp-tag.base { background: var(--surface-3); color: var(--muted); }
