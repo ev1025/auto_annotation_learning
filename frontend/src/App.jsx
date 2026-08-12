@@ -705,33 +705,18 @@ function VerCard({ tag, cls, id, time, classes, map50, baseSet, highlightNew }) 
 
 // 스코어 타일(모던 SaaS 위젯): 상단 제목·종수(좌) + 증감 뱃지(우), 중앙 큰 숫자(무채색), 하단 이전값(옅게).
 // 하락 경고(≤-10%p)는 배경/숫자색이 아니라 카드 왼쪽 빨간 포인트선(inset)으로만 은은하게 표시.
-function ScoreTile({ label, n, before, after, pctv, deltaEl, warnDown }) {
+function ScoreTile({ label, before, after, pctv, deltaEl, warnDown }) {
   const d = (before != null && after != null) ? Math.round((after - before) * 100) : null
   const bad = warnDown && d != null && d <= -10
-  const pct = (x) => x == null ? 0 : Math.max(0, Math.min(100, Math.round(x * 100)))
-  const dir = d == null ? 'flat' : d > 0 ? 'up' : d < 0 ? 'down' : 'flat'   // 인식률 바 색(상승 초록·하락 빨강)
   return (
-    <div className={`score-tile${bad ? ' bad' : ''}`}>
-      <div className="score-top">
-        <span className="score-title">{label}</span>
-        {n != null && <span className="score-n">{n}종</span>}
-      </div>
+    <div className={`score-tile${bad ? ' bad' : ''}`}>   {/* GA 카드 스타일: 이름 · 현재값 · 증감만 */}
+      <div className="score-title">{label}</div>
       {after == null ? (                          /* 신규 모델 결과 자체가 없음 */
         <div className="score-na">비교 대상 없음 · 첫 배포</div>
       ) : (
         <>
-          {/* 현재값 큰 숫자 + 증감 뱃지 */}
-          <div className="score-vals">
-            <span className="score-big">{pctv(after)}</span>
-            {d != null && deltaEl(before, after)}
-          </div>
-          {/* 인식률 바: 흐린=이전 위치, 진한(색)=현재. before→after 변화가 한눈에 */}
-          <div className={`score-bar ${dir}`} role="img"
-               aria-label={`인식률 ${pct(after)}%${before != null ? `, 이전 ${pct(before)}%` : ''}`}>
-            {before != null && <span className="score-bar-ghost" style={{ width: pct(before) + '%' }} />}
-            <span className="score-bar-fill" style={{ width: pct(after) + '%' }} />
-          </div>
-          {before != null && <div className="score-foot">이전 {pctv(before)}</div>}
+          <div className="score-big">{pctv(after)}</div>
+          {d != null && deltaEl(before, after)}
         </>
       )}
     </div>
@@ -1355,9 +1340,9 @@ function PartsApp() {
 
                     {/* 2) 스코어보드 — 판정을 뒷받침하는 인식률 2종(기존 유지 / 신규 학습) */}
                     <section className="scoreboard">
-                      <ScoreTile label="기존 부품 인식" n={cmp.gen?.n ?? 0}
+                      <ScoreTile label="기존 부품 인식"
                                  before={cmp.gen?.before} after={cmp.gen?.after} pctv={pctv} deltaEl={deltaEl} warnDown />
-                      <ScoreTile label="신규 부품 인식" n={cmp.newp?.n ?? 0}
+                      <ScoreTile label="신규 부품 인식"
                                  before={cmp.newp?.before} after={cmp.newp?.after} pctv={pctv} deltaEl={deltaEl} />
                     </section>
 
