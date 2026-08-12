@@ -353,13 +353,24 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 /* ── 스코어보드: 판정 근거 인식률 2종(기존 유지 / 신규) ── */
 .scoreboard { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .score-tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
-  box-shadow: var(--shadow-sm); padding: 11px 14px; display: flex; flex-direction: column; gap: 5px; }
-.score-tile.bad { box-shadow: inset 3px 0 0 0 var(--danger), var(--shadow-sm); }   /* 경고=왼쪽 빨간 포인트선만(배경·숫자색은 통일) */
-.score-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-.score-title { display: flex; align-items: baseline; gap: 7px; font-size: 13px; font-weight: 700; color: var(--ink-strong); letter-spacing: -.01em; }
-.score-n { font-size: 11.5px; font-weight: 500; color: var(--muted); }
-.score-big { font-size: 34px; font-weight: 800; letter-spacing: -.02em; color: var(--ink-strong); font-variant-numeric: tabular-nums; line-height: 1; }
-.score-foot { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  box-shadow: var(--shadow-sm); padding: 13px 15px; display: flex; flex-direction: column; gap: 9px; }
+.score-tile.bad { box-shadow: inset 3px 0 0 0 var(--danger), var(--shadow-sm); }   /* 경고=왼쪽 빨간 포인트선 */
+.score-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.score-title { font-size: 13px; font-weight: 700; color: var(--ink-strong); letter-spacing: -.01em; }
+.score-n { font-size: 11.5px; font-weight: 600; color: var(--muted); background: var(--surface-3);
+  border-radius: var(--r-pill); padding: 1px 8px; flex: 0 0 auto; }
+/* 현재값 + 증감뱃지 */
+.score-vals { display: flex; align-items: baseline; gap: 9px; }
+.score-big { font-size: 30px; font-weight: 800; letter-spacing: -.02em; color: var(--ink-strong);
+  font-variant-numeric: tabular-nums; line-height: 1; }
+/* 인식률 바: before(흐림) 위에 after(색) 겹쳐 그려 변화량 시각화 */
+.score-bar { position: relative; height: 7px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.score-bar-ghost, .score-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }
+.score-bar-ghost { background: var(--line-strong); }                 /* 이전 인식률 위치(흐림) */
+.score-bar-fill { background: var(--accent); }                       /* 현재 인식률(색) */
+.score-bar.up .score-bar-fill { background: var(--success); }
+.score-bar.down .score-bar-fill { background: var(--danger); }
+.score-foot { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .score-na { font-size: 14px; font-weight: 600; color: var(--faint); padding: 6px 0; }
 
 /* ── 관리 모드: 현재 서비스 모델 카드 ── */
