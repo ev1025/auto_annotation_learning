@@ -22,7 +22,6 @@ import re
 import shutil
 import sys
 import threading
-import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -236,23 +235,6 @@ def start_propagate(src, shots):
 
 
 # ==================== (3) 학습 ====================
-def _labels_dir(work):
-    """실행 폴더의 학습 라벨 디렉토리 (train, 구 predict/seed 하위호환)."""
-    for sub in ("train", "predict", "seed"):   # 신(train)·구(predict/seed) 하위호환
-        if (work / sub / "images").exists():
-            return work / sub
-    return work / "train"
-
-
-def _resolve_run(src, run):
-    """실행 폴더 = results/<영상>_<실행시각>/. run 지정 없으면 그 영상의 가장 최근."""
-    if run:
-        return RESULTS / f"{src}_{run}"
-    runs = sorted([d for d in RESULTS.glob(f"{src}_*")
-                   if any((d / s / "images").exists() for s in ("train", "predict", "seed"))])
-    return runs[-1] if runs else RESULTS / f"{src}_none"
-
-
 def list_labeled():
     """라벨 생성된 실행 목록을 영상별로. 학습 세트 구성용 (train 영상 고르기)."""
     out = {}
@@ -1167,11 +1149,6 @@ def _prune_runs(keep=10):
             continue
         shutil.rmtree(d, ignore_errors=True)
         logger.info(f"[prune] 오래된 run 파기: {d.name}")
-
-
-def _model_info(model_id):
-    """run(model_id=<시각>) 1개 메타(버전 히스토리·롤백용)."""
-    return _run_meta(model_id)
 
 
 def served_model():

@@ -24,12 +24,6 @@ const IcWarn = () => (
     <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
     <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
 )
-const IcInfo = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
-       strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}>
-    <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-)
-
 // **굵게** 마커를 <b>로 변환
 function md(text) {
   const html = text
@@ -294,8 +288,7 @@ function BenchmarkView() {
   )
 }
 
-// data/bell412/<그룹>/<부품>/videos → 그룹·부품 파싱. 폴더=부품, 폴더 안 영상=그 부품의 train/test 테이크
-const groupOf = (rel) => (rel.split('/')[1] || rel)
+// data/bell412/<그룹>/<부품>/videos → 부품 파싱. 폴더=부품, 폴더 안 영상=그 부품의 train/test 테이크
 const partOf = (rel) => { const p = rel.replace(/\/videos$/, '').split('/'); return p.length > 2 ? p.slice(2).join('/') : (p[1] || rel) }
 const trailNum = (s) => { const m = String(s).match(/(\d+)\s*$/); return m ? +m[1] : 0 }
 // 부품 폴더의 테이크 → {train:[...], test} : test* 있으면 그게 테스트, 없고 2개+면 끝수 최대("2")가 테스트, 단일이면 학습영상으로 테스트
@@ -881,42 +874,6 @@ function CircularProgress({ pct, done }) {
         <circle className="circ-bar" cx="40" cy="40" r={r} style={{ strokeDasharray: c, strokeDashoffset: off }} />
       </svg>
       <div className="circ-label">{done ? <IcCheck /> : `${disp}%`}</div>
-    </div>
-  )
-}
-
-// 예측 프레임 뷰어: 학습 검출평가 예측 이미지(박스)를 영상별로 넘겨보며 신규 부품 예측 확인
-function EvalFramesViewer({ session, srcs }) {
-  const [src, setSrc] = useState(srcs[0] || '')
-  const [idx, setIdx] = useState(0)
-  const [count, setCount] = useState(0)
-  useEffect(() => {
-    if (!src) return
-    setIdx(0)
-    fetch(`/api/sam2/eval_frames?session=${encodeURIComponent(session)}&src=${encodeURIComponent(src)}`)
-      .then(r => r.json()).then(d => setCount(d.count || 0)).catch(() => setCount(0))
-  }, [src, session])
-  if (!srcs.length) return null
-  return (
-    <div className="frame-viewer">
-      <div className="fv-srcs">
-        {srcs.map(s => (
-          <button key={s} className={s === src ? 'pb-btn sm on' : 'pb-btn sm'} onClick={() => setSrc(s)}>{s}</button>
-        ))}
-      </div>
-      {count > 0 ? (
-        <>
-          <div className="fv-img">
-            <img src={`/api/sam2/eval_frame?session=${encodeURIComponent(session)}&src=${encodeURIComponent(src)}&idx=${idx}&w=760`} alt={`${src} ${idx}`} />
-          </div>
-          <div className="fv-bar">
-            <button className="pb-btn ico" onClick={() => setIdx(i => Math.max(0, i - 1))} disabled={idx <= 0}><IcChevronLeft /></button>
-            <input type="range" min={0} max={count - 1} value={idx} onChange={e => setIdx(+e.target.value)} />
-            <button className="pb-btn ico" onClick={() => setIdx(i => Math.min(count - 1, i + 1))} disabled={idx >= count - 1}><IcChevronRight /></button>
-            <span className="al-hint">{idx + 1} / {count}</span>
-          </div>
-        </>
-      ) : <p className="al-hint">이 영상의 예측 프레임이 없습니다.</p>}
     </div>
   )
 }
