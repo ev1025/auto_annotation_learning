@@ -421,7 +421,7 @@ function AutoLabelView() {
                     ? <span className="al-hint">프레임 컷 중...</span>
                     : <div className="tap-box" onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
                         {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(srcKey)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false}
-                                     style={{ maxHeight: 'calc(100vh - 444px)', maxWidth: '100%' }} />}
+                                     style={{ height: '100%', width: 'auto', maxWidth: '100%' }} />}
                         {cur.map((p, i) => (
                           <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
                                 style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />
@@ -432,7 +432,7 @@ function AutoLabelView() {
                   {activeMask
                     ? (activeMask.error
                         ? <span className="fn" style={{ color: '#b91c1c' }}>마스크 오류: {activeMask.error}</span>
-                        : <img src={activeMask.combo} alt="입력 마스크" style={{ maxHeight: 'calc(100vh - 444px)', maxWidth: '100%' }} />)
+                        : <img src={activeMask.combo} alt="입력 마스크" style={{ maxHeight: '100%', maxWidth: '100%' }} />)
                     : <span className="al-hint" style={{ padding: 12, textAlign: 'center' }}>입력 마스크 확인을 누르면 여기에 표시됩니다</span>}
                 </div>
               </div>

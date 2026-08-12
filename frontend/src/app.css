@@ -272,8 +272,8 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
   background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
 }
 .img-pane > img { display: block; max-width: 100%; object-fit: contain; }
-.tap-box { position: relative; display: inline-block; max-width: 100%; line-height: 0; cursor: crosshair; user-select: none; }
-.tap-box img { display: block; max-width: 100%; }
+.tap-box { position: relative; display: inline-block; height: 100%; max-width: 100%; line-height: 0; cursor: crosshair; user-select: none; }
+.tap-box img { display: block; height: 100%; width: auto; max-width: 100%; }
 .mask-legend .lg-title { font-weight: 700; color: var(--ink); }
 .mask-legend b { font-weight: 700; }
 .al-primary.next { background: var(--success); }
