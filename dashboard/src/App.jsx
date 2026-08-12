@@ -331,23 +331,21 @@ function AutoLabelView() {
       .then(d => setLabeledAnywhere(new Set(d.parts || [])))
       .catch(() => {})
   }, [])
-  useEffect(() => {   // 서버 영속 참조샷(shots.json) 로드 → ptsBySrc 병합(서버 우선)
-    // 라벨은 서버에 있으나 참조샷은 여태 localStorage 에만 있어 이관·타 브라우저에서 안 떴다.
-    // 서버 shots.json = {영상: {프레임: [[rx,ry,lab],...]}} → {rx,ry,lab} 객체로 변환해 병합.
+  useEffect(() => {   // 서버 영속 참조샷(shots.json) = 로컬 기준 단일 소스 → ptsBySrc 를 서버값으로 교체
+    // localStorage 는 오프라인 폴백/캐시일 뿐. 서버 로드 성공 시 통째 교체해서 stale 키(공백 변형 등 중복)를 폐기하고
+    // 항상 서버(=로컬 영상 stem) 기준으로 맞춘다. 서버 shots.json = {영상: {프레임: [[rx,ry,lab],...]}}.
     fetch('/api/sam2/shots').then(r => r.json()).then(d => {
       if (!d || typeof d !== 'object') return
-      setPtsBySrc(prev => {
-        const next = { ...prev }
-        for (const [video, frames] of Object.entries(d)) {
-          const conv = {}
-          for (const [fi, arr] of Object.entries(frames || {})) {
-            conv[fi] = (arr || []).map(p => ({ rx: p[0], ry: p[1], lab: p[2] }))
-          }
-          next[video] = conv   // 서버가 durable 소스 → 서버값 우선
+      const conv = {}
+      for (const [video, frames] of Object.entries(d)) {
+        const fc = {}
+        for (const [fi, arr] of Object.entries(frames || {})) {
+          fc[fi] = (arr || []).map(p => ({ rx: p[0], ry: p[1], lab: p[2] }))
         }
-        return next
-      })
-    }).catch(() => {})
+        conv[video] = fc
+      }
+      setPtsBySrc(conv)   // 서버가 durable 소스 → 통째 교체(stale localStorage 키 제거, 로컬 기준 통일)
+    }).catch(() => {})   // 실패 시 localStorage 초기값 유지(오프라인 폴백)
   }, [])
   const [showReview, setShowReview] = useState(false)   // 라벨 검수 모달
   const [reviewFrames, setReviewFrames] = useState([])
@@ -1561,9 +1559,18 @@ function PartsApp() {
         <div className="ev2">
           <PageHead title={cmpDone ? '모델 평가' : cmp?.running ? '모델 평가 중' : '모델관리'} back={() => setPage('training')}
                     right={(!cmp?.running && !cmp?.error) ? (
-                      <RollbackMenu models={models} servedId={served?.model_id}
-                                    onRollbackTo={askRollbackTo} onDeleteModel={doDeleteModel}
-                                    onKeep={null} onApply={null} applied={applied} />
+                      <div className="ev2-head-actions">
+                        <RollbackMenu models={models} servedId={served?.model_id}
+                                      onRollbackTo={askRollbackTo} onDeleteModel={doDeleteModel}
+                                      onKeep={null} onApply={null} applied={applied} />
+                        {cmpDone && cmp.recommend && !applied && (   // 과거 조회 | 기존 유지 | 신규 적용 나란히
+                          <>
+                            <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'danger' : 'ghost'}`} onClick={doRollback}>기존 모델 유지</button>
+                            <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'ghost' : 'train'}`} onClick={doApply}>신규 모델 적용</button>
+                          </>
+                        )}
+                        {cmpDone && applied && <span className="ok-flash"><IcCheck /> 적용됨</span>}
+                      </div>
                     ) : null} />
           {cmp?.running && (
             <div className="ev2-progress">
@@ -1664,19 +1671,6 @@ function PartsApp() {
                   </>
                 )}
               </div>
-              {/* 최종 결정 영역 — 배너 밖 하단 고정 액션 존(권장 액션이 강조색) */}
-              {cmpDone && cmp.recommend && (
-                <div className="ev2-actionbar">
-                  {applied ? (
-                    <span className="ok-flash big"><IcCheck /> 신규 모델이 서비스에 적용되었습니다</span>
-                  ) : (
-                    <>
-                      <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'danger' : 'ghost'} big`} onClick={doRollback}>기존 모델 유지</button>
-                      <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'ghost' : 'train'} big`} onClick={doApply}>신규 모델 적용</button>
-                    </>
-                  )}
-                </div>
-              )}
             </>
           )}
 
