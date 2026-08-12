@@ -19,7 +19,8 @@ import cv2
 
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용(config 등)
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))  # 공용 config
+sys.path.insert(0, str(Path(__file__).resolve().parent))                   # backend/autolearning (dashboard_core)
 import config
 import dashboard_core as core
 import html as _html

@@ -18,7 +18,7 @@ from datetime import datetime
 
 BASE = os.environ.get("XR_BASE") or os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 sys.path.insert(0, BASE + "/scripts/experiments")
-sys.path.insert(0, BASE + "/scripts/verify")
+sys.path.insert(0, BASE + "/backend/autolearning")
 import build_multiclass as bm          # stem_to_class
 import sam2_autolabel as sa            # _synth_augment (SAM2 누끼 + 배경합성)
 

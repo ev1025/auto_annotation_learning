@@ -18,7 +18,7 @@ from datetime import datetime
 
 BASE = os.environ.get("XR_BASE") or os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 sys.path.insert(0, BASE + "/scripts/experiments")
-sys.path.insert(0, BASE + "/scripts/verify")
+sys.path.insert(0, BASE + "/backend/autolearning")
 import sam2_autolabel as sa            # _synth_augment
 
 # 영상 stem -> 부품(폴더명) 매핑을 자체 내장한다(서버 build_multiclass 구버전 의존 회피).

@@ -12,8 +12,8 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ 공용
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))  # 공용 config·experiments(build_multiclass·point_ref_lib)
+sys.path.insert(0, str(Path(__file__).resolve().parent))                   # backend/autolearning (dashboard_core·autolabel·sam2_autolabel)
 
 import uvicorn
 from fastapi import Body, FastAPI

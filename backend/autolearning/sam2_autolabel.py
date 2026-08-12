@@ -26,8 +26,8 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))  # 공용 config·experiments
+sys.path.insert(0, str(Path(__file__).resolve().parent))                   # backend/autolearning (autolabel 등)
 import cv2
 import numpy as np
 import torch
