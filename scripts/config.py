@@ -18,6 +18,10 @@ BASE_MODEL = MODELS_DIR / "base_model.pt"       # 소량 데이터로 미리 학
 NEW_MODEL_PT = MODELS_DIR / "model.pt"      # 서빙 모델(본 학습 결과 best.pt 를 복사). 고정 이름 = 갱신 시 덮어쓰기
 NEW_MODEL_ONNX = MODELS_DIR / "model.onnx"  # ONNX 변환 산출물(Thor TensorRT / 비파이썬 런타임용)
 
+# --- YOLO 추론 서버(배포 타깃) ---  오토러닝 '신규 모델 적용' 시 여기로 자동 배포(복사+리로드)
+YOLO_SERVER_DIR = BASE_DIR / "backend" / "yolo_server"
+YOLO_SERVER_URL = "http://localhost:8000"   # /reload 호출용(서버 안 떠 있으면 파일만 배포)
+
 # --- 데이터셋 경로 ---
 DATA_DIR = BASE_DIR / "data"          # 모든 데이터(원본·데이터셋·등록영상)의 단일 루트
 TRAINING_POOL_DIR = DATA_DIR / "robo" / "training_pool"  # 운영 학습 풀(등록 부품 누적)

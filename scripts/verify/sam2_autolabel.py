@@ -853,6 +853,33 @@ def _sync_served_files(runid):
             config.NEW_MODEL_ONNX.unlink()
         except Exception:
             pass
+    _deploy_to_yolo_server()   # 신규 모델 적용/롤백 시 YOLO 추론 서버로 자동 배포
+
+
+def _deploy_to_yolo_server():
+    """현재 고정 모델(models/model.pt·onnx)을 YOLO 추론 서버(backend/yolo_server)로 복사 + 핫 리로드.
+    별도 배포 버튼 없이 '신규 모델 적용'만으로 운영 서버에 반영된다. 서버 미기동이면 파일만 배포(다음 기동 시 로드)."""
+    dst = config.YOLO_SERVER_DIR
+    if not dst.exists():
+        return
+    try:
+        if config.NEW_MODEL_PT.exists():
+            shutil.copy(config.NEW_MODEL_PT, dst / "model.pt")
+        if config.NEW_MODEL_ONNX.exists():
+            shutil.copy(config.NEW_MODEL_ONNX, dst / "model.onnx")
+        elif (dst / "model.onnx").exists():
+            (dst / "model.onnx").unlink()   # pt 와 안 맞는 낡은 onnx 제거
+        logger.info(f"[deploy] YOLO 서버로 모델 배포: {dst}")
+    except Exception as e:
+        logger.warning(f"[deploy] YOLO 서버 파일 복사 실패: {e}")
+        return
+    try:   # 서버가 떠 있으면 핫 리로드
+        import urllib.request
+        urllib.request.urlopen(urllib.request.Request(config.YOLO_SERVER_URL + "/reload", method="POST"), timeout=5)
+        logger.info("[deploy] YOLO 서버 모델 리로드 완료")
+    except Exception as e:
+        logger.info(f"[deploy] YOLO 서버 리로드 스킵(미기동?): {e}")
+
 
 def _set_served(runid):
     SERVED_PTR.write_text(json.dumps(

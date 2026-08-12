@@ -66,3 +66,8 @@ results/*
 !results/dashboard/**
 results/dashboard/**/*.pt
 results/dashboard/**/*.onnx
+
+# 아카이브 프론트(전체 대시보드) 빌드산출물·의존성
+exp_dashboard/dist/
+exp_dashboard/node_modules/
+backend/*/__pycache__/

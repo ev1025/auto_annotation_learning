@@ -1,0 +1,9 @@
+# YOLO 연동 테스트 서버 의존성
+# 설치: pip install -r requirements.txt
+#  - GPU 없어도 됩니다 (torch CPU 버전이 자동 설치됨, 추론 속도 충분)
+ultralytics>=8.3
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+pillow>=10.0
+onnxruntime>=1.17   # model.onnx 로 전환할 때 필요 (기본 model.pt 만 쓰면 미사용)
