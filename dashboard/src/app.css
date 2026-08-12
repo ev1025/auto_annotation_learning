@@ -90,6 +90,9 @@ nav { margin-top: 22px; flex: 1; }
 
 /* ---------- 본문 ---------- */
 main { flex: 1; min-width: 0; padding: 30px 34px; }
+/* 사이드바 없는 단일 도구 화면: 본문 풀폭, 카드는 넓게 중앙 */
+main.solo { padding: 24px 30px; }
+main.solo .card { max-width: 1280px; }
 .card {
   max-width: 980px; margin: 0 auto;
   background: var(--surface); border: 1px solid var(--line); border-radius: 14px;

@@ -946,7 +946,11 @@ function PartsApp() {
   // 이미 학습된(현재 서비스 모델 보유) 부품 = 학습됨. 배지 판정과 동일 기준. 망각 방지 위해 기본 선택 대상.
   const trainedPartList = () => items.filter(it => served ? (served.classes || []).includes(it.part) : it.trained).map(it => it.part)
 
-  const openTrain = () => { loadTrain(); setPage('training') }
+  const openTrain = () => {   // 학습 설정으로 이동 = 항상 '설정' 화면. 진행 중이 아니면 stale 잡(세션 복원값) 비워 fresh setup.
+    loadTrain()
+    if (!status?.running) { setJob(null); setStatus(null); setCmpJob(null); setCmp(null); setApplied(false) }
+    setPage('training')
+  }
   const backToLabel = () => setPage('label')               // 학습은 계속 진행(폴링 유지), 라벨 화면으로 복귀
   const newRun = () => { setJob(null); setStatus(null); setCmpJob(null); setCmp(null); setApplied(false); setPicked(trainedPartList()); setPage('training') }
 
@@ -1422,18 +1426,10 @@ function PartsApp() {
 
 export default function App() {
   return (
-    <div className="layout">
-      <aside>
-        <div className="brand">
-          <h1>부품 인식 학습</h1>
-          <p>SAM2 오토라벨 → 학습 → 모델 평가</p>
-        </div>
-      </aside>
-      <main>
-        <div className="card">
-          <PartsApp />
-        </div>
-      </main>
-    </div>
+    <main className="solo">
+      <div className="card">
+        <PartsApp />
+      </div>
+    </main>
   )
 }
