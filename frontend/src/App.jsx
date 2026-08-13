@@ -1832,13 +1832,8 @@ function PartList({ onEdit, active }) {
 
   return (
     <div className="tab-body">
-      <div className="tab-head">
-        <div>
-          <h3 className="tab-h">부품 목록</h3>
-          <p className="tab-sub">등록된 부품입니다. 수정을 누르면 등록 화면에서 정보·영상을 관리합니다. (총 {rows.length}개)</p>
-        </div>
-        <button className="act-btn neutral" type="button" onClick={load} title="목록 새로고침">↻ 새로고침</button>
-      </div>
+      <h3 className="tab-h">부품 목록</h3>
+      <p className="tab-sub">등록된 부품입니다. 수정을 누르면 등록 화면에서 정보·영상을 관리합니다. (총 {rows.length}개)</p>
       {msg && <div className={`reg-msg ${msg.ok ? 'ok' : 'err'}`}>{msg.text}</div>}
       {!loaded ? (
         <div className="list-empty">불러오는 중...</div>
