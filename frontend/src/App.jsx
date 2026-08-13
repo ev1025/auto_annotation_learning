@@ -1549,7 +1549,7 @@ async function uploadVideos(pid, files, onProgress = () => {}) {
 
 // 등록 화면 = 신규 등록 + 기존 부품 수정 겸용.
 // editPart 가 있으면 수정 모드: 정보 저장 + 등록된 영상 목록 확인·삭제·추가를 한 화면에서 한다.
-function RegisterPart({ editPart, onExitEdit }) {
+function RegisterPart({ editPart, onExitEdit, onSaved }) {
   const editing = !!editPart
   const [name, setName] = useState('')
   const [cat, setCat] = useState(null)                 // category_id
@@ -1623,7 +1623,7 @@ function RegisterPart({ editPart, onExitEdit }) {
     } finally { setBusy('') }
   }
 
-  // 수정: 정보 저장(이름·카테고리·설명) + 3D 교체
+  // 수정: 정보 저장(이름·카테고리·설명) + 3D 교체 → 성공하면 목록 화면으로 복귀
   const save = async () => {
     setMsg(null); setBusy('저장 중...')
     try {
@@ -1639,7 +1639,7 @@ function RegisterPart({ editPart, onExitEdit }) {
         if (m.error) { setMsg({ ok: false, text: `정보는 저장됐지만 3D 모델 실패: ${m.error}` }); return }
         setM3dFile(null)
       }
-      setMsg({ ok: true, text: `${r.name} 저장 완료` })
+      onSaved?.()          // 저장 성공 = 목록으로 복귀(별도 알림 없이 결과 화면으로 보낸다)
     } catch (e) {
       setMsg({ ok: false, text: `요청 실패: ${e}` })
     } finally { setBusy('') }
@@ -1676,7 +1676,7 @@ function RegisterPart({ editPart, onExitEdit }) {
     <div className="tab-body">
       <div className="tab-head">
         <div>
-          <h3 className="tab-h">{editing ? `부품 수정 · ${editPart.name}` : '부품 등록'}</h3>
+          <h3 className="tab-h">{editing ? '부품 수정' : '부품 등록'}</h3>
           <p className="tab-sub">{editing
             ? '부품 정보를 수정하고 등록된 영상을 확인·삭제·추가합니다.'
             : '부품 정보와 3D 모델·동영상을 등록합니다.'}</p>
@@ -1686,16 +1686,15 @@ function RegisterPart({ editPart, onExitEdit }) {
       <div className="reg-form">
         {/* 2열: 왼쪽 = 식별 정보(이름·카테고리·설명), 오른쪽 = 첨부(3D·동영상) */}
         <div className="reg-grid">
+          {/* 왼쪽: 이름 / 카테고리 / 설명(남는 높이 전체) 세로 배열 */}
           <div className="reg-col">
-            <div className="reg-row">
-              <div className="reg-field">
-                <span className="reg-label">부품 이름</span>
-                <input className="reg-input" value={name} onChange={e => setName(e.target.value)} placeholder="예: gearbox" />
-              </div>
-              <div className="reg-field">
-                <span className="reg-label">부품 카테고리</span>
-                <CategorySelect value={cat} onChange={setCat} />
-              </div>
+            <div className="reg-field">
+              <span className="reg-label">부품 이름</span>
+              <input className="reg-input" value={name} onChange={e => setName(e.target.value)} placeholder="예: gearbox" />
+            </div>
+            <div className="reg-field">
+              <span className="reg-label">부품 카테고리</span>
+              <CategorySelect value={cat} onChange={setCat} />
             </div>
             <div className="reg-field reg-desc-field">
               <span className="reg-label">부품 설명</span>
@@ -1776,10 +1775,8 @@ function RegisterPart({ editPart, onExitEdit }) {
                             : <div className="vm-thumb none"><IcVideo /></div>}
                           <div className="vm-meta">
                             <b>{v.stem}</b>
-                            <span>
-                              <i className={`vm-role ${v.role}`}>{v.role === 'test' ? '평가용' : '학습용'}</i>
-                              프레임 {v.frames}장{v.size_mb != null ? ` · ${v.size_mb} MB` : ''}
-                            </span>
+                            {/* 역할(train/test)은 내부 판정값이라 화면엔 노출하지 않는다 */}
+                            <span>프레임 {v.frames}장{v.size_mb != null ? ` · ${v.size_mb} MB` : ''}</span>
                           </div>
                           <button className="csel-ic del" type="button" disabled={!!busy} title="이 영상 삭제"
                                   onClick={() => setConfirmDel(v)}><IcTrash /></button>
@@ -1787,7 +1784,6 @@ function RegisterPart({ editPart, onExitEdit }) {
                       ))}
                     </ul>
               )}
-              {editing && <p className="al-hint vm-hint">역할은 파일 이름으로 자동 판정됩니다(이름에 test 가 있으면 평가용).</p>}
             </div>
           </div>
         </div>
@@ -1811,7 +1807,7 @@ function RegisterPart({ editPart, onExitEdit }) {
 
 
 // ===== 탭2: 부품 목록 (DB 실데이터. 수정은 등록 화면으로 이동, 삭제는 여기서) =====
-function PartList({ onEdit }) {
+function PartList({ onEdit, active }) {
   const [rows, setRows] = useState([])
   const [loaded, setLoaded] = useState(false)
   const [msg, setMsg] = useState(null)
@@ -1823,12 +1819,9 @@ function PartList({ onEdit }) {
       .catch(() => setLoaded(true))
   }, [])
   useEffect(() => { load() }, [load])
-  // 다른 탭에서 수정·삭제하고 돌아왔을 때 최신 상태를 보이게(탭이 언마운트되지 않으므로 명시적으로 갱신)
-  useEffect(() => {
-    const onVis = () => { if (!document.hidden) load() }
-    document.addEventListener('visibilitychange', onVis)
-    return () => document.removeEventListener('visibilitychange', onVis)
-  }, [load])
+  // 이 탭이 활성될 때마다 갱신. 탭은 언마운트되지 않으므로(keep-alive) 명시적으로 다시 읽어야
+  // 수정 화면에서 저장하고 돌아온 결과가 반영된다.
+  useEffect(() => { if (active) load() }, [active, load])
 
   const doDelete = async (p) => {
     setConfirmDel(null)
@@ -1920,8 +1913,9 @@ export default function App() {
     localStorage.setItem('xr_tab', t)
   }
   const openEdit = (p) => { setEditPart(p); go('register') }  // 수정은 등록 화면에서(영상 목록까지 한곳에서)
-  const view = (id) => id === 'register' ? <RegisterPart editPart={editPart} onExitEdit={() => setEditPart(null)} />
-                     : id === 'list' ? <PartList onEdit={openEdit} />
+  const doneEdit = () => { setEditPart(null); go('list') }     // 저장하면 결과를 볼 수 있는 목록으로 복귀
+  const view = (id) => id === 'register' ? <RegisterPart editPart={editPart} onExitEdit={() => setEditPart(null)} onSaved={doneEdit} />
+                     : id === 'list' ? <PartList onEdit={openEdit} active={tab === 'list'} />
                      : <PartsApp />
   return (
     <main className="solo">
@@ -1936,7 +1930,7 @@ export default function App() {
       </div>
       <div className="card">
         {APP_TABS.map(({ id }) => seen[id] && (
-          <div key={id} style={tab === id ? undefined : { display: 'none' }}>{view(id)}</div>
+          <div key={id} className="tab-pane" style={tab === id ? undefined : { display: 'none' }}>{view(id)}</div>
         ))}
       </div>
     </main>
