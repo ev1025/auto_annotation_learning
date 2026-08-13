@@ -1617,14 +1617,21 @@ function PartList() {
 }
 
 const APP_TABS = [
-  { id: 'register', label: '부품 등록', Icon: IcPlus },
-  { id: 'list', label: '부품 목록', Icon: IcList },
-  { id: 'train', label: '부품 학습', Icon: IcLayers },
+  { id: 'register', label: '부품 등록', Icon: IcPlus, View: RegisterPart },
+  { id: 'list', label: '부품 목록', Icon: IcList, View: PartList },
+  { id: 'train', label: '부품 학습', Icon: IcLayers, View: PartsApp },
 ]
 
 export default function App() {
   const [tab, setTab] = useState(() => localStorage.getItem('xr_tab') || 'register')
-  const go = (t) => { setTab(t); localStorage.setItem('xr_tab', t) }
+  // 한 번 열어본 탭은 언마운트하지 않고 숨기기만 한다(display:none).
+  // 언마운트하면 진행 중 학습·찍어둔 참조샷·비교 결과·입력값이 전부 날아가고 재진입 때 전부 재조회(=재로드)됨.
+  const [seen, setSeen] = useState(() => ({ [tab]: true }))   // 안 가본 탭은 마운트 안 해 초기 로딩 비용 절약
+  const go = (t) => {
+    setTab(t)
+    setSeen(s => s[t] ? s : { ...s, [t]: true })
+    localStorage.setItem('xr_tab', t)
+  }
   return (
     <main className="solo">
       <div className="apptabs">
@@ -1637,9 +1644,9 @@ export default function App() {
         </div>
       </div>
       <div className="card">
-        {tab === 'register' && <RegisterPart />}
-        {tab === 'list' && <PartList />}
-        {tab === 'train' && <PartsApp />}
+        {APP_TABS.map(({ id, View }) => seen[id] && (
+          <div key={id} style={tab === id ? undefined : { display: 'none' }}><View /></div>
+        ))}
       </div>
     </main>
   )
