@@ -949,9 +949,10 @@ function PartsApp() {
   // 이미 학습된(현재 서비스 모델 보유) 부품 = 학습됨. 배지 판정과 동일 기준. 망각 방지 위해 기본 선택 대상.
   const trainedPartList = () => items.filter(it => served ? (served.classes || []).includes(it.part) : it.trained).map(it => it.part)
 
-  const openTrain = () => {   // 학습 설정으로 이동 = 항상 '설정' 화면. 진행 중이 아니면 stale 잡(세션 복원값) 비워 fresh setup.
+  const openTrain = () => {   // 학습 페이지로 이동(부품목록/라벨/모델평가 어디서 오든)
+    // 화면 이동만으로는 아무것도 비우지 않는다 — 학습 결과·평가 결과는 '새 학습'을 누를 때만 초기화.
+    // (죽은 잡은 마운트 복구 effect가 백엔드 상태 조회 실패로 판정해 정리하므로 여기서 손댈 필요 없음)
     loadTrain()
-    if (!status?.running) { setJob(null); setStatus(null); setCmpJob(null); setCmp(null); setApplied(false) }
     setPage('training')
   }
   const backToLabel = () => setPage('label')               // 학습은 계속 진행(폴링 유지), 라벨 화면으로 복귀
@@ -979,6 +980,7 @@ function PartsApp() {
       body: JSON.stringify({ session, epochs, test_srcs: tests, classes, augment: true })   // 배경 합성 증강 항상 적용
     }).then(x => x.json())
     if (r.error) { setJob('err'); setStatus({ error: r.error, running: false, log: [] }); return }
+    setCmpJob(null); setCmp(null); setApplied(false)   // 새로 학습하면 이전 평가 결과는 무효(재비교 대상)
     setJob(r.job); setStatus({ stage: 'start', running: true, log: [] })   // 학습 시작 → 로그 뷰어로 전환
   }
   useEffect(() => {
@@ -1038,7 +1040,10 @@ function PartsApp() {
     if (job && job !== 'err') sessionStorage.setItem('xr_job', job)
     else sessionStorage.removeItem('xr_job')
   }, [job])
-  useEffect(() => { if (cmpJob && cmpJob !== 'err') sessionStorage.setItem('xr_cmpJob', cmpJob) }, [cmpJob])
+  useEffect(() => {   // cmpJob도 비워지면 같이 지운다 — 메모리와 스토리지가 갈리면 F5 결과가 인앱 이동과 달라짐
+    if (cmpJob && cmpJob !== 'err') sessionStorage.setItem('xr_cmpJob', cmpJob)
+    else sessionStorage.removeItem('xr_cmpJob')
+  }, [cmpJob])
   useEffect(() => { if (session) sessionStorage.setItem('xr_session', session) }, [session])
 
   // 마운트 시 복구: 세션스토리지로 되살린 page/job 에 실제 상태를 다시 붙인다(백엔드 JOBS 가 완료 잡도 보관).
