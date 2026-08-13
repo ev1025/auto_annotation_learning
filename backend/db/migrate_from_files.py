@@ -61,17 +61,14 @@ def take_roles(stems: list[str]) -> dict[str, str]:
 
 
 def frames_dir_for(part_dir: Path, stem: str) -> Path | None:
-    """영상의 프레임이 실제로 있는 폴더. 파일판(_source_info)과 같은 폴백 순서로 찾는다.
-      1) results/autolabels/<부품>/images/<stem>   신 저장소
-      2) data/bell412/<부품>/_frame_cache/<stem>   레거시(부품별)
-      3) data/_frame_cache/<stem>                 레거시(중앙)
-    이 순서를 안 맞추면 예전에 잘라둔 부품이 DB 에서 '프레임 0' 으로 보인다.
+    """영상의 프레임 저장소(results/autolabels/<부품>/images/<stem>). 저장소는 한 곳뿐이다.
+
+    레거시 _frame_cache(부품별·중앙) 폴백은 제거했다 — 잔여 프레임을 이 저장소로 이사 완료(2026-08-13).
+    폴백을 남기면 폐지한 경로를 DB 에 다시 고착시키게 된다.
     """
-    for d in (AUTOLABELS / part_dir.name / "images" / stem,
-              part_dir / "_frame_cache" / stem,
-              config.DATA_DIR / "_frame_cache" / stem):
-        if d.exists() and any(f.suffix.lower() in config.IMG_EXTS for f in d.iterdir()):
-            return d
+    d = AUTOLABELS / part_dir.name / "images" / stem
+    if d.exists() and any(f.suffix.lower() in config.IMG_EXTS for f in d.iterdir()):
+        return d
     return None
 
 

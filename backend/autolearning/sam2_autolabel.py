@@ -33,7 +33,7 @@ import numpy as np
 import torch
 
 import config
-import autolabel   # _frames, FRAME_CACHE (프레임 소스·캐시 공용)
+import autolabel   # _frames, cache_dir_of (프레임 저장소 공용)
 
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 CFG = "configs/sam2.1/sam2.1_hiera_b+.yaml"
@@ -1232,12 +1232,12 @@ def delete_video(src):
         shutil.move(str(vp), str(dst))
         moved_to = str(dst)
 
-    # 2) 프레임 이미지(=캐시) 삭제: autolabels/<부품>/images/<stem> + 레거시(부품·중앙) — 재생성 가능
+    # 2) 프레임 이미지 삭제: autolabels/<부품>/images/<stem> (저장소는 한 곳뿐) — 재생성 가능
     removed_cache = 0
-    for d in (autolabel.cache_dir_of(vp), part_root / "_frame_cache" / stem, autolabel.FRAME_CACHE / stem):
-        if d.exists():
-            removed_cache += len(list(d.glob("*.jpg")))
-            shutil.rmtree(d, ignore_errors=True)
+    d = autolabel.cache_dir_of(vp)
+    if d.exists():
+        removed_cache += len(list(d.glob("*.jpg")))
+        shutil.rmtree(d, ignore_errors=True)
 
     # 3) 오토라벨 산출(이 영상분 <stem>_*)만 삭제 — 라벨·boxs. 다른 영상 라벨은 보존
     store = _store_for_part(part)

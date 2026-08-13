@@ -27,7 +27,6 @@ from experiments.point_ref_lib import (load_img, embed, candidates, nms, write_l
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 
 # 참조 소스 = data/ 하위 어디든(주제별 폴더 예: bell412/gearbox/videos/)의 영상. 새 영상 넣으면 자동 컷.
-FRAME_CACHE = config.DATA_DIR / "_frame_cache"   # (레거시) 옛 중앙 프레임캐시 — 폴백/이관 용으로만 참조
 RESULTS = config.BASE_DIR / "results"
 AUTOLABELS = RESULTS / "autolabels"       # results/autolabels/<부품>/{images/<stem>/, labels, boxs} (영속 = 라벨됨)
 VIDEO_EXT = {".mp4", ".avi", ".mov", ".mkv"}
@@ -103,19 +102,14 @@ def _cached_frames(d):
     return sorted(d.glob("*.jpg")) if d.exists() else []
 
 def _frames_dir(vp):
-    """이 영상의 프레임이 실제 있는 디렉토리를 고른다.
-    ① 부품별 캐시(data/bell412/<부품>/_frame_cache/<stem>) 우선
-    ② 없으면 레거시 중앙 캐시(data/_frame_cache/<stem>) — 이관 전/미매핑 영상 하위호환
-    ③ 둘 다 없으면 부품별 캐시로 새로 컷."""
+    """이 영상의 프레임 저장소(results/autolabels/<부품>/images/<stem>). 없으면 새로 컷.
+
+    _frame_cache(부품별·중앙) 폴백은 제거했다. 잔여 프레임을 이 저장소로 이사 완료(2026-08-13)했고,
+    폴백을 남겨두면 '어디에 있느냐에 따라 동작이 갈리는' 상태가 계속된다(프레임 수 누락의 원인이었음).
+    """
     part_cache = cache_dir_of(vp)
     if _cached_frames(part_cache):
         return part_cache
-    legacy_part = part_root_of(vp) / "_frame_cache" / vp.stem   # 이관 전 부품별 캐시
-    if _cached_frames(legacy_part):
-        return legacy_part
-    legacy = FRAME_CACHE / vp.stem                              # 이관 전 중앙 캐시
-    if _cached_frames(legacy):
-        return legacy
     _extract(vp, part_cache)
     return part_cache
 
@@ -164,9 +158,7 @@ def _frames(src):
     return _cached_frames(_frames_dir(vp))
 
 def _source_info(vp):
-    d = cache_dir_of(vp)
-    cached = (_cached_frames(d) or _cached_frames(part_root_of(vp) / "_frame_cache" / vp.stem)
-              or _cached_frames(FRAME_CACHE / vp.stem))   # 신 저장소→레거시(부품·중앙) 순
+    cached = _cached_frames(cache_dir_of(vp))   # 프레임 저장소는 한 곳뿐(레거시 _frame_cache 폴백 제거)
     return {"name": vp.stem, "key": video_key(vp),
             "count": len(cached) if cached else _estimate_count(vp),
             "ready": bool(cached)}
