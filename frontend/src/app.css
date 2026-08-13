@@ -435,7 +435,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .icon-back:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ===== 학습 전용 페이지 (Full-page · 분할 레이아웃) ===== */
-.train-page { display: flex; flex-direction: column; }   /* 콘텐츠에 맞춤(대기 시 카드 늘어짐 방지) */
+.train-page { display: flex; flex-direction: column; min-height: calc(100vh - 256px); }   /* 라벨 화면과 동일하게 뷰포트 채움(탭 바 반영). 학습 중 콘텐츠 많으면 자연 확장 */
 .train-split { display: flex; gap: 16px; align-items: flex-start; }
 .train-config {
   flex: 0 0 300px; width: 300px; display: flex; flex-direction: column;
