@@ -518,7 +518,7 @@ function AutoLabelView() {
               <button className="icon-x" onClick={() => setShowReview(false)} aria-label="닫기"><IcX /></button>
             </div>
             <div className="review-grid">
-              {reviewFrames.length === 0 && <p className="al-hint" style={{ padding: 18 }}>이 부품의 생성된 라벨이 없습니다.</p>}
+              {reviewFrames.length === 0 && <p className="al-hint" style={{ padding: 16 }}>이 부품의 생성된 라벨이 없습니다.</p>}
               {reviewFrames.map(f => (
                 <figure key={`${f.session}/${f.name}`} className="review-cell">
                   <img loading="lazy" alt={f.part}
@@ -550,19 +550,13 @@ function AutoLabelView() {
                 return (
                   <div key={v} role="button" tabIndex={0} onClick={() => { setSelVideo(v); setShowVideoPick(false) }}
                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setSelVideo(v); setShowVideoPick(false) } }}
-                       style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 6, padding: 8, borderRadius: 10, cursor: 'pointer', textAlign: 'left',
-                                border: on ? '2px solid var(--accent)' : '1px solid var(--line-strong)', background: on ? 'var(--accent-bg)' : 'var(--surface)' }}>
-                    {on && <span style={{ position: 'absolute', top: 12, left: 12, zIndex: 1, background: 'var(--accent)', color: '#fff',
-                                          fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 6 }}>선택됨</span>}
+                       className={`vpick-card${on ? ' on' : ''}`}>
+                    {on && <span className="vpick-badge">선택됨</span>}
                     {/* 영상 삭제(X): 원본은 _trash 로 이동(복구 가능), 캐시·라벨은 삭제 */}
-                    <button className="review-del" title="이 영상 삭제" disabled={running}
-                            onClick={(e) => { e.stopPropagation(); deleteVideo(v) }}
-                            style={{ position: 'absolute', top: 10, right: 10, zIndex: 2 }}><IcX /></button>
-                    <img src={`/api/autolabel/frame?src=${encodeURIComponent(keyOf(v))}&idx=0&w=360`} alt={v} loading="lazy"
-                         style={{ width: '100%', aspectRatio: '16 / 10', objectFit: 'cover', borderRadius: 6, background: 'var(--bg)' }} />
-                    <span style={{ fontSize: 14, fontWeight: on ? 700 : 500, color: on ? 'var(--accent-ink)' : 'var(--ink-strong)' }}>
-                      {isLabeled(v) ? '✓ ' : ''}{v}
-                    </span>
+                    <button className="review-del vpick-del" title="이 영상 삭제" disabled={running}
+                            onClick={(e) => { e.stopPropagation(); deleteVideo(v) }}><IcX /></button>
+                    <img src={`/api/autolabel/frame?src=${encodeURIComponent(keyOf(v))}&idx=0&w=360`} alt={v} loading="lazy" />
+                    <span className="vpick-name">{isLabeled(v) ? '✓ ' : ''}{v}</span>
                   </div>
                 )
               })}
