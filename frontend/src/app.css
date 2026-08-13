@@ -67,20 +67,6 @@ body {
 
 .layout { display: flex; min-height: 100vh; }
 
-/* ---------- 사이드바 ---------- */
-aside {
-  width: 290px;
-  flex-shrink: 0;
-  background: var(--nav-bg);
-  color: var(--line);
-  display: flex;
-  flex-direction: column;
-  padding: 26px 16px;
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  overflow-y: auto;
-}
 .brand h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 .brand p { font-size: 13px; color: var(--faint); margin-top: 4px; line-height: 1.5; }
 nav { margin-top: 22px; flex: 1; }
@@ -449,7 +435,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .icon-back:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ===== 학습 전용 페이지 (Full-page · 분할 레이아웃) ===== */
-.train-page { display: flex; flex-direction: column; min-height: calc(100vh - 140px); }
+.train-page { display: flex; flex-direction: column; }   /* 콘텐츠에 맞춤(대기 시 카드 늘어짐 방지) */
 .train-split { display: flex; gap: 16px; align-items: flex-start; }
 .train-config {
   flex: 0 0 300px; width: 300px; display: flex; flex-direction: column;
