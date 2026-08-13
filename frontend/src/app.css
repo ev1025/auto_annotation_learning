@@ -349,11 +349,38 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .tab-body { display: flex; flex-direction: column; }
 .tab-h { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -.01em; color: var(--ink-strong); }
 .tab-sub { font-size: var(--fs-sm); color: var(--muted); margin: var(--sp-3) 0 var(--sp-10); }
+/* 탭 제목행 + 우측 보조 버튼(새 부품 등록·새로고침) */
+.tab-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-6); }
+
+/* 등록 화면(수정 모드)의 등록된 영상 목록 */
+.vm-list { list-style: none; display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-4); }
+.vm-list li { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); }
+.vm-thumb { width: 96px; aspect-ratio: 16 / 10; object-fit: cover; border-radius: var(--r-sm);
+  background: var(--surface-3); flex-shrink: 0; display: block; }
+.vm-thumb.none { display: flex; align-items: center; justify-content: center; color: var(--faint); }
+.vm-thumb.none svg { width: var(--ic-lg); height: var(--ic-lg); }
+.vm-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.vm-meta b { font-size: var(--fs-sm); color: var(--ink-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vm-meta span { font-size: var(--fs-xs); color: var(--muted); display: inline-flex; align-items: center; gap: var(--sp-3); }
+.vm-role { font-style: normal; font-size: var(--fs-2xs); font-weight: 700; padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--r-pill); background: var(--accent-bg); color: var(--accent-ink); }
+.vm-role.test { background: var(--warn-bg); color: var(--warn); }
+.vm-empty { margin-top: var(--sp-4); padding: var(--sp-6); text-align: center; font-size: var(--fs-sm);
+  color: var(--faint); border: 1px dashed var(--line); border-radius: var(--r-md); background: var(--surface-2); }
+.vm-hint { margin-top: var(--sp-3); }
 
 /* ===== 부품 등록 폼 ===== */
-.reg-form { display: flex; flex-direction: column; gap: var(--sp-10); max-width: 680px; }
+.reg-form { display: flex; flex-direction: column; gap: var(--sp-10); }
+/* 2열: 왼쪽 식별정보(넓게) · 오른쪽 첨부. max-width 를 걸면 오른쪽이 텅 비어 보였다 */
+.reg-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: var(--sp-12); align-items: start; }
+.reg-col { display: flex; flex-direction: column; gap: var(--sp-10); min-width: 0; }
 .reg-row { display: flex; gap: var(--sp-10); }
 .reg-row .reg-field { flex: 1; min-width: 0; }
+/* 설명은 오른쪽 열 높이(3D+동영상)와 균형 맞춰 크게 */
+.reg-desc-field { flex: 1; }
+.reg-desc-field .reg-textarea { min-height: 168px; height: 100%; }
+@media (max-width: 1000px) { .reg-grid { grid-template-columns: 1fr; } }
 .reg-field { display: flex; flex-direction: column; gap: var(--sp-4); }
 .reg-label { font-size: var(--fs-base); font-weight: 700; color: var(--ink-strong); }
 .reg-input, .reg-textarea, .csel-btn {
@@ -447,16 +474,12 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .part-table th { text-align: left; font-weight: 700; font-size: var(--fs-sm); color: var(--muted);
   padding: var(--sp-5) var(--sp-6); border-bottom: 1px solid var(--line); background: transparent; }
 .part-table td { padding: var(--sp-6); border-bottom: 1px solid var(--line); color: var(--ink); vertical-align: middle; }
-.part-table th.pt-w-manage { text-align: center; }   /* 관리: 헤더만 가운데, 버튼(데이터)은 그대로 우측 */
+.part-table th.pt-w-manage2 { text-align: center; }   /* 관리: 헤더만 가운데, 버튼(데이터)은 그대로 우측 */
 .part-table .pt-mid { text-align: center; }           /* 3D모델·동영상: 헤더·데이터 모두 가운데(아이콘) */
 .pt-w-name { width: 180px; }
 .pt-w-cat { width: 150px; }
-.pt-w-stat { width: 92px; }      /* 아이콘·개수만이라 좁게, 나머지 폭은 설명이 전부 가져감 */
-.pt-w-manage { width: 268px; }   /* 영상·수정·삭제 3버튼 */
-/* 영상 개수 + 총 프레임(여러 테이크를 올릴 수 있으므로 개수를 보여준다) */
-.pt-vids { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.15;
-  font-weight: 700; color: var(--ink-strong); font-variant-numeric: tabular-nums; cursor: help; }
-.pt-vids small { font-size: var(--fs-2xs); font-weight: 500; color: var(--muted); }
+.pt-w-stat { width: 100px; }     /* 아이콘만이라 좁게, 나머지 폭은 설명이 전부 가져감 */
+.pt-w-manage2 { width: 190px; }  /* 수정·삭제 2버튼 */
 .pt-cat { color: var(--muted); }
 .pt-edit-in { min-height: var(--ctl-sm); font-size: var(--fs-sm); width: 100%; }
 .pt-preview-img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--r-sm);

@@ -207,6 +207,26 @@ def sync_part_dir(s, pdir: Path, stats: dict) -> None:
                 stats["ann"] += 1
                 if taps:
                     stats["ann_ref"] += 1
+
+            # 파일에서 사라진 프레임 행 정리(영상 재추출로 장수가 줄어든 경우)
+            keep_nos = set()
+            for f in frames:
+                try:
+                    keep_nos.add(int(f.stem))
+                except ValueError:
+                    pass
+            gone = s.query(PartFrame).filter(PartFrame.video_id == video.id,
+                                             PartFrame.frame_number.notin_(keep_nos or {-1})).all()
+            for fr in gone:
+                s.delete(fr)          # sam2_annotations 는 CASCADE
+                stats["frames_del"] += 1
+
+        # 파일에서 사라진 영상 행 정리(영상 삭제 시). 이게 없으면 목록에 유령 영상이 남는다.
+        keep_stems = {v.stem for v in vids}
+        for v in s.query(PartVideo).filter(PartVideo.part_id == part.id).all():
+            if v.stem not in keep_stems:
+                s.delete(v)           # part_frames·sam2_annotations 는 CASCADE
+                stats["videos_del"] += 1
         s.flush()
 
 
@@ -272,8 +292,8 @@ def migrate_runs(s, stats: dict) -> None:
 # 쓰기 경로에서 호출하는 공개 함수(파일에 쓴 직후 DB 를 최신화).
 # 절대 예외를 밖으로 던지지 않는다 — DB 문제로 라벨 생성·학습이 실패하면 안 된다.
 # ─────────────────────────────────────────────────────────────────────
-_EMPTY_STATS = dict(parts=0, parts_new=0, videos=0, videos_new=0, frames=0, frames_new=0,
-                    ann=0, ann_new=0, ann_ref=0, runs=0, runs_new=0, active=None)
+_EMPTY_STATS = dict(parts=0, parts_new=0, videos=0, videos_new=0, videos_del=0, frames=0, frames_new=0,
+                    frames_del=0, ann=0, ann_new=0, ann_ref=0, runs=0, runs_new=0, active=None)
 
 
 def sync_part(part_name: str) -> dict | None:
@@ -317,8 +337,7 @@ def main() -> int:
         Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
 
-    stats = dict(parts=0, parts_new=0, videos=0, videos_new=0, frames=0, frames_new=0,
-                 ann=0, ann_new=0, ann_ref=0, runs=0, runs_new=0, active=None)
+    stats = dict(_EMPTY_STATS)
 
     with SessionLocal() as s:
         upsert_categories(s)
@@ -334,8 +353,8 @@ def main() -> int:
 
     print("\n=== 이관 결과 ===")
     print(f"  부품      {stats['parts']:5d} (신규 {stats['parts_new']})")
-    print(f"  영상      {stats['videos']:5d} (신규 {stats['videos_new']})")
-    print(f"  프레임    {stats['frames']:5d} (신규 {stats['frames_new']})")
+    print(f"  영상      {stats['videos']:5d} (신규 {stats['videos_new']}, 정리 {stats['videos_del']})")
+    print(f"  프레임    {stats['frames']:5d} (신규 {stats['frames_new']}, 정리 {stats['frames_del']})")
     print(f"  SAM2주석  {stats['ann']:5d} (신규 {stats['ann_new']}, 참조샷 {stats['ann_ref']})")
     print(f"  학습이력  {stats['runs']:5d} (신규 {stats['runs_new']})")
     print(f"  서비스모델 {stats['active']}")

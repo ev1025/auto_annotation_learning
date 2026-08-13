@@ -256,3 +256,40 @@ def _extract_worker(job: str, part_name: str, vp: Path) -> None:
 
 def job_status(job: str) -> dict:
     return JOBS.get(job) or {"error": "없는 작업입니다."}
+
+
+# ---------- 부품별 영상 관리(모달용) ----------
+def list_part_videos(pid: int) -> dict:
+    """영상 관리 모달 재료: 영상별 stem·역할·프레임수·용량·썸네일 소스 키."""
+    with SessionLocal() as s:
+        p = s.get(Part, pid)
+        if not p:
+            return _err("없는 부품입니다.")
+        out = []
+        for v in s.query(PartVideo).filter_by(part_id=p.id).order_by(PartVideo.stem).all():
+            fp = config.BASE_DIR / v.path
+            out.append({
+                "stem": v.stem, "role": v.role, "frames": v.n_frames or 0,
+                "path": v.path,
+                "size_mb": round(fp.stat().st_size / 1048576, 1) if fp.exists() else None,
+                "exists": fp.exists(),
+                # 프레임 썸네일 조회용 키(기존 /api/autolabel/frame 의 src 규약)
+                "src": f"bell412/{p.name}/videos/{v.stem}",
+            })
+        return {"part": p.name, "id": p.id, "videos": out}
+
+
+def delete_part_video(pid: int, stem: str) -> dict:
+    """부품에서 영상 하나 삭제. 원본은 부품 폴더의 _trash 로 이동(복구 가능),
+    프레임·라벨·참조샷은 정리하고 DB 행도 prune 된다(sam2_autolabel.delete_video 재사용)."""
+    with SessionLocal() as s:
+        p = s.get(Part, pid)
+        if not p:
+            return _err("없는 부품입니다.")
+        v = s.query(PartVideo).filter_by(part_id=p.id, stem=stem).first()
+        if not v:
+            return _err(f"없는 영상입니다: {stem}")
+        part_name = p.name
+    import sam2_autolabel as sa   # 지연 import (모듈 로드 시 SAM2 무게 회피)
+    r = sa.delete_video(f"bell412/{part_name}/videos/{stem}")
+    return r if r.get("ok") else _err(r.get("error", "삭제 실패"))

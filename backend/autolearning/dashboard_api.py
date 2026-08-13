@@ -147,6 +147,17 @@ def api_part_job(job: str):
     return reg.job_status(job) if reg else _need_reg()
 
 
+@app.get("/api/parts/{pid}/videos")
+def api_part_videos(pid: int):
+    """영상 관리 모달용 목록(영상별 역할·프레임수·용량)."""
+    return reg.list_part_videos(pid) if reg else _need_reg()
+
+
+@app.delete("/api/parts/{pid}/video/{stem}")
+def api_part_video_delete(pid: int, stem: str):
+    return reg.delete_part_video(pid, stem) if reg else _need_reg()
+
+
 @app.get("/api/methods")
 def api_methods():
     return [{"id": m["id"], "no": m["no"], "title": m["title"],

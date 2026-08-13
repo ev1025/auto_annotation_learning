@@ -1547,18 +1547,24 @@ async function uploadVideos(pid, files, onProgress = () => {}) {
   return out
 }
 
-function RegisterPart() {
+// 등록 화면 = 신규 등록 + 기존 부품 수정 겸용.
+// editPart 가 있으면 수정 모드: 정보 저장 + 등록된 영상 목록 확인·삭제·추가를 한 화면에서 한다.
+function RegisterPart({ editPart, onExitEdit }) {
+  const editing = !!editPart
   const [name, setName] = useState('')
   const [cat, setCat] = useState(null)                 // category_id
   const [desc, setDesc] = useState('')
   const [vidMenu, setVidMenu] = useState(false)        // 동영상 프레임 클릭 시 열리는 선택 팝오버
-  const [vidFiles, setVidFiles] = useState([])         // 등록과 함께 업로드할 영상(여러 개)
+  const [vidFiles, setVidFiles] = useState([])         // (신규 등록 시) 함께 업로드할 영상
   const [m3dFile, setM3dFile] = useState(null)         // 3D 모델 파일
+  const [vids, setVids] = useState([])                 // (수정 시) 이미 등록된 영상 목록
   const [busy, setBusy] = useState('')                 // 진행 문구(등록·업로드·프레임 추출)
   const [msg, setMsg] = useState(null)                 // {ok|err, text}
+  const [confirmDel, setConfirmDel] = useState(null)   // 삭제할 영상
   const vidRef = useRef(null)
   const vidInput = useRef(null)
   const m3dInput = useRef(null)
+
   useEffect(() => {                                    // 바깥 클릭 시 팝오버 닫기
     if (!vidMenu) return
     const onDoc = (e) => { if (vidRef.current && !vidRef.current.contains(e.target)) setVidMenu(false) }
@@ -1566,10 +1572,26 @@ function RegisterPart() {
     return () => document.removeEventListener('mousedown', onDoc)
   }, [vidMenu])
 
+  const loadVids = useCallback((pid) => {
+    fetch(`/api/parts/${pid}/videos`).then(r => r.json())
+      .then(d => setVids(d.videos || [])).catch(() => setVids([]))
+  }, [])
+
+  // 수정 대상이 바뀌면 그 부품 값으로 폼을 채운다(탭이 언마운트되지 않으므로 명시적으로 동기화)
+  useEffect(() => {
+    setMsg(null); setBusy(''); setVidFiles([]); setM3dFile(null)
+    if (editPart) {
+      setName(editPart.name); setCat(editPart.category_id); setDesc(editPart.description || '')
+      setVids([]); loadVids(editPart.id)
+    } else {
+      setName(''); setCat(null); setDesc(''); setVids([])
+    }
+  }, [editPart, loadVids])
+
   const reset = () => { setName(''); setCat(null); setDesc(''); setVidFiles([]); setM3dFile(null) }
 
-  // 등록: 부품 행 생성 → (있으면) 3D·영상 업로드 → 영상마다 프레임 사전 추출 완료까지 대기
-  const submit = async () => {
+  // 신규 등록: 부품 행 생성 → (있으면) 3D·영상 업로드 → 영상마다 프레임 사전 추출 완료까지 대기
+  const create = async () => {
     setMsg(null); setBusy('부품 등록 중...')
     try {
       const r = await fetch('/api/parts', {
@@ -1594,114 +1616,206 @@ function RegisterPart() {
           : { ok: true, text: `${r.name} 등록 완료 · 영상 ${okN}개 · 프레임 ${frames}장 추출` })
         reset(); return
       }
-      setMsg({ ok: true, text: `${r.name} 등록 완료 (영상은 나중에 추가할 수 있습니다)` })
+      setMsg({ ok: true, text: `${r.name} 등록 완료 (영상은 부품 목록에서 수정으로 추가할 수 있습니다)` })
       reset()
     } catch (e) {
       setMsg({ ok: false, text: `요청 실패: ${e}` })
     } finally { setBusy('') }
   }
 
+  // 수정: 정보 저장(이름·카테고리·설명) + 3D 교체
+  const save = async () => {
+    setMsg(null); setBusy('저장 중...')
+    try {
+      const r = await fetch(`/api/parts/${editPart.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), category_id: cat, description: desc })
+      }).then(x => x.json())
+      if (r.error) { setMsg({ ok: false, text: r.error }); return }
+      if (m3dFile) {
+        setBusy('3D 모델 업로드 중...')
+        const fd = new FormData(); fd.append('file', m3dFile)
+        const m = await fetch(`/api/parts/${editPart.id}/model3d`, { method: 'POST', body: fd }).then(x => x.json())
+        if (m.error) { setMsg({ ok: false, text: `정보는 저장됐지만 3D 모델 실패: ${m.error}` }); return }
+        setM3dFile(null)
+      }
+      setMsg({ ok: true, text: `${r.name} 저장 완료` })
+    } catch (e) {
+      setMsg({ ok: false, text: `요청 실패: ${e}` })
+    } finally { setBusy('') }
+  }
+
+  // 수정 모드에서 영상 추가(여러 개) — 업로드 + 프레임 사전 추출까지
+  const addVideos = async (e) => {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!files.length) return
+    setMsg(null)
+    const res = await uploadVideos(editPart.id, files, setBusy)
+    setBusy('')
+    const okN = res.filter(x => x.ok).length
+    const frames = res.reduce((a, x) => a + (x.count || 0), 0)
+    const fails = res.filter(x => !x.ok)
+    setMsg(fails.length
+      ? { ok: false, text: `영상 ${okN}/${files.length} 추가(프레임 ${frames}장). 실패: ${fails.map(f => `${f.name}(${f.error})`).join(', ')}` }
+      : { ok: true, text: `영상 ${okN}개 추가 · 프레임 ${frames}장 추출` })
+    loadVids(editPart.id)
+  }
+
+  const delVideo = async (v) => {
+    setConfirmDel(null); setBusy(`${v.stem} 삭제 중...`); setMsg(null)
+    const r = await fetch(`/api/parts/${editPart.id}/video/${encodeURIComponent(v.stem)}`, { method: 'DELETE' })
+      .then(x => x.json()).catch(() => ({ error: '요청 실패' }))
+    setBusy('')
+    setMsg(r.error ? { ok: false, text: r.error }
+                   : { ok: true, text: `${v.stem} 삭제됨 (원본은 _trash 로 이동, 프레임·라벨 정리)` })
+    loadVids(editPart.id)
+  }
+
   return (
     <div className="tab-body">
-      <h3 className="tab-h">부품 등록</h3>
-      <p className="tab-sub">부품 정보와 3D 모델·동영상을 등록합니다.</p>
+      <div className="tab-head">
+        <div>
+          <h3 className="tab-h">{editing ? `부품 수정 · ${editPart.name}` : '부품 등록'}</h3>
+          <p className="tab-sub">{editing
+            ? '부품 정보를 수정하고 등록된 영상을 확인·삭제·추가합니다.'
+            : '부품 정보와 3D 모델·동영상을 등록합니다.'}</p>
+        </div>
+        {editing && <button className="act-btn neutral" type="button" onClick={onExitEdit}>+ 새 부품 등록</button>}
+      </div>
       <div className="reg-form">
-        <div className="reg-row">
-          <div className="reg-field">
-            <span className="reg-label">부품 이름</span>
-            <input className="reg-input" value={name} onChange={e => setName(e.target.value)} placeholder="예: gearbox" />
-          </div>
-          <div className="reg-field">
-            <span className="reg-label">부품 카테고리</span>
-            <CategorySelect value={cat} onChange={setCat} />
-          </div>
-        </div>
-        <div className="reg-field">
-          <span className="reg-label">부품 설명</span>
-          <textarea className="reg-textarea" value={desc} onChange={e => setDesc(e.target.value)} rows={4}
-                    placeholder="부품에 대한 설명 (선택)" />
-        </div>
-        <div className="reg-field">
-          <span className="reg-label">3D 모델</span>
-          {/* 프레임 전체가 클릭 버튼 = 파일 선택 */}
-          <input ref={m3dInput} type="file" accept=".glb,.gltf,.obj,.stl,.ply,.fbx" style={{ display: 'none' }}
-                 onChange={e => setM3dFile(e.target.files?.[0] || null)} />
-          <button type="button" className="reg-drop" onClick={() => m3dInput.current?.click()}>
-            <IcCube />
-            <div className="reg-drop-txt">
-              <b>{m3dFile ? m3dFile.name : '3D 모델 불러오기'}</b>
-              <p>{m3dFile ? `${(m3dFile.size / 1048576).toFixed(1)} MB · 다시 클릭하면 변경` : '클릭하여 .glb · .obj · .stl · .ply 파일 선택'}</p>
+        {/* 2열: 왼쪽 = 식별 정보(이름·카테고리·설명), 오른쪽 = 첨부(3D·동영상) */}
+        <div className="reg-grid">
+          <div className="reg-col">
+            <div className="reg-row">
+              <div className="reg-field">
+                <span className="reg-label">부품 이름</span>
+                <input className="reg-input" value={name} onChange={e => setName(e.target.value)} placeholder="예: gearbox" />
+              </div>
+              <div className="reg-field">
+                <span className="reg-label">부품 카테고리</span>
+                <CategorySelect value={cat} onChange={setCat} />
+              </div>
             </div>
-          </button>
-        </div>
-        <div className="reg-field">
-          <span className="reg-label">부품 동영상</span>
-          {/* 프레임 전체 클릭 → 업로드/촬영 선택 */}
-          {/* multiple: 학습 여러 테이크 + 평가 1개를 한 번에 올릴 수 있게 */}
-          <input ref={vidInput} type="file" multiple accept="video/mp4,video/quicktime,.mp4,.mov,.avi,.mkv"
-                 style={{ display: 'none' }}
-                 onChange={e => setVidFiles(Array.from(e.target.files || []))} />
-          <div className="reg-vidwrap" ref={vidRef}>
-            <button type="button" className="reg-drop" onClick={() => setVidMenu(v => !v)} aria-expanded={vidMenu}>
-              <IcVideo />
-              <div className="reg-drop-txt">
-                <b>{vidFiles.length ? `동영상 ${vidFiles.length}개 선택됨` : '부품 동영상 추가'}</b>
-                <p>{vidFiles.length
-                      ? `${(vidFiles.reduce((a, f) => a + f.size, 0) / 1048576).toFixed(1)} MB · 등록 시 프레임을 미리 추출합니다`
-                      : '클릭하여 동영상 업로드(여러 개 선택 가능) 또는 직접 촬영'}</p>
-              </div>
-              <IcChevronDown />
-            </button>
-            {vidMenu && (
-              <div className="reg-vidpop">
-                <button className="reg-vopt" type="button" onClick={() => { setVidMenu(false); vidInput.current?.click() }}>
-                  <IcVideo /><div><b>동영상 업로드</b><span>.mp4 · .mov 파일 선택</span></div>
-                </button>
-                <button className="reg-vopt" type="button" disabled title="추후 지원">
-                  <IcCamera /><div><b>직접 촬영</b><span>웹캠 촬영 (추후 지원)</span></div>
-                </button>
-              </div>
-            )}
+            <div className="reg-field reg-desc-field">
+              <span className="reg-label">부품 설명</span>
+              <textarea className="reg-textarea" value={desc} onChange={e => setDesc(e.target.value)}
+                        placeholder="부품에 대한 설명 (선택)" />
+            </div>
           </div>
-          {/* 선택한 영상 목록: 개별 제거 가능 */}
-          {vidFiles.length > 0 && (
-            <ul className="vid-picked">
-              {vidFiles.map((f, i) => (
-                <li key={`${f.name}_${i}`}>
+
+          <div className="reg-col">
+            <div className="reg-field">
+              <span className="reg-label">3D 모델</span>
+              <input ref={m3dInput} type="file" accept=".glb,.gltf,.obj,.stl,.ply,.fbx" style={{ display: 'none' }}
+                     onChange={e => setM3dFile(e.target.files?.[0] || null)} />
+              <button type="button" className="reg-drop" onClick={() => m3dInput.current?.click()}>
+                <IcCube />
+                <div className="reg-drop-txt">
+                  <b>{m3dFile ? m3dFile.name : (editing && editPart.has_model3d ? '3D 모델 등록됨 (교체하려면 클릭)' : '3D 모델 불러오기')}</b>
+                  <p>{m3dFile ? `${(m3dFile.size / 1048576).toFixed(1)} MB · 저장 시 반영`
+                              : '클릭하여 .glb · .obj · .stl · .ply 파일 선택'}</p>
+                </div>
+              </button>
+            </div>
+
+            <div className="reg-field">
+              <span className="reg-label">부품 동영상{editing ? ` (${vids.length}개)` : ''}</span>
+              {/* 수정 모드: 파일 선택 즉시 업로드 / 신규: 등록 시 함께 업로드 */}
+              <input ref={vidInput} type="file" multiple accept="video/mp4,video/quicktime,.mp4,.mov,.avi,.mkv"
+                     style={{ display: 'none' }}
+                     onChange={editing ? addVideos : (e => setVidFiles(Array.from(e.target.files || [])))} />
+              <div className="reg-vidwrap" ref={vidRef}>
+                <button type="button" className="reg-drop" onClick={() => setVidMenu(v => !v)} aria-expanded={vidMenu}>
                   <IcVideo />
-                  <span className="vp-name">{f.name}</span>
-                  <span className="vp-size">{(f.size / 1048576).toFixed(1)} MB</span>
-                  <button type="button" className="csel-ic del" title="목록에서 제거"
-                          onClick={() => setVidFiles(vidFiles.filter((_, k) => k !== i))}><IcX /></button>
-                </li>
-              ))}
-            </ul>
-          )}
+                  <div className="reg-drop-txt">
+                    <b>{!editing && vidFiles.length ? `동영상 ${vidFiles.length}개 선택됨` : '부품 동영상 추가'}</b>
+                    <p>{!editing && vidFiles.length
+                          ? `${(vidFiles.reduce((a, f) => a + f.size, 0) / 1048576).toFixed(1)} MB · 등록 시 프레임을 미리 추출합니다`
+                          : '클릭하여 동영상 업로드(여러 개 선택 가능) 또는 직접 촬영'}</p>
+                  </div>
+                  <IcChevronDown />
+                </button>
+                {vidMenu && (
+                  <div className="reg-vidpop">
+                    <button className="reg-vopt" type="button" onClick={() => { setVidMenu(false); vidInput.current?.click() }}>
+                      <IcVideo /><div><b>동영상 업로드</b><span>.mp4 · .mov 파일 선택(여러 개)</span></div>
+                    </button>
+                    <button className="reg-vopt" type="button" disabled title="추후 지원">
+                      <IcCamera /><div><b>직접 촬영</b><span>웹캠 촬영 (추후 지원)</span></div>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* 신규 등록: 올릴 파일 목록(개별 제거) */}
+              {!editing && vidFiles.length > 0 && (
+                <ul className="vid-picked">
+                  {vidFiles.map((f, i) => (
+                    <li key={`${f.name}_${i}`}>
+                      <IcVideo />
+                      <span className="vp-name">{f.name}</span>
+                      <span className="vp-size">{(f.size / 1048576).toFixed(1)} MB</span>
+                      <button type="button" className="csel-ic del" title="목록에서 제거"
+                              onClick={() => setVidFiles(vidFiles.filter((_, k) => k !== i))}><IcX /></button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {/* 수정: 등록된 영상 목록(썸네일·역할·프레임수·삭제) */}
+              {editing && (
+                vids.length === 0
+                  ? <div className="vm-empty">등록된 영상이 없습니다. 위에서 추가하세요.</div>
+                  : <ul className="vm-list">
+                      {vids.map(v => (
+                        <li key={v.stem}>
+                          {v.frames
+                            ? <img className="vm-thumb" loading="lazy" alt={v.stem}
+                                   src={`/api/autolabel/frame?src=${encodeURIComponent(v.src)}&idx=0&w=200`} />
+                            : <div className="vm-thumb none"><IcVideo /></div>}
+                          <div className="vm-meta">
+                            <b>{v.stem}</b>
+                            <span>
+                              <i className={`vm-role ${v.role}`}>{v.role === 'test' ? '평가용' : '학습용'}</i>
+                              프레임 {v.frames}장{v.size_mb != null ? ` · ${v.size_mb} MB` : ''}
+                            </span>
+                          </div>
+                          <button className="csel-ic del" type="button" disabled={!!busy} title="이 영상 삭제"
+                                  onClick={() => setConfirmDel(v)}><IcTrash /></button>
+                        </li>
+                      ))}
+                    </ul>
+              )}
+              {editing && <p className="al-hint vm-hint">역할은 파일 이름으로 자동 판정됩니다(이름에 test 가 있으면 평가용).</p>}
+            </div>
+          </div>
         </div>
+
         {msg && <div className={`reg-msg ${msg.ok ? 'ok' : 'err'}`}>{msg.text}</div>}
         <div className="reg-actions">
           {busy && <span className="reg-busy"><span className="spinner" />{busy}</span>}
-          <button className="act-btn train" type="button" disabled={!name.trim() || !!busy} onClick={submit}>
-            부품 등록
+          <button className="act-btn train" type="button" disabled={!name.trim() || !!busy}
+                  onClick={editing ? save : create}>
+            {editing ? '저장' : '부품 등록'}
           </button>
         </div>
       </div>
+      <ConfirmModal open={!!confirmDel} title="영상 삭제"
+                    message={confirmDel ? `${confirmDel.stem} 을(를) 삭제할까요? 원본은 _trash 로 옮겨 복구할 수 있고, 이 영상의 프레임·라벨·참조샷은 정리됩니다.` : ''}
+                    confirmLabel="삭제" danger
+                    onCancel={() => setConfirmDel(null)} onConfirm={() => delVideo(confirmDel)} />
     </div>
   )
 }
 
-// ===== 탭2: 부품 목록 (DB 실데이터. 설명·카테고리 수정, 삭제) =====
-function PartList() {
+
+// ===== 탭2: 부품 목록 (DB 실데이터. 수정은 등록 화면으로 이동, 삭제는 여기서) =====
+function PartList({ onEdit }) {
   const [rows, setRows] = useState([])
   const [loaded, setLoaded] = useState(false)
-  const [editId, setEditId] = useState(null)       // 인라인 수정 중인 부품
-  const [dDesc, setDDesc] = useState('')
-  const [dCat, setDCat] = useState(null)
   const [msg, setMsg] = useState(null)
   const [confirmDel, setConfirmDel] = useState(null)
-  const [busy, setBusy] = useState('')            // 영상 추가 진행 문구
-  const addTarget = useRef(null)                  // 영상 추가 대상 부품
-  const addInput = useRef(null)
 
   const load = useCallback(() => {
     fetch('/api/parts').then(r => r.json())
@@ -1709,34 +1823,13 @@ function PartList() {
       .catch(() => setLoaded(true))
   }, [])
   useEffect(() => { load() }, [load])
+  // 다른 탭에서 수정·삭제하고 돌아왔을 때 최신 상태를 보이게(탭이 언마운트되지 않으므로 명시적으로 갱신)
+  useEffect(() => {
+    const onVis = () => { if (!document.hidden) load() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [load])
 
-  // 기존 부품에 영상 추가(여러 개). 등록 폼과 같은 업로드·추출 경로를 쓴다.
-  const onPickVideos = async (e) => {
-    const files = Array.from(e.target.files || [])
-    e.target.value = ''                           // 같은 파일 재선택 가능하게
-    const p = addTarget.current
-    if (!files.length || !p) return
-    setMsg(null)
-    const res = await uploadVideos(p.id, files, t => setBusy(`${p.name} · ${t}`))
-    setBusy('')
-    const okN = res.filter(x => x.ok).length
-    const frames = res.reduce((a, x) => a + (x.count || 0), 0)
-    const fails = res.filter(x => !x.ok)
-    setMsg(fails.length
-      ? { ok: false, text: `${p.name} 영상 ${okN}/${files.length} 추가(프레임 ${frames}장). 실패: ${fails.map(f => `${f.name}(${f.error})`).join(', ')}` }
-      : { ok: true, text: `${p.name} 영상 ${okN}개 추가 · 프레임 ${frames}장 추출` })
-    load()
-  }
-
-  const startEdit = (p) => { setEditId(p.id); setDDesc(p.description || ''); setDCat(p.category_id) }
-  const save = async (p) => {
-    const r = await fetch(`/api/parts/${p.id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ description: dDesc, category_id: dCat })
-    }).then(x => x.json()).catch(() => ({ error: '요청 실패' }))
-    if (r.error) setMsg({ ok: false, text: r.error })
-    else { setMsg(null); setEditId(null); load() }
-  }
   const doDelete = async (p) => {
     setConfirmDel(null)
     const r = await fetch(`/api/parts/${p.id}`, { method: 'DELETE' }).then(x => x.json()).catch(() => ({ error: '요청 실패' }))
@@ -1746,12 +1839,13 @@ function PartList() {
 
   return (
     <div className="tab-body">
-      <h3 className="tab-h">부품 목록</h3>
-      <p className="tab-sub">등록된 부품을 확인하고 영상 추가·수정·삭제합니다. (총 {rows.length}개)</p>
-      {/* 영상 추가용 숨은 입력(행마다 두지 않고 하나만 두고 대상만 바꿔 쓴다) */}
-      <input ref={addInput} type="file" multiple accept="video/mp4,video/quicktime,.mp4,.mov,.avi,.mkv"
-             style={{ display: 'none' }} onChange={onPickVideos} />
-      {busy && <div className="reg-msg ok"><span className="reg-busy"><span className="spinner" />{busy}</span></div>}
+      <div className="tab-head">
+        <div>
+          <h3 className="tab-h">부품 목록</h3>
+          <p className="tab-sub">등록된 부품입니다. 수정을 누르면 등록 화면에서 정보·영상을 관리합니다. (총 {rows.length}개)</p>
+        </div>
+        <button className="act-btn neutral" type="button" onClick={load} title="목록 새로고침">↻ 새로고침</button>
+      </div>
       {msg && <div className={`reg-msg ${msg.ok ? 'ok' : 'err'}`}>{msg.text}</div>}
       {!loaded ? (
         <div className="list-empty">불러오는 중...</div>
@@ -1765,18 +1859,15 @@ function PartList() {
               <th className="pt-w-cat">카테고리</th>
               <th>설명</th>
               <th className="pt-w-stat pt-mid">3D 모델</th>
-              <th className="pt-w-stat pt-mid">동영상</th>
-              <th className="pt-w-manage">관리</th>
+              <th className="pt-w-manage2">관리</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map(p => {
-              const editing = editId === p.id
-              return (
+            {rows.map(p => (
               <tr key={p.id}>
                 <td className="pt-name">
                   <span className="pt-name-txt">{p.name}</span>
-                  {/* 호버 미리보기: 영상 프레임이 있으면 첫 프레임, 없으면 아이콘 */}
+                  {/* 호버 미리보기: 미리 추출해둔 첫 프레임 */}
                   <div className="pt-preview">
                     {p.videos?.[0]?.frames ? (
                       <img className="pt-preview-img" loading="lazy" alt={p.name}
@@ -1785,49 +1876,20 @@ function PartList() {
                       <div className="pt-preview-thumb">{p.has_model3d ? <IcCube /> : <IcX />}</div>
                     )}
                     <b>{p.name}</b>
-                    <p>{p.description || '설명 없음'}{p.frames ? ` · 프레임 ${p.frames}장` : ''}</p>
+                    <p>{p.description || '설명 없음'} · 영상 {p.n_videos}개{p.frames ? ` · 프레임 ${p.frames}장` : ''}</p>
                   </div>
                 </td>
-                <td className="pt-cat">
-                  {editing ? <CategorySelect value={dCat} onChange={setDCat} />
-                           : (p.category || <span className="pt-no">—</span>)}
-                </td>
-                <td className="pt-desc" title={p.description || ''}>
-                  {editing ? <input className="reg-input pt-edit-in" value={dDesc} onChange={e => setDDesc(e.target.value)}
-                                    placeholder="설명" autoFocus />
-                           : p.description}
-                </td>
+                <td className="pt-cat">{p.category || <span className="pt-no">—</span>}</td>
+                <td className="pt-desc" title={p.description || ''}>{p.description}</td>
                 <td className="pt-mid">{p.has_model3d ? <span className="pt-ok"><IcCheck /></span> : <span className="pt-no">—</span>}</td>
-                <td className="pt-mid">
-                  {/* 영상은 여러 개일 수 있으므로 개수와 프레임 수를 같이 보여준다 */}
-                  {p.n_videos
-                    ? <span className="pt-vids" title={p.videos.map(v => `${v.stem}(${v.role}) ${v.frames}장`).join('\n')}>
-                        {p.n_videos}개<small>{p.frames}장</small>
-                      </span>
-                    : <span className="pt-no">—</span>}
-                </td>
                 <td>
                   <div className="pt-actions">
-                    {editing ? (
-                      <>
-                        <button className="act-btn train sm" type="button" onClick={() => save(p)}><IcCheck /> 저장</button>
-                        <button className="act-btn ghost sm" type="button" onClick={() => setEditId(null)}>취소</button>
-                      </>
-                    ) : (
-                      <>
-                        <button className="act-btn neutral sm" type="button" disabled={!!busy}
-                                title="이 부품에 영상 추가(여러 개 선택 가능)"
-                                onClick={() => { addTarget.current = p; addInput.current?.click() }}>
-                          <IcVideo /> 영상
-                        </button>
-                        <button className="act-btn ghost sm" type="button" onClick={() => startEdit(p)}><IcPencil /> 수정</button>
-                        <button className="act-btn dline sm" type="button" onClick={() => setConfirmDel(p)}><IcTrash /> 삭제</button>
-                      </>
-                    )}
+                    <button className="act-btn ghost sm" type="button" onClick={() => onEdit?.(p)}><IcPencil /> 수정</button>
+                    <button className="act-btn dline sm" type="button" onClick={() => setConfirmDel(p)}><IcTrash /> 삭제</button>
                   </div>
                 </td>
               </tr>
-            )})}
+            ))}
           </tbody>
         </table>
       )}
@@ -1839,10 +1901,11 @@ function PartList() {
   )
 }
 
+
 const APP_TABS = [
-  { id: 'register', label: '부품 등록', Icon: IcPlus, View: RegisterPart },
-  { id: 'list', label: '부품 목록', Icon: IcList, View: PartList },
-  { id: 'train', label: '부품 학습', Icon: IcLayers, View: PartsApp },
+  { id: 'register', label: '부품 등록', Icon: IcPlus },
+  { id: 'list', label: '부품 목록', Icon: IcList },
+  { id: 'train', label: '부품 학습', Icon: IcLayers },
 ]
 
 export default function App() {
@@ -1850,11 +1913,16 @@ export default function App() {
   // 한 번 열어본 탭은 언마운트하지 않고 숨기기만 한다(display:none).
   // 언마운트하면 진행 중 학습·찍어둔 참조샷·비교 결과·입력값이 전부 날아가고 재진입 때 전부 재조회(=재로드)됨.
   const [seen, setSeen] = useState(() => ({ [tab]: true }))   // 안 가본 탭은 마운트 안 해 초기 로딩 비용 절약
+  const [editPart, setEditPart] = useState(null)              // 부품 목록의 '수정' -> 등록 화면 편집 모드
   const go = (t) => {
     setTab(t)
     setSeen(s => s[t] ? s : { ...s, [t]: true })
     localStorage.setItem('xr_tab', t)
   }
+  const openEdit = (p) => { setEditPart(p); go('register') }  // 수정은 등록 화면에서(영상 목록까지 한곳에서)
+  const view = (id) => id === 'register' ? <RegisterPart editPart={editPart} onExitEdit={() => setEditPart(null)} />
+                     : id === 'list' ? <PartList onEdit={openEdit} />
+                     : <PartsApp />
   return (
     <main className="solo">
       <div className="apptabs">
@@ -1867,8 +1935,8 @@ export default function App() {
         </div>
       </div>
       <div className="card">
-        {APP_TABS.map(({ id, View }) => seen[id] && (
-          <div key={id} style={tab === id ? undefined : { display: 'none' }}><View /></div>
+        {APP_TABS.map(({ id }) => seen[id] && (
+          <div key={id} style={tab === id ? undefined : { display: 'none' }}>{view(id)}</div>
         ))}
       </div>
     </main>

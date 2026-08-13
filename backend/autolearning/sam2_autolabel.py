@@ -1292,7 +1292,19 @@ def delete_video(src):
         for f in list(g):
             f.unlink(missing_ok=True); removed_labels += 1
 
+    # 4) 참조샷(shots.json)에서 이 영상 항목 제거 — 안 지우면 같은 이름으로 재업로드할 때 옛 탭이 되살아난다
+    sj = store["root"] / "shots.json"
+    if sj.exists():
+        try:
+            data = json.loads(sj.read_text(encoding="utf-8")) or {}
+            if isinstance(data, dict) and stem in data:
+                data.pop(stem)
+                sj.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            logger.exception("shots.json 정리 실패(무시)")
+
     autolabel._videos(force=True)   # 영상 목록 캐시 무효화(삭제 즉시 목록/폴더 반영)
+    _db_sync_part(part)             # DB 색인 정리(sync 가 사라진 영상·프레임 행을 prune 한다)
     logger.info(f"[delete_video] {part}/{stem} → trash={moved_to}, cache={removed_cache}, labels={removed_labels}")
     return {"ok": True, "part": part, "stem": stem, "moved_to": moved_to,
             "removed_cache_frames": removed_cache, "removed_label_files": removed_labels}
