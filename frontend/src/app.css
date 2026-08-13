@@ -272,8 +272,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .act-btn:disabled { opacity: 0.45; cursor: default; }
 .act-btn.neutral { background: #fff; color: var(--ink); border-color: var(--line); }
 .act-btn.neutral:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.act-btn.primary { background: var(--accent); color: #fff; }
-.act-btn.train { background: #0891b2; color: #fff; }
+.act-btn.primary, .act-btn.train { background: var(--accent); color: #fff; }   /* 주 CTA는 테마 accent(인디고)로 통일 */
 .act-btn.primary:hover:not(:disabled), .act-btn.train:hover:not(:disabled) { filter: brightness(1.08); }
 .modal-head {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -426,7 +425,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 }
 .page-head-l { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .page-head-r { display: flex; align-items: center; gap: 10px; }
-.page-title { margin: 0; font-size: 20px; font-weight: 700; line-height: 1.2; color: var(--ink); border-bottom: none; padding-bottom: 0; }
+.page-title { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -.01em; line-height: 1.2; color: var(--ink-strong); border-bottom: none; padding-bottom: 0; }   /* 부품등록·부품목록 헤더(.tab-h)와 크기 통일 */
 .icon-back {
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
   width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 8px;
@@ -597,7 +596,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .ba-fig.after img { border-color: var(--accent-line); }
 .ba-none { width: 100%; aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center;
   font-size: 12px; color: var(--faint); background: var(--surface-3); border: 1px dashed var(--line); border-radius: var(--r); }
-.ba-arrow { color: var(--faint); display: flex; }
+.ba-arrow { color: var(--faint); display: flex; align-items: center; justify-content: center; }   /* 부모가 stretch라도 아이콘은 항상 세로 중앙 */
 .ba-arrow svg { width: 20px; height: 20px; }
 
 /* 부품별 Before/After 슬라이더(크게 · 여러 프레임 좌우 이동) */
