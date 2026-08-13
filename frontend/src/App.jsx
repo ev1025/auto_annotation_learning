@@ -1669,6 +1669,19 @@ function RegisterPart({ editPart, onExitEdit, onSaved }) {
   }
 
   // 수정 모드에서 영상 추가(여러 개) — 업로드 + 프레임 사전 추출까지
+  // 신규 등록: 고른 파일을 목록에 누적한다(덮어쓰면 두 번째 선택에서 앞 것이 사라진다).
+  // 같은 파일이면 건너뛰고, input 값을 비워야 같은 파일을 다시 골라도 change 가 뜬다.
+  const pickVideos = (e) => {
+    const picked = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!picked.length) return
+    const idOf = f => `${f.name}_${f.size}`
+    setVidFiles(prev => {
+      const has = new Set(prev.map(idOf))
+      return [...prev, ...picked.filter(f => !has.has(idOf(f)))]
+    })
+  }
+
   const addVideos = async (e) => {
     const files = Array.from(e.target.files || [])
     e.target.value = ''
@@ -1746,7 +1759,7 @@ function RegisterPart({ editPart, onExitEdit, onSaved }) {
               {/* 수정 모드: 파일 선택 즉시 업로드 / 신규: 등록 시 함께 업로드 */}
               <input ref={vidInput} type="file" multiple accept="video/mp4,video/quicktime,.mp4,.mov,.avi,.mkv"
                      style={{ display: 'none' }}
-                     onChange={editing ? addVideos : (e => setVidFiles(Array.from(e.target.files || [])))} />
+                     onChange={editing ? addVideos : pickVideos} />
               <div className="reg-vidwrap" ref={vidRef}>
                 <button type="button" className="reg-drop" onClick={() => setVidMenu(v => !v)} aria-expanded={vidMenu}>
                   <IcVideo />
@@ -1777,7 +1790,7 @@ function RegisterPart({ editPart, onExitEdit, onSaved }) {
               {!editing && vidFiles.length > 0 && (
                 <ul className="vm-list grow">
                   {vidFiles.map((f, i) => {
-                    const key = `${f.name}_${i}`
+                    const key = `${f.name}_${f.size}`
                     const open = openVid === key
                     return (
                     <li key={key} className={open ? 'on' : ''}>
@@ -1792,7 +1805,7 @@ function RegisterPart({ editPart, onExitEdit, onSaved }) {
                         </div>
                         <span className={`vm-caret${open ? ' on' : ''}`}><IcChevronDown /></span>
                         <button type="button" className="csel-ic del" title="목록에서 제거"
-                                onClick={e => { e.stopPropagation(); setOpenVid(null); setVidFiles(vidFiles.filter((_, k) => k !== i)) }}><IcX /></button>
+                                onClick={e => { e.stopPropagation(); setOpenVid(o => o === key ? null : o); setVidFiles(vidFiles.filter((_, k) => k !== i)) }}><IcX /></button>
                       </div>
                       {open && (
                         <div className="vm-player">
