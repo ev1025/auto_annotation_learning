@@ -109,21 +109,27 @@ def upsert_categories(s) -> None:
 
 
 def migrate_parts(s, stats: dict) -> None:
-    """부품 폴더(data/bell412/<부품>/videos) 기준으로 부품·영상·프레임·SAM2 이관."""
+    """부품 폴더(data/bell412/<부품>/videos) 전체를 이관. 부품 하나씩은 sync_part_dir 이 처리."""
     if not PARTS_ROOT.exists():
         print(f"  ! 부품 루트 없음: {PARTS_ROOT}")
         return
-
     for pdir in sorted(p for p in PARTS_ROOT.iterdir() if p.is_dir()):
         if pdir.name == "backgrounds":          # 합성 증강용 배경 — 부품이 아님
             continue
-        vdir = pdir / "videos"
-        if not vdir.exists():
-            continue
-        vids = sorted(v for v in vdir.iterdir() if v.suffix.lower() in {".mp4", ".mov", ".avi", ".mkv"})
-        if not vids:
-            continue
+        sync_part_dir(s, pdir, stats)
 
+
+def sync_part_dir(s, pdir: Path, stats: dict) -> None:
+    """부품 폴더 하나를 DB 에 반영(멱등 upsert).
+
+    라벨 생성 직후에도 이 함수를 그대로 호출해 DB 를 최신화한다(파일이 원본, DB 는 동기 색인).
+    개별 INSERT 를 코드 곳곳에 흩뿌리는 대신 검증된 이 경로 하나만 쓴다.
+    """
+    vdir = pdir / "videos"
+    if not vdir.exists():
+        return
+    vids = sorted(v for v in vdir.iterdir() if v.suffix.lower() in {".mp4", ".mov", ".avi", ".mkv"})
+    if vids:
         part = s.query(Part).filter_by(name=pdir.name).first()
         if not part:
             part = Part(name=pdir.name, folder=rel(pdir))
@@ -260,6 +266,44 @@ def migrate_runs(s, stats: dict) -> None:
             stats["active"] = served_id
         else:
             print(f"  ! _served.json 이 가리키는 {served_id} 의 meta.json 이 없어 활성 표시 못 함")
+
+
+# ─────────────────────────────────────────────────────────────────────
+# 쓰기 경로에서 호출하는 공개 함수(파일에 쓴 직후 DB 를 최신화).
+# 절대 예외를 밖으로 던지지 않는다 — DB 문제로 라벨 생성·학습이 실패하면 안 된다.
+# ─────────────────────────────────────────────────────────────────────
+_EMPTY_STATS = dict(parts=0, parts_new=0, videos=0, videos_new=0, frames=0, frames_new=0,
+                    ann=0, ann_new=0, ann_ref=0, runs=0, runs_new=0, active=None)
+
+
+def sync_part(part_name: str) -> dict | None:
+    """부품 하나(폴더명=클래스명)를 DB 에 동기화. 라벨 생성 직후 호출.
+    반환: 통계 dict (실패 시 None)."""
+    try:
+        pdir = PARTS_ROOT / part_name
+        if not pdir.is_dir():
+            return None
+        stats = dict(_EMPTY_STATS)
+        with SessionLocal() as s:
+            sync_part_dir(s, pdir, stats)
+            s.commit()
+        return stats
+    except Exception as e:   # noqa: BLE001
+        print(f"[DB] sync_part({part_name}) 실패(무시하고 계속): {type(e).__name__}: {e}", flush=True)
+        return None
+
+
+def sync_runs() -> dict | None:
+    """학습 이력·현재 서비스 모델을 DB 에 동기화. 학습 완료·적용·롤백 직후 호출."""
+    try:
+        stats = dict(_EMPTY_STATS)
+        with SessionLocal() as s:
+            migrate_runs(s, stats)
+            s.commit()
+        return stats
+    except Exception as e:   # noqa: BLE001
+        print(f"[DB] sync_runs 실패(무시하고 계속): {type(e).__name__}: {e}", flush=True)
+        return None
 
 
 def main() -> int:

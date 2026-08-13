@@ -35,6 +35,48 @@ import torch
 import config
 import autolabel   # _frames, cache_dir_of (프레임 저장소 공용)
 
+
+# ---- DB 동기화(선택적) ----
+# 파일이 원본이고 DB 는 그 색인이다. 파일에 쓴 직후 아래 함수로 DB 를 최신화한다.
+# DB 가 없거나 꺼져 있어도 라벨 생성·학습은 그대로 돌아야 하므로 import 실패는 무시한다.
+def _db():
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # backend (db 패키지)
+        from db import migrate_from_files as m   # noqa: PLC0415
+        return m
+    except Exception as e:   # noqa: BLE001
+        print(f"[DB] 동기화 모듈 없음(파일만 기록): {type(e).__name__}: {e}", flush=True)
+        return None
+
+
+def _db_sync_part(video_or_part):
+    """라벨 생성 직후 그 부품을 DB 에 동기화. video 경로/키를 주면 부품명을 뽑아낸다."""
+    m = _db()
+    if not m:
+        return
+    part = None
+    try:
+        vp = autolabel.resolve_video(video_or_part)
+        part = autolabel.part_root_of(vp).name if vp else str(video_or_part).split("/")[-2:-1][0]
+    except Exception:   # noqa: BLE001
+        part = None
+    if part:
+        st = m.sync_part(part)
+        if st:
+            print(f"[DB] {part} 동기화: 프레임 {st['frames']}(신규 {st['frames_new']}) "
+                  f"주석 {st['ann']}(참조샷 {st['ann_ref']})", flush=True)
+
+
+def _db_sync_runs():
+    """학습 완료·모델 적용·롤백 직후 학습이력/서비스모델을 DB 에 동기화."""
+    m = _db()
+    if not m:
+        return
+    st = m.sync_runs()
+    if st:
+        print(f"[DB] 학습이력 동기화: {st['runs']}건(신규 {st['runs_new']}), 서비스모델 {st['active']}", flush=True)
+
+
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 CFG = "configs/sam2.1/sam2.1_hiera_b+.yaml"
 CKPT = config.BASE_DIR / "models" / "sam2" / "sam2.1_hiera_base_plus.pt"
@@ -329,6 +371,7 @@ def _run_parts_label(job_id, session, video, shots):
         _clear_video(store, stem)                  # 재탭이면 이 영상분(stem_*)만 새로(라벨·boxs)
         n, tot = _propagate_into(video, shots, pl, boxs)
         _save_shots(video, shots)                  # 참조샷(탭 포인트) 영속 저장 → 재접속·타 브라우저 복원
+        _db_sync_part(video)                       # 파일에 쓴 직후 DB 색인 최신화(조회가 DB 라서 필수)
         taps = [_b64(_rd(p), w=520) for p in sorted(boxs.glob(f"{stem}_*.jpg"))][:6]
         j.update(stage="done", running=False, video=stem, labels=n, frames=tot,
                  session=PERSIST, taps=taps)
@@ -375,6 +418,7 @@ def _run_parts_label_batch(job_id, session, items):
             _clear_video(store, stem)
             n, tot = _propagate_into(video, shots, pl, boxs)
             _save_shots(video, shots)              # 참조샷 영속 저장(부품별 shots.json)
+            _db_sync_part(video)                   # 부품마다 DB 색인 최신화
             results.append({"video": stem, "labels": n, "frames": tot})
         j.update(stage="done", running=False, session=PERSIST, done=total, total=total, results=results)
     except Exception as e:
@@ -750,6 +794,7 @@ def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None, augme
                 "curve": j.get("curve", []), "log": j.get("log", []), "eval": eval_meta}
         (sess / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         _prune_runs(keep=10)                          # 오래된 run 정리(현재 서비스 버전은 보호)
+        _db_sync_runs()                               # 학습 이력을 DB 에 반영
         logln("전체 완료", "ok")
         j.update(stage="done", running=False, session=runid, model_id=model_id, label=label,
                  weights=str(reg_pt), onnx=str(reg_onnx) if reg_onnx else None,
@@ -886,6 +931,7 @@ def _set_served(runid):
         {"run": runid, "applied": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
         ensure_ascii=False, indent=2), encoding="utf-8")
     _sync_served_files(runid)   # 현재 모델을 고정 경로(models/model.pt·onnx)로 동기화
+    _db_sync_runs()             # is_active(현재 서비스 모델)까지 DB 에 반영
 
 def _prune_runs(keep=10):
     """오래된 run 폴더 정리. 현재 서비스(served) run 은 10개 밖이어도 보호."""
