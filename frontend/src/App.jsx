@@ -365,9 +365,12 @@ function AutoLabelView() {
   }
 
   return (
-    <div>
+    // 카드 높이를 flex 로 채운다(매직넘버 calc(100vh - N) 제거 — 탭 바 높이가 바뀌면 어긋났다)
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {!src ? <p className="al-hint">부품 폴더가 없습니다. (data/bell412/parts/&lt;부품&gt;/videos)</p> : (
-        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 256px)', minHeight: 420, overflow: 'hidden' }}>
+        // flex-basis 0 으로 높이를 확정해야 자식의 height:100%(프레임 이미지)가 부모 기준으로 풀린다.
+        // basis auto 면 이미지가 원본 높이로 커져 페이지가 스크롤된다.
+        <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0', minHeight: 0, overflow: 'hidden' }}>
           {/* 상단 범례 제거 — 범례는 이미지·입력마스크 아래로 이동 */}
           {/* 상단 액션 버튼줄 */}
           <div className="al-controls" style={{ flexShrink: 0 }}>
@@ -414,9 +417,9 @@ function AutoLabelView() {
 
           {/* 본문: 좌(이미지+범례+재생) / 우(리스트). 남는 공간 채움 */}
           <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0, overflow: 'hidden', marginTop: 8 }}>
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
              {/* 이미지+범례+재생 = 남는 폭을 채우되 상한(사이드바 넓혀도 겹치지 않게 반응형) */}
-             <div style={{ width: '100%', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+             <div style={{ width: '100%', flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
               {/* 마스크 상태: 참조샷과 이미지 사이 */}
               {activeMask && !activeMask.error && (
                 activeMask.verdict === 'over'
@@ -424,7 +427,7 @@ function AutoLabelView() {
                   : <div className="mask-alert ok" style={{ flexShrink: 0, marginBottom: 8 }}><IcCheck /><span>부품이 잘 잡혔어요</span></div>
               )}
               {/* 듀얼 이미지: 좌우 동일 비율로 축소(스크롤 없음), 여백 흰색 */}
-              <div style={{ display: 'flex', gap: 12, flex: 1, minHeight: 0 }}>
+              <div style={{ display: 'flex', gap: 12, flex: '1 1 0', minHeight: 0 }}>
                 <div className="img-pane">
                   {preparing
                     ? <span className="al-hint">프레임 컷 중...</span>
@@ -1199,7 +1202,8 @@ function PartsApp() {
   })()
 
   return (
-    <div>
+    // 3개 하위 화면(라벨·학습·평가)이 카드 높이를 채우도록 flex 체인의 시작점
+    <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0', minHeight: 0 }}>
       {page === 'label' ? (
         <>
           <PageHead title="부품 학습 데이터 생성" flat
@@ -1339,26 +1343,26 @@ function PartsApp() {
               <div className="ev2-body">
                 {cmpDone ? (
                   <>
-                    {/* 1) 판정 히어로 — 권장 결정 + 이유 + 주 액션(적용/폐기)을 한곳에 */}
-                    {cmp.recommend && (
-                      <section className={`verdict ${cmp.recommend.level}`}>
-                        <div className="verdict-badge">
-                          {cmp.recommend.level === 'apply' ? <IcCheck /> : <IcWarn />}
-                          <span>{cmp.recommend.level === 'apply' ? '신규 모델 적용 권장'
-                            : cmp.recommend.level === 'rollback' ? '기존 모델 유지 권장'
-                            : '검토 후 결정'}</span>
-                        </div>
-                        <p className="verdict-msg">{cmp.recommend.msg}</p>
+                    {/* 1) 판정 + 근거 인식률을 한 줄에 — 세로로 쌓으면 아래 비교 뷰어가 눌려 이미지가 안 보인다 */}
+                    <div className="ev2-top">
+                      {cmp.recommend && (
+                        <section className={`verdict ${cmp.recommend.level}`}>
+                          <div className="verdict-badge">
+                            {cmp.recommend.level === 'apply' ? <IcCheck /> : <IcWarn />}
+                            <span>{cmp.recommend.level === 'apply' ? '신규 모델 적용 권장'
+                              : cmp.recommend.level === 'rollback' ? '기존 모델 유지 권장'
+                              : '검토 후 결정'}</span>
+                          </div>
+                          <p className="verdict-msg">{cmp.recommend.msg}</p>
+                        </section>
+                      )}
+                      <section className="scoreboard">
+                        <ScoreTile label="기존 부품 인식" n={cmp.gen?.n ?? 0}
+                                   before={cmp.gen?.before} after={cmp.gen?.after} pctv={pctv} deltaEl={deltaEl} warnDown />
+                        <ScoreTile label="신규 부품 인식" n={cmp.newp?.n ?? 0}
+                                   before={cmp.newp?.before} after={cmp.newp?.after} pctv={pctv} deltaEl={deltaEl} />
                       </section>
-                    )}
-
-                    {/* 2) 스코어보드 — 판정을 뒷받침하는 인식률 2종(기존 유지 / 신규 학습) */}
-                    <section className="scoreboard">
-                      <ScoreTile label="기존 부품 인식" n={cmp.gen?.n ?? 0}
-                                 before={cmp.gen?.before} after={cmp.gen?.after} pctv={pctv} deltaEl={deltaEl} warnDown />
-                      <ScoreTile label="신규 부품 인식" n={cmp.newp?.n ?? 0}
-                                 before={cmp.newp?.before} after={cmp.newp?.after} pctv={pctv} deltaEl={deltaEl} />
-                    </section>
+                    </div>
 
                     {/* 3) 눈으로 확인 — 실제 프레임 검출 비교(가장 신뢰되는 근거) */}
                     {baGroups.length > 0 && (() => {
@@ -1718,7 +1722,7 @@ function RegisterPart({ editPart, onExitEdit, onSaved }) {
               </button>
             </div>
 
-            <div className="reg-field">
+            <div className="reg-field reg-vid-field">
               <span className="reg-label">부품 동영상{editing ? ` (${vids.length}개)` : ''}</span>
               {/* 수정 모드: 파일 선택 즉시 업로드 / 신규: 등록 시 함께 업로드 */}
               <input ref={vidInput} type="file" multiple accept="video/mp4,video/quicktime,.mp4,.mov,.avi,.mkv"
@@ -1747,9 +1751,12 @@ function RegisterPart({ editPart, onExitEdit, onSaved }) {
                 )}
               </div>
 
-              {/* 신규 등록: 올릴 파일 목록(개별 제거) */}
+              {/* 신규 등록: 올릴 파일 목록(개별 제거). 비어 있으면 자리표시로 열 높이 유지 */}
+              {!editing && vidFiles.length === 0 && (
+                <div className="vm-empty grow">선택한 영상이 여기에 표시됩니다</div>
+              )}
               {!editing && vidFiles.length > 0 && (
-                <ul className="vid-picked">
+                <ul className="vid-picked grow">
                   {vidFiles.map((f, i) => (
                     <li key={`${f.name}_${i}`}>
                       <IcVideo />
@@ -1765,8 +1772,8 @@ function RegisterPart({ editPart, onExitEdit, onSaved }) {
               {/* 수정: 등록된 영상 목록(썸네일·역할·프레임수·삭제) */}
               {editing && (
                 vids.length === 0
-                  ? <div className="vm-empty">등록된 영상이 없습니다. 위에서 추가하세요.</div>
-                  : <ul className="vm-list">
+                  ? <div className="vm-empty grow">등록된 영상이 없습니다. 위에서 추가하세요.</div>
+                  : <ul className="vm-list grow">
                       {vids.map(v => (
                         <li key={v.stem}>
                           {v.frames
@@ -1840,6 +1847,8 @@ function PartList({ onEdit, active }) {
       ) : rows.length === 0 ? (
         <div className="list-empty">등록된 부품이 없습니다. ‘부품 등록’ 탭에서 추가하세요.</div>
       ) : (
+        /* 표는 내부에서만 스크롤 — 페이지 전체가 내려가면 상단 탭이 화면 밖으로 밀린다 */
+        <div className="pt-scroll">
         <table className="part-table">
           <thead>
             <tr>
@@ -1880,6 +1889,7 @@ function PartList({ onEdit, active }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
       <ConfirmModal open={!!confirmDel} title="부품 삭제"
                     message={confirmDel ? `${confirmDel.name} 을(를) 삭제할까요? 영상·프레임·라벨 폴더는 _trash 로 옮겨 복구할 수 있습니다.` : ''}
