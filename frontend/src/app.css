@@ -513,6 +513,7 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .pt-preview-thumb svg { width: var(--ic-xl); height: var(--ic-xl); }
 .pt-preview b { display: block; font-size: var(--fs-sm); font-weight: 700; color: var(--ink-strong); margin-bottom: var(--sp-1); }
 .pt-preview p { margin: 0; font-size: var(--fs-xs); color: var(--muted); line-height: 1.45; font-weight: 400; }
+.pt-preview p.pt-preview-meta { margin-top: var(--sp-2); color: var(--faint); }   /* 둘째 줄: 영상·프레임 수 */
 .list-empty { padding: var(--sp-16); text-align: center; color: var(--faint); font-size: var(--fs-base);
   border: 1px dashed var(--line); border-radius: var(--r-lg); background: var(--surface-2); }
 

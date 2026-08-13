@@ -1883,7 +1883,8 @@ function PartList({ onEdit, active }) {
                       <div className="pt-preview-thumb">{p.has_model3d ? <IcCube /> : <IcX />}</div>
                     )}
                     <b>{p.name}</b>
-                    <p>{p.description || '설명 없음'} · 영상 {p.n_videos}개{p.frames ? ` · 프레임 ${p.frames}장` : ''}</p>
+                    <p>{p.description || '설명 없음'}</p>
+                    <p className="pt-preview-meta">영상 {p.n_videos}개{p.frames ? ` · 프레임 ${p.frames}장` : ''}</p>
                   </div>
                 </td>
                 <td className="pt-cat">{p.category || <span className="pt-no">—</span>}</td>
