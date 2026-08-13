@@ -374,8 +374,15 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .reg-drop-txt { flex: 1; min-width: 0; }
 .reg-drop-txt b { display: block; font-size: var(--fs-base); color: var(--ink-strong); }
 .reg-drop-txt p { margin: var(--sp-1) 0 0; font-size: var(--fs-xs); color: var(--muted); }
-.reg-actions { display: flex; justify-content: flex-end; }   /* 등록 버튼: 맨 아래·프레임 우측에 맞춤 */
+.reg-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-5); }   /* 등록 버튼: 맨 아래·프레임 우측에 맞춤 */
 .reg-actions .act-btn { min-width: 110px; }
+.reg-busy { display: inline-flex; align-items: center; gap: var(--sp-3); font-size: var(--fs-sm); color: var(--muted); }
+/* 등록·수정 결과 알림 */
+.reg-msg { padding: var(--sp-4) var(--sp-6); border-radius: var(--r-md); font-size: var(--fs-sm); font-weight: 600;
+  border: 1px solid; margin-bottom: var(--sp-5); }
+.reg-msg.ok { background: var(--success-bg-soft); border-color: var(--success-line); color: var(--success-ink); }
+.reg-msg.err { background: var(--danger-bg-soft); border-color: var(--danger-line); color: var(--danger-ink); }
+.csel-err { font-size: var(--fs-xs); color: var(--danger-ink); padding: var(--sp-3) var(--sp-4) 0; }
 /* 동영상: 프레임 클릭 -> 업로드/촬영 선택 팝오버(프레임 폭, 마지막 필드라 위로 열림) */
 .reg-vidwrap { position: relative; }
 .reg-vidpop { position: absolute; bottom: calc(100% + var(--sp-3)); left: 0; right: 0; z-index: 60;
@@ -436,8 +443,13 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .part-table th.pt-w-manage { text-align: center; }   /* 관리: 헤더만 가운데, 버튼(데이터)은 그대로 우측 */
 .part-table .pt-mid { text-align: center; }           /* 3D모델·동영상: 헤더·데이터 모두 가운데(아이콘) */
 .pt-w-name { width: 180px; }
+.pt-w-cat { width: 150px; }
 .pt-w-stat { width: 110px; }     /* 아이콘만이라 좁게, 나머지 폭은 설명이 전부 가져감 */
 .pt-w-manage { width: 190px; }
+.pt-cat { color: var(--muted); }
+.pt-edit-in { min-height: var(--ctl-sm); font-size: var(--fs-sm); width: 100%; }
+.pt-preview-img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--r-sm);
+  background: var(--surface-3); display: block; margin-bottom: var(--sp-4); }
 .pt-name { font-weight: 700; color: var(--ink-strong); position: relative; cursor: default; }
 .pt-name-txt { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }   /* td엔 overflow 안 걸어야 팝업이 안 잘림 */
 .pt-desc { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

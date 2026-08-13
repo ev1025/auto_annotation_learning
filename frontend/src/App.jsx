@@ -1437,51 +1437,78 @@ function PartsApp() {
 
 // ===== 탭1: 부품 등록 (틀만 — 내부 로직 미구현) =====
 // 부품 카테고리 선택 — 드롭다운에서 항목 선택·추가·편집·삭제(세션 내, 로직 틀)
+// 카테고리 선택 + 추가·편집·삭제. 서버(categories 테이블)에 즉시 반영된다.
+// value = category_id (숫자) 또는 null
 function CategorySelect({ value, onChange }) {
-  const [cats, setCats] = useState(['공구', '계측기', '전장 부품', '기타'])
+  const [cats, setCats] = useState([])                // [{id, name}]
   const [open, setOpen] = useState(false)
-  const [editIdx, setEditIdx] = useState(-1)          // 편집 중인 항목 인덱스
+  const [editId, setEditId] = useState(null)          // 편집 중인 항목 id
   const [draft, setDraft] = useState('')              // 편집 입력값
   const [adding, setAdding] = useState('')            // 새 항목 입력값
+  const [err, setErr] = useState('')
   const ref = useRef(null)
+
+  const load = useCallback(() => {
+    fetch('/api/categories').then(r => r.json())
+      .then(d => setCats(d.categories || [])).catch(() => {})
+  }, [])
+  useEffect(() => { load() }, [load])
   useEffect(() => {
     if (!open) return
-    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setEditIdx(-1) } }
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setEditId(null); setErr('') } }
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
   }, [open])
-  const startEdit = (i) => { setEditIdx(i); setDraft(cats[i]) }
-  const saveEdit = (i) => {
-    const v = draft.trim()
-    if (v) { const next = [...cats]; const old = next[i]; next[i] = v; setCats(next); if (value === old) onChange(v) }
-    setEditIdx(-1)
+
+  const cur = cats.find(c => c.id === value)
+  const call = async (url, opts) => {
+    const r = await fetch(url, opts).then(x => x.json()).catch(() => ({ error: '요청 실패' }))
+    if (r.error) { setErr(r.error); return null }
+    setErr(''); load(); return r
   }
-  const del = (i) => { const old = cats[i]; setCats(cats.filter((_, k) => k !== i)); if (value === old) onChange('') }
-  const add = () => { const v = adding.trim(); if (v && !cats.includes(v)) setCats([...cats, v]); setAdding('') }
+  const saveEdit = async (c) => {
+    const v = draft.trim()
+    if (v && v !== c.name) {
+      await call(`/api/categories/${c.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                                              body: JSON.stringify({ name: v }) })
+    }
+    setEditId(null)
+  }
+  const del = async (c) => {
+    const r = await call(`/api/categories/${c.id}`, { method: 'DELETE' })
+    if (r && value === c.id) onChange(null)     // 선택 중이던 분류가 사라지면 선택 해제
+  }
+  const add = async () => {
+    const v = adding.trim(); if (!v) return
+    const r = await call('/api/categories', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                              body: JSON.stringify({ name: v }) })
+    if (r) setAdding('')
+  }
   return (
     <div className="csel" ref={ref}>
       <button type="button" className="csel-btn" onClick={() => setOpen(o => !o)}>
-        <span className={value ? '' : 'csel-ph'}>{value || '카테고리 선택'}</span>
+        <span className={cur ? '' : 'csel-ph'}>{cur ? cur.name : '카테고리 선택'}</span>
         <IcChevronDown />
       </button>
       {open && (
         <div className="csel-pop">
           <div className="csel-list">
             {cats.length === 0 && <div className="csel-empty">카테고리가 없습니다</div>}
-            {cats.map((c, i) => editIdx === i ? (
-              <div className="csel-edit" key={i}>
+            {cats.map(c => editId === c.id ? (
+              <div className="csel-edit" key={c.id}>
                 <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
-                       onKeyDown={e => { if (e.key === 'Enter') saveEdit(i); if (e.key === 'Escape') setEditIdx(-1) }} />
-                <button type="button" className="csel-ic ok" onClick={() => saveEdit(i)} title="저장"><IcCheck /></button>
+                       onKeyDown={e => { if (e.key === 'Enter') saveEdit(c); if (e.key === 'Escape') setEditId(null) }} />
+                <button type="button" className="csel-ic ok" onClick={() => saveEdit(c)} title="저장"><IcCheck /></button>
               </div>
             ) : (
-              <div className={`csel-item${value === c ? ' on' : ''}`} key={i}>
-                <button type="button" className="csel-pick" onClick={() => { onChange(c); setOpen(false) }}>{c}</button>
-                <button type="button" className="csel-ic" onClick={() => startEdit(i)} title="편집"><IcPencil /></button>
-                <button type="button" className="csel-ic del" onClick={() => del(i)} title="삭제"><IcTrash /></button>
+              <div className={`csel-item${value === c.id ? ' on' : ''}`} key={c.id}>
+                <button type="button" className="csel-pick" onClick={() => { onChange(c.id); setOpen(false) }}>{c.name}</button>
+                <button type="button" className="csel-ic" onClick={() => { setEditId(c.id); setDraft(c.name) }} title="편집"><IcPencil /></button>
+                <button type="button" className="csel-ic del" onClick={() => del(c)} title="삭제"><IcTrash /></button>
               </div>
             ))}
           </div>
+          {err && <div className="csel-err">{err}</div>}
           <div className="csel-add">
             <input placeholder="새 카테고리 추가" value={adding} onChange={e => setAdding(e.target.value)}
                    onKeyDown={e => { if (e.key === 'Enter') add() }} />
@@ -1495,17 +1522,68 @@ function CategorySelect({ value, onChange }) {
 
 function RegisterPart() {
   const [name, setName] = useState('')
-  const [cat, setCat] = useState('')
+  const [cat, setCat] = useState(null)                 // category_id
   const [desc, setDesc] = useState('')
   const [vidMenu, setVidMenu] = useState(false)        // 동영상 프레임 클릭 시 열리는 선택 팝오버
-  const [vidMode, setVidMode] = useState(null)         // 'upload' | 'record' (선택 표시용, 로직 미구현)
+  const [vidFile, setVidFile] = useState(null)         // 등록과 함께 업로드할 영상
+  const [m3dFile, setM3dFile] = useState(null)         // 3D 모델 파일
+  const [busy, setBusy] = useState('')                 // 진행 문구(등록·업로드·프레임 추출)
+  const [msg, setMsg] = useState(null)                 // {ok|err, text}
   const vidRef = useRef(null)
+  const vidInput = useRef(null)
+  const m3dInput = useRef(null)
   useEffect(() => {                                    // 바깥 클릭 시 팝오버 닫기
     if (!vidMenu) return
     const onDoc = (e) => { if (vidRef.current && !vidRef.current.contains(e.target)) setVidMenu(false) }
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
   }, [vidMenu])
+
+  const reset = () => { setName(''); setCat(null); setDesc(''); setVidFile(null); setM3dFile(null) }
+
+  // 등록: 부품 행 생성 → (있으면) 3D·영상 업로드 → 프레임 사전 추출 완료까지 대기
+  const submit = async () => {
+    setMsg(null); setBusy('부품 등록 중...')
+    try {
+      const r = await fetch('/api/parts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), category_id: cat, description: desc })
+      }).then(x => x.json())
+      if (r.error) { setMsg({ ok: false, text: r.error }); return }
+      const pid = r.id
+      if (m3dFile) {
+        setBusy('3D 모델 업로드 중...')
+        const fd = new FormData(); fd.append('file', m3dFile)
+        const m = await fetch(`/api/parts/${pid}/model3d`, { method: 'POST', body: fd }).then(x => x.json())
+        if (m.error) { setMsg({ ok: false, text: `부품은 등록됐지만 3D 모델 실패: ${m.error}` }); return }
+      }
+      if (vidFile) {
+        setBusy('영상 업로드 중...')
+        const fd = new FormData(); fd.append('file', vidFile)
+        const v = await fetch(`/api/parts/${pid}/video`, { method: 'POST', body: fd }).then(x => x.json())
+        if (v.error) { setMsg({ ok: false, text: `부품은 등록됐지만 영상 실패: ${v.error}` }); return }
+        // 프레임 사전 추출(백그라운드) 완료까지 폴링 — 학습 화면에서 기다리지 않게 하려는 목적
+        setBusy('프레임 추출 중...')
+        for (let i = 0; i < 600; i++) {
+          const s = await fetch(`/api/parts/job?job=${v.job}`).then(x => x.json()).catch(() => null)
+          if (!s || s.error) break
+          if (!s.running) {
+            if (s.error) { setMsg({ ok: false, text: `프레임 추출 실패: ${s.error}` }); return }
+            setMsg({ ok: true, text: `${r.name} 등록 완료 · 프레임 ${s.count}장 추출` })
+            reset(); return
+          }
+          await new Promise(res => setTimeout(res, 1000))
+        }
+        setMsg({ ok: true, text: `${r.name} 등록 완료 · 프레임 추출은 백그라운드에서 계속됩니다` })
+        reset(); return
+      }
+      setMsg({ ok: true, text: `${r.name} 등록 완료 (영상은 나중에 추가할 수 있습니다)` })
+      reset()
+    } catch (e) {
+      setMsg({ ok: false, text: `요청 실패: ${e}` })
+    } finally { setBusy('') }
+  }
+
   return (
     <div className="tab-body">
       <h3 className="tab-h">부품 등록</h3>
@@ -1528,61 +1606,104 @@ function RegisterPart() {
         </div>
         <div className="reg-field">
           <span className="reg-label">3D 모델</span>
-          {/* 프레임 전체 클릭 → 파일 선택(로직 미구현) */}
-          <button type="button" className="reg-drop">
+          {/* 프레임 전체가 클릭 버튼 = 파일 선택 */}
+          <input ref={m3dInput} type="file" accept=".glb,.gltf,.obj,.stl,.ply,.fbx" style={{ display: 'none' }}
+                 onChange={e => setM3dFile(e.target.files?.[0] || null)} />
+          <button type="button" className="reg-drop" onClick={() => m3dInput.current?.click()}>
             <IcCube />
-            <div className="reg-drop-txt"><b>3D 모델 불러오기</b><p>클릭하여 .glb · .obj · .stl · .ply 파일 선택</p></div>
+            <div className="reg-drop-txt">
+              <b>{m3dFile ? m3dFile.name : '3D 모델 불러오기'}</b>
+              <p>{m3dFile ? `${(m3dFile.size / 1048576).toFixed(1)} MB · 다시 클릭하면 변경` : '클릭하여 .glb · .obj · .stl · .ply 파일 선택'}</p>
+            </div>
           </button>
         </div>
         <div className="reg-field">
           <span className="reg-label">부품 동영상</span>
           {/* 프레임 전체 클릭 → 업로드/촬영 선택 */}
+          <input ref={vidInput} type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.avi,.mkv" style={{ display: 'none' }}
+                 onChange={e => setVidFile(e.target.files?.[0] || null)} />
           <div className="reg-vidwrap" ref={vidRef}>
             <button type="button" className="reg-drop" onClick={() => setVidMenu(v => !v)} aria-expanded={vidMenu}>
               <IcVideo />
               <div className="reg-drop-txt">
-                <b>{vidMode === 'upload' ? '동영상 업로드' : vidMode === 'record' ? '직접 촬영' : '부품 동영상 추가'}</b>
-                <p>클릭하여 동영상 업로드 또는 직접 촬영</p>
+                <b>{vidFile ? vidFile.name : '부품 동영상 추가'}</b>
+                <p>{vidFile ? `${(vidFile.size / 1048576).toFixed(1)} MB · 등록 시 프레임을 미리 추출합니다`
+                            : '클릭하여 동영상 업로드 또는 직접 촬영'}</p>
               </div>
               <IcChevronDown />
             </button>
             {vidMenu && (
               <div className="reg-vidpop">
-                <button className="reg-vopt" type="button" onClick={() => { setVidMode('upload'); setVidMenu(false) }}>
+                <button className="reg-vopt" type="button" onClick={() => { setVidMenu(false); vidInput.current?.click() }}>
                   <IcVideo /><div><b>동영상 업로드</b><span>.mp4 · .mov 파일 선택</span></div>
                 </button>
-                <button className="reg-vopt" type="button" onClick={() => { setVidMode('record'); setVidMenu(false) }}>
-                  <IcCamera /><div><b>직접 촬영</b><span>웹캠으로 부품 영상 촬영</span></div>
+                <button className="reg-vopt" type="button" disabled title="추후 지원">
+                  <IcCamera /><div><b>직접 촬영</b><span>웹캠 촬영 (추후 지원)</span></div>
                 </button>
               </div>
             )}
           </div>
         </div>
+        {msg && <div className={`reg-msg ${msg.ok ? 'ok' : 'err'}`}>{msg.text}</div>}
         <div className="reg-actions">
-          <button className="act-btn train" type="button" disabled>부품 등록</button>
+          {busy && <span className="reg-busy"><span className="spinner" />{busy}</span>}
+          <button className="act-btn train" type="button" disabled={!name.trim() || !!busy} onClick={submit}>
+            부품 등록
+          </button>
         </div>
       </div>
     </div>
   )
 }
 
-// ===== 탭2: 부품 목록 (틀만 — 자리표시 행) =====
+// ===== 탭2: 부품 목록 (DB 실데이터. 설명·카테고리 수정, 삭제) =====
 function PartList() {
-  const rows = [   // TODO: 실제 등록 부품으로 교체
-    { name: 'a_test', desc: '테스트 부품', model: true, video: true },
-    { name: 'gearbox', desc: '기어박스', model: false, video: true },
-  ]
+  const [rows, setRows] = useState([])
+  const [loaded, setLoaded] = useState(false)
+  const [editId, setEditId] = useState(null)       // 인라인 수정 중인 부품
+  const [dDesc, setDDesc] = useState('')
+  const [dCat, setDCat] = useState(null)
+  const [msg, setMsg] = useState(null)
+  const [confirmDel, setConfirmDel] = useState(null)
+
+  const load = useCallback(() => {
+    fetch('/api/parts').then(r => r.json())
+      .then(d => { setRows(d.parts || []); setLoaded(true) })
+      .catch(() => setLoaded(true))
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const startEdit = (p) => { setEditId(p.id); setDDesc(p.description || ''); setDCat(p.category_id) }
+  const save = async (p) => {
+    const r = await fetch(`/api/parts/${p.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: dDesc, category_id: dCat })
+    }).then(x => x.json()).catch(() => ({ error: '요청 실패' }))
+    if (r.error) setMsg({ ok: false, text: r.error })
+    else { setMsg(null); setEditId(null); load() }
+  }
+  const doDelete = async (p) => {
+    setConfirmDel(null)
+    const r = await fetch(`/api/parts/${p.id}`, { method: 'DELETE' }).then(x => x.json()).catch(() => ({ error: '요청 실패' }))
+    if (r.error) setMsg({ ok: false, text: r.error })
+    else { setMsg({ ok: true, text: `${p.name} 삭제됨 (폴더는 _trash 로 이동, 복구 가능)` }); load() }
+  }
+
   return (
     <div className="tab-body">
       <h3 className="tab-h">부품 목록</h3>
-      <p className="tab-sub">등록된 부품을 확인하고 수정·삭제합니다.</p>
-      {rows.length === 0 ? (
+      <p className="tab-sub">등록된 부품을 확인하고 수정·삭제합니다. (총 {rows.length}개)</p>
+      {msg && <div className={`reg-msg ${msg.ok ? 'ok' : 'err'}`}>{msg.text}</div>}
+      {!loaded ? (
+        <div className="list-empty">불러오는 중...</div>
+      ) : rows.length === 0 ? (
         <div className="list-empty">등록된 부품이 없습니다. ‘부품 등록’ 탭에서 추가하세요.</div>
       ) : (
         <table className="part-table">
           <thead>
             <tr>
               <th className="pt-w-name">이름</th>
+              <th className="pt-w-cat">카테고리</th>
               <th>설명</th>
               <th className="pt-w-stat pt-mid">3D 모델</th>
               <th className="pt-w-stat pt-mid">동영상</th>
@@ -1590,33 +1711,62 @@ function PartList() {
             </tr>
           </thead>
           <tbody>
-            {rows.map(r => (
-              <tr key={r.name}>
+            {rows.map(p => {
+              const editing = editId === p.id
+              return (
+              <tr key={p.id}>
                 <td className="pt-name">
-                  <span className="pt-name-txt">{r.name}</span>
-                  {/* 호버 미리보기: 동영상 있으면 그 썸네일, 없으면 3D 모델 썸네일(둘 다 없으면 안내) */}
+                  <span className="pt-name-txt">{p.name}</span>
+                  {/* 호버 미리보기: 영상 프레임이 있으면 첫 프레임, 없으면 아이콘 */}
                   <div className="pt-preview">
-                    <div className="pt-preview-thumb">
-                      {r.video ? <IcVideo /> : r.model ? <IcCube /> : <IcX />}
-                    </div>
-                    <b>{r.name}</b>
-                    <p>{r.desc || '설명 없음'}</p>
+                    {p.videos?.[0]?.frames ? (
+                      <img className="pt-preview-img" loading="lazy" alt={p.name}
+                           src={`/api/autolabel/frame?src=${encodeURIComponent(`bell412/${p.name}/videos/${p.videos[0].stem}`)}&idx=0&w=240`} />
+                    ) : (
+                      <div className="pt-preview-thumb">{p.has_model3d ? <IcCube /> : <IcX />}</div>
+                    )}
+                    <b>{p.name}</b>
+                    <p>{p.description || '설명 없음'}{p.frames ? ` · 프레임 ${p.frames}장` : ''}</p>
                   </div>
                 </td>
-                <td className="pt-desc" title={r.desc || ''}>{r.desc}</td>
-                <td className="pt-mid">{r.model ? <span className="pt-ok"><IcCheck /></span> : <span className="pt-no">—</span>}</td>
-                <td className="pt-mid">{r.video ? <span className="pt-ok"><IcCheck /></span> : <span className="pt-no">—</span>}</td>
+                <td className="pt-cat">
+                  {editing ? <CategorySelect value={dCat} onChange={setDCat} />
+                           : (p.category || <span className="pt-no">—</span>)}
+                </td>
+                <td className="pt-desc" title={p.description || ''}>
+                  {editing ? <input className="reg-input pt-edit-in" value={dDesc} onChange={e => setDDesc(e.target.value)}
+                                    placeholder="설명" autoFocus />
+                           : p.description}
+                </td>
+                <td className="pt-mid">{p.has_model3d ? <span className="pt-ok"><IcCheck /></span> : <span className="pt-no">—</span>}</td>
+                <td className="pt-mid">
+                  {p.n_videos ? <span className="pt-ok" title={`${p.n_videos}개 · 프레임 ${p.frames}장`}><IcCheck /></span>
+                              : <span className="pt-no">—</span>}
+                </td>
                 <td>
                   <div className="pt-actions">
-                    <button className="act-btn ghost sm" type="button"><IcPencil /> 수정</button>
-                    <button className="act-btn dline sm" type="button"><IcTrash /> 삭제</button>
+                    {editing ? (
+                      <>
+                        <button className="act-btn train sm" type="button" onClick={() => save(p)}><IcCheck /> 저장</button>
+                        <button className="act-btn ghost sm" type="button" onClick={() => setEditId(null)}>취소</button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="act-btn ghost sm" type="button" onClick={() => startEdit(p)}><IcPencil /> 수정</button>
+                        <button className="act-btn dline sm" type="button" onClick={() => setConfirmDel(p)}><IcTrash /> 삭제</button>
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
       )}
+      <ConfirmModal open={!!confirmDel} title="부품 삭제"
+                    message={confirmDel ? `${confirmDel.name} 을(를) 삭제할까요? 영상·프레임·라벨 폴더는 _trash 로 옮겨 복구할 수 있습니다.` : ''}
+                    confirmLabel="삭제" danger
+                    onCancel={() => setConfirmDel(null)} onConfirm={() => doDelete(confirmDel)} />
     </div>
   )
 }

@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))  # 공�
 sys.path.insert(0, str(Path(__file__).resolve().parent))                   # backend/autolearning (dashboard_core·autolabel·sam2_autolabel)
 
 import uvicorn
-from fastapi import Body, FastAPI
+from fastapi import Body, FastAPI, File, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -66,6 +66,85 @@ def api_db_status():
         return {"source": "db", "db": True, "counts": _db_reads.counts()}
     except Exception as e:   # noqa: BLE001
         return {"source": "files(폴백)", "db": False, "error": f"{type(e).__name__}: {e}"}
+
+
+# ---- 부품 등록·목록(카테고리·부품·영상/3D 업로드) ----
+# 이름·카테고리·설명은 파일로 표현이 안 되므로 DB 가 원본. DB 없으면 여기만 503.
+try:
+    import parts_registry as reg   # noqa: PLC0415
+except Exception as e:   # noqa: BLE001
+    reg = None
+    print(f"[DB] 부품 등록 기능 비활성(DB 필요): {type(e).__name__}: {e}", flush=True)
+
+
+def _need_reg():
+    return JSONResponse({"error": "부품 등록 기능에는 DB 가 필요합니다. deploy/.env 와 DB 컨테이너를 확인하세요."},
+                        status_code=503)
+
+
+@app.get("/api/categories")
+def api_categories():
+    return reg.list_categories() if reg else _need_reg()
+
+
+@app.post("/api/categories")
+def api_category_add(payload: dict = Body(...)):
+    return reg.add_category(payload.get("name")) if reg else _need_reg()
+
+
+@app.patch("/api/categories/{cid}")
+def api_category_rename(cid: int, payload: dict = Body(...)):
+    return reg.rename_category(cid, payload.get("name")) if reg else _need_reg()
+
+
+@app.delete("/api/categories/{cid}")
+def api_category_delete(cid: int):
+    return reg.delete_category(cid) if reg else _need_reg()
+
+
+@app.get("/api/parts")
+def api_parts():
+    return reg.list_parts() if reg else _need_reg()
+
+
+@app.post("/api/parts")
+def api_part_create(payload: dict = Body(...)):
+    if not reg:
+        return _need_reg()
+    return reg.create_part(payload.get("name"), payload.get("category_id"), payload.get("description", ""))
+
+
+@app.patch("/api/parts/{pid}")
+def api_part_update(pid: int, payload: dict = Body(...)):
+    if not reg:
+        return _need_reg()
+    return reg.update_part(pid, payload.get("name"),
+                           payload.get("category_id", "keep"), payload.get("description"))
+
+
+@app.delete("/api/parts/{pid}")
+def api_part_delete(pid: int):
+    return reg.delete_part(pid) if reg else _need_reg()
+
+
+@app.post("/api/parts/{pid}/video")
+async def api_part_video(pid: int, file: UploadFile = File(...)):
+    """영상 업로드 → 저장 후 프레임 사전 추출을 백그라운드로 시작(job 반환)."""
+    if not reg:
+        return _need_reg()
+    return reg.upload_video(pid, file.filename, await file.read())
+
+
+@app.post("/api/parts/{pid}/model3d")
+async def api_part_model3d(pid: int, file: UploadFile = File(...)):
+    if not reg:
+        return _need_reg()
+    return reg.upload_model3d(pid, file.filename, await file.read())
+
+
+@app.get("/api/parts/job")
+def api_part_job(job: str):
+    return reg.job_status(job) if reg else _need_reg()
 
 
 @app.get("/api/methods")
