@@ -383,6 +383,13 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .reg-msg.ok { background: var(--success-bg-soft); border-color: var(--success-line); color: var(--success-ink); }
 .reg-msg.err { background: var(--danger-bg-soft); border-color: var(--danger-line); color: var(--danger-ink); }
 .csel-err { font-size: var(--fs-xs); color: var(--danger-ink); padding: var(--sp-3) var(--sp-4) 0; }
+/* 등록 폼에서 고른 영상 목록(개별 제거 가능) */
+.vid-picked { list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); }
+.vid-picked li { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); font-size: var(--fs-sm); }
+.vid-picked li > svg { width: var(--ic-sm); height: var(--ic-sm); color: var(--accent); flex-shrink: 0; }
+.vp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.vp-size { color: var(--muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 /* 동영상: 프레임 클릭 -> 업로드/촬영 선택 팝오버(프레임 폭, 마지막 필드라 위로 열림) */
 .reg-vidwrap { position: relative; }
 .reg-vidpop { position: absolute; bottom: calc(100% + var(--sp-3)); left: 0; right: 0; z-index: 60;
@@ -444,8 +451,12 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .part-table .pt-mid { text-align: center; }           /* 3D모델·동영상: 헤더·데이터 모두 가운데(아이콘) */
 .pt-w-name { width: 180px; }
 .pt-w-cat { width: 150px; }
-.pt-w-stat { width: 110px; }     /* 아이콘만이라 좁게, 나머지 폭은 설명이 전부 가져감 */
-.pt-w-manage { width: 190px; }
+.pt-w-stat { width: 92px; }      /* 아이콘·개수만이라 좁게, 나머지 폭은 설명이 전부 가져감 */
+.pt-w-manage { width: 268px; }   /* 영상·수정·삭제 3버튼 */
+/* 영상 개수 + 총 프레임(여러 테이크를 올릴 수 있으므로 개수를 보여준다) */
+.pt-vids { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.15;
+  font-weight: 700; color: var(--ink-strong); font-variant-numeric: tabular-nums; cursor: help; }
+.pt-vids small { font-size: var(--fs-2xs); font-weight: 500; color: var(--muted); }
 .pt-cat { color: var(--muted); }
 .pt-edit-in { min-height: var(--ctl-sm); font-size: var(--fs-sm); width: 100%; }
 .pt-preview-img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--r-sm);
