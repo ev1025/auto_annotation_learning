@@ -1434,9 +1434,76 @@ function PartsApp() {
 }
 
 // ===== 탭1: 부품 등록 (틀만 — 내부 로직 미구현) =====
+// 부품 카테고리 선택 — 드롭다운에서 항목 선택·추가·편집·삭제(세션 내, 로직 틀)
+function CategorySelect({ value, onChange }) {
+  const [cats, setCats] = useState(['공구', '계측기', '전장 부품', '기타'])
+  const [open, setOpen] = useState(false)
+  const [editIdx, setEditIdx] = useState(-1)          // 편집 중인 항목 인덱스
+  const [draft, setDraft] = useState('')              // 편집 입력값
+  const [adding, setAdding] = useState('')            // 새 항목 입력값
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setEditIdx(-1) } }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+  const startEdit = (i) => { setEditIdx(i); setDraft(cats[i]) }
+  const saveEdit = (i) => {
+    const v = draft.trim()
+    if (v) { const next = [...cats]; const old = next[i]; next[i] = v; setCats(next); if (value === old) onChange(v) }
+    setEditIdx(-1)
+  }
+  const del = (i) => { const old = cats[i]; setCats(cats.filter((_, k) => k !== i)); if (value === old) onChange('') }
+  const add = () => { const v = adding.trim(); if (v && !cats.includes(v)) setCats([...cats, v]); setAdding('') }
+  return (
+    <div className="csel" ref={ref}>
+      <button type="button" className="csel-btn" onClick={() => setOpen(o => !o)}>
+        <span className={value ? '' : 'csel-ph'}>{value || '카테고리 선택'}</span>
+        <IcChevronDown />
+      </button>
+      {open && (
+        <div className="csel-pop">
+          <div className="csel-list">
+            {cats.length === 0 && <div className="csel-empty">카테고리가 없습니다</div>}
+            {cats.map((c, i) => editIdx === i ? (
+              <div className="csel-edit" key={i}>
+                <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
+                       onKeyDown={e => { if (e.key === 'Enter') saveEdit(i); if (e.key === 'Escape') setEditIdx(-1) }} />
+                <button type="button" className="csel-ic ok" onClick={() => saveEdit(i)} title="저장"><IcCheck /></button>
+              </div>
+            ) : (
+              <div className={`csel-item${value === c ? ' on' : ''}`} key={i}>
+                <button type="button" className="csel-pick" onClick={() => { onChange(c); setOpen(false) }}>{c}</button>
+                <button type="button" className="csel-ic" onClick={() => startEdit(i)} title="편집"><IcPencil /></button>
+                <button type="button" className="csel-ic del" onClick={() => del(i)} title="삭제"><IcTrash /></button>
+              </div>
+            ))}
+          </div>
+          <div className="csel-add">
+            <input placeholder="새 카테고리 추가" value={adding} onChange={e => setAdding(e.target.value)}
+                   onKeyDown={e => { if (e.key === 'Enter') add() }} />
+            <button type="button" className="csel-addbtn" onClick={add} title="추가"><IcPlus /></button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function RegisterPart() {
   const [name, setName] = useState('')
+  const [cat, setCat] = useState('')
   const [desc, setDesc] = useState('')
+  const [vidMenu, setVidMenu] = useState(false)        // 동영상 프레임 클릭 시 열리는 선택 팝오버
+  const [vidMode, setVidMode] = useState(null)         // 'upload' | 'record' (선택 표시용, 로직 미구현)
+  const vidRef = useRef(null)
+  useEffect(() => {                                    // 바깥 클릭 시 팝오버 닫기
+    if (!vidMenu) return
+    const onDoc = (e) => { if (vidRef.current && !vidRef.current.contains(e.target)) setVidMenu(false) }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [vidMenu])
   return (
     <div className="tab-body">
       <h3 className="tab-h">부품 등록</h3>
@@ -1447,31 +1514,44 @@ function RegisterPart() {
           <input className="reg-input" value={name} onChange={e => setName(e.target.value)} placeholder="예: gearbox" />
         </div>
         <div className="reg-field">
+          <span className="reg-label">부품 카테고리</span>
+          <CategorySelect value={cat} onChange={setCat} />
+        </div>
+        <div className="reg-field">
           <span className="reg-label">부품 설명</span>
           <textarea className="reg-textarea" value={desc} onChange={e => setDesc(e.target.value)} rows={4}
                     placeholder="부품에 대한 설명 (선택)" />
         </div>
         <div className="reg-field">
           <span className="reg-label">3D 모델</span>
-          <div className="reg-drop">
+          {/* 프레임 전체 클릭 → 파일 선택(로직 미구현) */}
+          <button type="button" className="reg-drop">
             <IcCube />
-            <div className="reg-drop-txt"><b>3D 모델 불러오기</b><p>.glb · .obj · .stl · .ply 파일</p></div>
-            <button className="act-btn neutral" type="button">파일 선택</button>
-          </div>
+            <div className="reg-drop-txt"><b>3D 모델 불러오기</b><p>클릭하여 .glb · .obj · .stl · .ply 파일 선택</p></div>
+          </button>
         </div>
         <div className="reg-field">
           <span className="reg-label">부품 동영상</span>
-          <div className="reg-media">
-            <div className="reg-drop">
+          {/* 프레임 전체 클릭 → 업로드/촬영 선택 */}
+          <div className="reg-vidwrap" ref={vidRef}>
+            <button type="button" className="reg-drop" onClick={() => setVidMenu(v => !v)} aria-expanded={vidMenu}>
               <IcVideo />
-              <div className="reg-drop-txt"><b>동영상 업로드</b><p>.mp4 · .mov 파일</p></div>
-              <button className="act-btn neutral" type="button">파일 선택</button>
-            </div>
-            <div className="reg-drop">
-              <IcCamera />
-              <div className="reg-drop-txt"><b>직접 촬영</b><p>웹캠으로 부품 영상 촬영</p></div>
-              <button className="act-btn neutral" type="button">촬영 시작</button>
-            </div>
+              <div className="reg-drop-txt">
+                <b>{vidMode === 'upload' ? '동영상 업로드' : vidMode === 'record' ? '직접 촬영' : '부품 동영상 추가'}</b>
+                <p>클릭하여 동영상 업로드 또는 직접 촬영</p>
+              </div>
+              <IcChevronDown />
+            </button>
+            {vidMenu && (
+              <div className="reg-vidpop">
+                <button className="reg-vopt" type="button" onClick={() => { setVidMode('upload'); setVidMenu(false) }}>
+                  <IcVideo /><div><b>동영상 업로드</b><span>.mp4 · .mov 파일 선택</span></div>
+                </button>
+                <button className="reg-vopt" type="button" onClick={() => { setVidMode('record'); setVidMenu(false) }}>
+                  <IcCamera /><div><b>직접 촬영</b><span>웹캠으로 부품 영상 촬영</span></div>
+                </button>
+              </div>
+            )}
           </div>
         </div>
         <div className="reg-actions">
