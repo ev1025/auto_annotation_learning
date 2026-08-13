@@ -1,0 +1,30 @@
+# 개발용(Windows) DB 컨테이너.
+# GPU 가 필요 없는 Postgres 만 컨테이너로 띄우고, 파이썬(SAM2·YOLO)은 네이티브 venv 로 실행한다.
+#   준비: deploy/.env.example 를 deploy/.env 로 복사하고 비밀번호를 채운다(.env 는 git 제외)
+#   기동: docker compose --env-file deploy/.env -f deploy/docker-compose.dev.yml up -d
+#   종료: docker compose -f deploy/docker-compose.dev.yml down       (데이터 유지)
+#   초기화: docker compose -f deploy/docker-compose.dev.yml down -v  (볼륨까지 삭제)
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: xr_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${XR_DB_NAME:-xr_autolearning}
+      POSTGRES_USER: ${XR_DB_USER:-xr}
+      POSTGRES_PASSWORD: ${XR_DB_PASSWORD:?deploy/.env 에 XR_DB_PASSWORD 를 설정하세요}
+      # 한글 부품명 저장을 위해 UTF8 고정
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      # 127.0.0.1 로 한정한다. 0.0.0.0 으로 열면 같은 공유기의 다른 PC 에서 DB 가 직접 노출된다.
+      - "127.0.0.1:${XR_DB_PORT:-5432}:5432"
+    volumes:
+      - xr_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${XR_DB_USER:-xr} -d ${XR_DB_NAME:-xr_autolearning}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  xr_pgdata:

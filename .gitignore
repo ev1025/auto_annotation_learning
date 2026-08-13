@@ -71,3 +71,9 @@ results/dashboard/**/*.onnx
 exp_dashboard/dist/
 exp_dashboard/node_modules/
 backend/*/__pycache__/
+
+# DB 로컬 볼륨·테스트 산출물
+*.db
+
+# 배포 비밀값(예시 파일만 커밋)
+deploy/.env
