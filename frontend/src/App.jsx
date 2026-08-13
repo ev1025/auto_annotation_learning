@@ -953,10 +953,20 @@ function PartsApp() {
   const trainedPartList = () => items.filter(it => served ? (served.classes || []).includes(it.part) : it.trained).map(it => it.part)
 
   const openTrain = () => {   // 학습 페이지로 이동(부품목록/라벨/모델평가 어디서 오든)
-    // 화면 이동만으로는 아무것도 비우지 않는다 — 학습 결과·평가 결과는 '새 학습'을 누를 때만 초기화.
-    // (죽은 잡은 마운트 복구 effect가 백엔드 상태 조회 실패로 판정해 정리하므로 여기서 손댈 필요 없음)
+    // 화면 이동만으로는 학습·평가 결과를 비우지 않는다(초기화는 '새 학습'에서만).
+    // 단, 죽은 잡(백엔드 재시작으로 JOBS 가 비면 status 는 {"error":"unknown job"})은 여기서 정리한다.
+    // 탭 keep-alive 라 마운트 복구 effect 가 다시 돌지 않아, 이걸 안 하면 '학습 중 0% · 로그 대기 중'
+    // 유령 패널이 계속 남는다.
     loadTrain()
     setPage('training')
+    if (job && job !== 'err' && !status?.running) {
+      fetch(`/api/sam2/status?job=${job}`).then(r => r.json())
+        .then(d => {
+          if (d && d.error) { setJob(null); setStatus(null) }   // 백엔드가 '없는 잡'이라고 확인해준 경우만 정리
+          else if (d) setStatus(d)
+        })
+        .catch(() => {})   // 일시적 통신 오류로 정상 결과를 지우지 않는다
+    }
   }
   const backToLabel = () => setPage('label')               // 학습은 계속 진행(폴링 유지), 라벨 화면으로 복귀
   const newRun = () => { setJob(null); setStatus(null); setCmpJob(null); setCmp(null); setApplied(false); setPicked(trainedPartList()); setPage('training') }
@@ -1253,7 +1263,7 @@ function PartsApp() {
 
             {/* 우측: 실시간 로그 + 결과 */}
             <section className="train-monitor">
-              {job && (
+              {job && status && (
                 <div className="prog-head">
                   <CircularProgress pct={pct} done={trainDone} />
                   <div className="prog-head-info">
@@ -1264,8 +1274,8 @@ function PartsApp() {
                   {(trainDone || status?.stage === 'cancelled') && <button className="act-btn ghost" onClick={newRun} style={{ marginLeft: 'auto' }}>↻ 새 학습</button>}
                 </div>
               )}
-              {!job && (
-                // 학습 시작 전: 에포크 입력창 + 시작 버튼
+              {(!job || !status) && (
+                // 학습 시작 전(또는 잡 상태를 확인 못한 경우): 에포크 입력창 + 시작 버튼
                 <div className="train-setup-bar">
                   <span className="al-hint">Epoch</span>
                   <input className="ep-in" type="number" min={1} value={epochs}
@@ -1284,7 +1294,7 @@ function PartsApp() {
                   </div>
                 </div>
               )}
-              {job && <LogConsole log={status?.log} compact={running} />}
+              {job && status && <LogConsole log={status?.log} compact={running} />}
               {status?.error && <div className="reco-banner rollback"><IcWarn /><span>학습 오류: {status.error}</span></div>}
               {status?.stage === 'cancelled' && <div className="reco-banner review"><IcWarn /><span>학습이 중단되었습니다.</span></div>}
               {trainDone && (
