@@ -1040,7 +1040,10 @@ function PartsApp() {
 
   // 현재 위치·잡을 세션스토리지에 저장 → F5(같은 탭 새로고침) 때 있던 자리로 복원
   useEffect(() => { sessionStorage.setItem('xr_page', page) }, [page])
-  useEffect(() => { if (job && job !== 'err') sessionStorage.setItem('xr_job', job) }, [job])
+  useEffect(() => {   // job이 비워지면(새 설정) 세션스토리지도 같이 비움 — 안 그러면 리마운트 때 죽은 job이 되살아남
+    if (job && job !== 'err') sessionStorage.setItem('xr_job', job)
+    else sessionStorage.removeItem('xr_job')
+  }, [job])
   useEffect(() => { if (cmpJob && cmpJob !== 'err') sessionStorage.setItem('xr_cmpJob', cmpJob) }, [cmpJob])
   useEffect(() => { if (session) sessionStorage.setItem('xr_session', session) }, [session])
 
@@ -1307,7 +1310,7 @@ function PartsApp() {
       ) : (
         // ===== 3단계: 모델 평가 · 적용 (버전 비교 → 서비스 적용 / 선택형 롤백) =====
         <div className="ev2">
-          <PageHead title={cmpDone ? '모델 평가' : cmp?.running ? '모델 평가 중' : '모델관리'} back={() => setPage('training')}
+          <PageHead title={cmpDone ? '모델 평가' : cmp?.running ? '모델 평가 중' : '모델관리'} back={openTrain}
                     right={(!cmp?.running && !cmp?.error) ? (
                       <div className="ev2-head-actions">
                         <RollbackMenu models={models} servedId={served?.model_id}
@@ -1579,13 +1582,19 @@ function PartList() {
       ) : (
         <table className="part-table">
           <thead>
-            <tr><th>이름</th><th>설명</th><th>3D 모델</th><th>동영상</th><th className="pt-c">관리</th></tr>
+            <tr>
+              <th className="pt-w-name">이름</th>
+              <th className="pt-w-stat pt-mid">3D 모델</th>
+              <th className="pt-w-stat pt-mid">동영상</th>
+              <th>설명</th>
+              <th className="pt-w-manage pt-c">관리</th>
+            </tr>
           </thead>
           <tbody>
             {rows.map(r => (
               <tr key={r.name}>
                 <td className="pt-name">
-                  {r.name}
+                  <span className="pt-name-txt">{r.name}</span>
                   {/* 호버 미리보기: 동영상 있으면 그 썸네일, 없으면 3D 모델 썸네일(둘 다 없으면 안내) */}
                   <div className="pt-preview">
                     <div className="pt-preview-thumb">
@@ -1595,9 +1604,9 @@ function PartList() {
                     <p>{r.desc || '설명 없음'}</p>
                   </div>
                 </td>
-                <td className="pt-desc">{r.desc}</td>
-                <td>{r.model ? <span className="pt-ok"><IcCheck /></span> : <span className="pt-no">—</span>}</td>
-                <td>{r.video ? <span className="pt-ok"><IcCheck /></span> : <span className="pt-no">—</span>}</td>
+                <td className="pt-mid">{r.model ? <span className="pt-ok"><IcCheck /></span> : <span className="pt-no">—</span>}</td>
+                <td className="pt-mid">{r.video ? <span className="pt-ok"><IcCheck /></span> : <span className="pt-no">—</span>}</td>
+                <td className="pt-desc" title={r.desc || ''}>{r.desc}</td>
                 <td>
                   <div className="pt-actions">
                     <button className="act-btn ghost sm" type="button"><IcPencil /> 수정</button>

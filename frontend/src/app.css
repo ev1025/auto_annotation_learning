@@ -776,13 +776,18 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .csel-addbtn svg { width: 15px; height: 15px; }
 
 /* 부품 목록 */
-.part-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.part-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 14px; }
 .part-table th { text-align: left; font-weight: 700; font-size: 12.5px; color: var(--muted);
   padding: 10px 12px; border-bottom: 1px solid var(--line); background: transparent; }
 .part-table td { padding: 12px; border-bottom: 1px solid var(--line); color: var(--ink); vertical-align: middle; }
 .part-table .pt-c { text-align: right; }
+.part-table .pt-mid { text-align: center; }
+.pt-w-name { width: 16%; }
+.pt-w-stat { width: 10%; }
+.pt-w-manage { width: 190px; }
 .pt-name { font-weight: 700; color: var(--ink-strong); position: relative; cursor: default; }
-.pt-desc { color: var(--muted); }
+.pt-name-txt { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }   /* td엔 overflow 안 걸어야 팝업(.pt-preview)이 안 잘림 */
+.pt-desc { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }   /* 남는 폭 전부(가장 넓은 열) 사용, 넘치면 말줄임+title 툴팁 */
 .pt-ok { color: var(--success-ink); display: inline-flex; }
 .pt-no { color: var(--faint); }
 .pt-actions { display: flex; gap: 8px; justify-content: flex-end; }
