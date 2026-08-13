@@ -780,7 +780,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .part-table th { text-align: left; font-weight: 700; font-size: 12.5px; color: var(--muted);
   padding: 10px 12px; border-bottom: 1px solid var(--line); background: transparent; }
 .part-table td { padding: 12px; border-bottom: 1px solid var(--line); color: var(--ink); vertical-align: middle; }
-.part-table .pt-c { text-align: right; }    /* 관리: 헤더·데이터 모두 우측(버튼이 우측 정렬) */
+.part-table th.pt-w-manage { text-align: center; }   /* 관리: 헤더만 가운데, 버튼(데이터)은 그대로 우측 */
 .part-table .pt-mid { text-align: center; } /* 3D모델·동영상: 헤더·데이터 모두 가운데(아이콘) */
 .pt-w-name { width: 180px; }
 .pt-w-stat { width: 110px; }     /* 3D모델·동영상: 아이콘만이라 좁게, 나머지 폭은 설명이 전부 가져감 */
