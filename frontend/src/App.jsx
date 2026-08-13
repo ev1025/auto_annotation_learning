@@ -1584,9 +1584,9 @@ function PartList() {
           <thead>
             <tr>
               <th className="pt-w-name">이름</th>
+              <th>설명</th>
               <th className="pt-w-stat pt-mid">3D 모델</th>
               <th className="pt-w-stat pt-mid">동영상</th>
-              <th>설명</th>
               <th className="pt-w-manage pt-c">관리</th>
             </tr>
           </thead>
@@ -1604,9 +1604,9 @@ function PartList() {
                     <p>{r.desc || '설명 없음'}</p>
                   </div>
                 </td>
+                <td className="pt-desc" title={r.desc || ''}>{r.desc}</td>
                 <td className="pt-mid">{r.model ? <span className="pt-ok"><IcCheck /></span> : <span className="pt-no">—</span>}</td>
                 <td className="pt-mid">{r.video ? <span className="pt-ok"><IcCheck /></span> : <span className="pt-no">—</span>}</td>
-                <td className="pt-desc" title={r.desc || ''}>{r.desc}</td>
                 <td>
                   <div className="pt-actions">
                     <button className="act-btn ghost sm" type="button"><IcPencil /> 수정</button>

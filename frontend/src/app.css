@@ -782,8 +782,8 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .part-table td { padding: 12px; border-bottom: 1px solid var(--line); color: var(--ink); vertical-align: middle; }
 .part-table .pt-c { text-align: right; }    /* 관리: 헤더·데이터 모두 우측(버튼이 우측 정렬) */
 .part-table .pt-mid { text-align: center; } /* 3D모델·동영상: 헤더·데이터 모두 가운데(아이콘) */
-.pt-w-name { width: 16%; }
-.pt-w-stat { width: 10%; }
+.pt-w-name { width: 180px; }
+.pt-w-stat { width: 110px; }     /* 3D모델·동영상: 아이콘만이라 좁게, 나머지 폭은 설명이 전부 가져감 */
 .pt-w-manage { width: 190px; }
 .pt-name { font-weight: 700; color: var(--ink-strong); position: relative; cursor: default; }
 .pt-name-txt { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }   /* td엔 overflow 안 걸어야 팝업(.pt-preview)이 안 잘림 */
