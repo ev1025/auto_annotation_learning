@@ -1584,10 +1584,10 @@ function PartList() {
           <thead>
             <tr>
               <th className="pt-w-name">이름</th>
-              <th className="pt-w-stat">3D 모델</th>
-              <th className="pt-w-stat">동영상</th>
+              <th className="pt-w-stat pt-mid">3D 모델</th>
+              <th className="pt-w-stat pt-mid">동영상</th>
               <th>설명</th>
-              <th className="pt-w-manage">관리</th>
+              <th className="pt-w-manage pt-c">관리</th>
             </tr>
           </thead>
           <tbody>
