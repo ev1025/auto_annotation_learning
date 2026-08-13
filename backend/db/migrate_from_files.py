@@ -60,6 +60,21 @@ def take_roles(stems: list[str]) -> dict[str, str]:
     return {s: ("test" if s == test else "train") for s in stems}
 
 
+def frames_dir_for(part_dir: Path, stem: str) -> Path | None:
+    """영상의 프레임이 실제로 있는 폴더. 파일판(_source_info)과 같은 폴백 순서로 찾는다.
+      1) results/autolabels/<부품>/images/<stem>   신 저장소
+      2) data/bell412/<부품>/_frame_cache/<stem>   레거시(부품별)
+      3) data/_frame_cache/<stem>                 레거시(중앙)
+    이 순서를 안 맞추면 예전에 잘라둔 부품이 DB 에서 '프레임 0' 으로 보인다.
+    """
+    for d in (AUTOLABELS / part_dir.name / "images" / stem,
+              part_dir / "_frame_cache" / stem,
+              config.DATA_DIR / "_frame_cache" / stem):
+        if d.exists() and any(f.suffix.lower() in config.IMG_EXTS for f in d.iterdir()):
+            return d
+    return None
+
+
 def parse_label_txt(p: Path) -> list[dict] | None:
     """YOLO txt -> [{"cls":0,"cx":..,"cy":..,"w":..,"h":..}] (정규화 좌표 그대로)."""
     try:
@@ -142,8 +157,8 @@ def migrate_parts(s, stats: dict) -> None:
             s.flush()
             stats["videos"] += 1
 
-            img_dir = AUTOLABELS / pdir.name / "images" / v.stem
-            if not img_dir.exists():
+            img_dir = frames_dir_for(pdir, v.stem)
+            if img_dir is None:
                 continue
             frames = sorted(f for f in img_dir.iterdir() if f.suffix.lower() in config.IMG_EXTS)
             video.n_frames = len(frames)

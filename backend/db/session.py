@@ -57,8 +57,14 @@ def _build_url() -> str:
 
 DB_URL = _build_url()
 
-# pool_pre_ping: 컨테이너 재시작·유휴 끊김 후 죽은 커넥션을 자동으로 걷어낸다
-engine = create_engine(DB_URL, pool_pre_ping=True, future=True)
+# 접속 타임아웃이 없으면 DB 가 죽었을 때 요청이 수십 초~수 분 매달린다(파일 폴백이 무의미해짐).
+# Postgres 는 connect_timeout 으로 빠르게 실패시키고, 풀 대기도 짧게 잡는다.
+_CONNECT_TIMEOUT = int(os.environ.get("XR_DB_CONNECT_TIMEOUT", "3"))
+_kw: dict = {"pool_pre_ping": True, "future": True}   # pre_ping: 컨테이너 재시작 후 죽은 커넥션 자동 정리
+if DB_URL.startswith("postgresql"):
+    _kw["connect_args"] = {"connect_timeout": _CONNECT_TIMEOUT}
+    _kw["pool_timeout"] = _CONNECT_TIMEOUT
+engine = create_engine(DB_URL, **_kw)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 
 

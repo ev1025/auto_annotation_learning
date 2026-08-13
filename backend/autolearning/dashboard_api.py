@@ -33,6 +33,40 @@ DIST = config.BASE_DIR / "frontend" / "dist"
 
 app = FastAPI(title="XR 오토러닝 대시보드 API")
 
+# ---- 조회(read) 소스 선택 ----
+# XR_DB_READS=1 이면 조회를 DB 로 한다. 기본은 파일(현행 동작) — DB 없이도 대시보드가 그대로 돈다.
+# 동등성은 backend/db/verify_reads.py 로 검증했다(파일판 vs DB판 결과 비교).
+_db_reads = None
+if os.environ.get("XR_DB_READS") == "1":
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # backend (db 패키지)
+        from db import reads as _db_reads   # noqa: PLC0415
+        print(f"[DB] 조회 경로 = DB / 행 수 {_db_reads.counts()}", flush=True)
+    except Exception as e:   # noqa: BLE001  DB 문제로 서버가 못 뜨면 안 되므로 폴백
+        print(f"[DB] 초기화 실패 -> 파일 조회로 폴백: {type(e).__name__}: {e}", flush=True)
+        _db_reads = None
+
+
+def _read(fn_name, file_fn):
+    """DB 우선, 실패 시 파일 폴백. 조회 실패로 화면이 비지 않게 한다."""
+    if _db_reads is not None:
+        try:
+            return getattr(_db_reads, fn_name)()
+        except Exception as e:   # noqa: BLE001
+            print(f"[DB] {fn_name} 실패 -> 파일 폴백: {type(e).__name__}: {e}", flush=True)   # 조용한 폴백 방지(운영 중 즉시 보이게)
+    return file_fn()
+
+
+@app.get("/api/db/status")
+def api_db_status():
+    """조회 소스와 DB 행 수(운영 확인용)."""
+    if _db_reads is None:
+        return {"source": "files", "db": False}
+    try:
+        return {"source": "db", "db": True, "counts": _db_reads.counts()}
+    except Exception as e:   # noqa: BLE001
+        return {"source": "files(폴백)", "db": False, "error": f"{type(e).__name__}: {e}"}
+
 
 @app.get("/api/methods")
 def api_methods():
@@ -83,7 +117,7 @@ def api_export():
 
 @app.get("/api/autolabel/folders")
 def api_autolabel_folders():
-    return autolabel.list_folders()
+    return _read("list_folders", autolabel.list_folders)
 
 
 @app.get("/api/autolabel/frame")
@@ -112,8 +146,8 @@ def api_parts_sessions():
 
 @app.get("/api/sam2/shots")
 def api_sam2_shots():
-    """부품별 shots.json 취합 → {"<영상>": {"<프레임>": [[rx,ry,lab],...]}}. 프론트 참조샷 복원."""
-    return sa.load_shots()
+    """부품별 참조샷 취합 → {"<영상>": {"<프레임>": [[rx,ry,lab],...]}}. 프론트 참조샷 복원."""
+    return _read("load_shots", sa.load_shots)
 
 
 @app.post("/api/sam2/parts_label")
@@ -154,7 +188,7 @@ def api_sam2_part_frames(part: str):
 
 @app.get("/api/sam2/labeled_parts")
 def api_sam2_labeled_parts():
-    return sa.labeled_parts()
+    return _read("labeled_parts", sa.labeled_parts)
 
 
 @app.get("/api/sam2/train_frame")
@@ -187,7 +221,7 @@ def api_sam2_rollback(payload: dict = Body(...)):
 
 @app.get("/api/sam2/served")
 def api_sam2_served():
-    return sa.served_model() or {"none": True}
+    return _read("served_model", sa.served_model) or {"none": True}
 
 
 @app.get("/api/sam2/active")
@@ -197,7 +231,7 @@ def api_sam2_active():
 
 @app.get("/api/sam2/models")
 def api_sam2_models():
-    return sa.list_models()
+    return _read("list_models", sa.list_models)
 
 
 @app.post("/api/sam2/rollback_to")
