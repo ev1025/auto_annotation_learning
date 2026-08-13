@@ -1579,7 +1579,7 @@ function PartList() {
       ) : (
         <table className="part-table">
           <thead>
-            <tr><th>부품 이름</th><th>설명</th><th>3D 모델</th><th>동영상</th><th className="pt-c">관리</th></tr>
+            <tr><th>이름</th><th>설명</th><th>3D 모델</th><th>동영상</th><th className="pt-c">관리</th></tr>
           </thead>
           <tbody>
             {rows.map(r => (
