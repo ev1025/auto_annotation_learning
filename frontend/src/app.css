@@ -359,8 +359,20 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 
 /* 등록 화면(수정 모드)의 등록된 영상 목록 */
 .vm-list { list-style: none; display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-4); }
-.vm-list li { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-3) var(--sp-4);
+/* 항목 = 요약행(.vm-row) + 펼침 미리보기(.vm-player) 를 세로로 쌓는다 */
+.vm-list li { display: flex; flex-direction: column; overflow: hidden;
   background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); }
+.vm-list li.on { border-color: var(--line-strong); }
+.vm-row { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-3) var(--sp-4);
+  cursor: pointer; }
+.vm-row:hover { background: var(--surface-3); }
+.vm-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.vm-caret { display: inline-flex; color: var(--faint); flex-shrink: 0; transition: transform .18s ease; }
+.vm-caret svg { width: var(--ic-sm); height: var(--ic-sm); }
+.vm-caret.on { transform: rotate(180deg); color: var(--ink); }
+/* 미리보기: 목록을 아래로 밀면서 펼쳐진다 */
+.vm-player { border-top: 1px solid var(--line); background: #000; }
+.vm-player video { display: block; width: 100%; height: 220px; object-fit: contain; background: #000; }
 .vm-thumb { width: 96px; aspect-ratio: 16 / 10; object-fit: cover; border-radius: var(--r-sm);
   background: var(--surface-3); flex-shrink: 0; display: block; }
 .vm-thumb.none { display: flex; align-items: center; justify-content: center; color: var(--faint); }
@@ -375,9 +387,12 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 /* 폼이 카드 높이를 채우고, 액션(저장·등록)은 맨 아래 우측으로 밀린다 */
 .reg-form { display: flex; flex-direction: column; gap: var(--sp-10); flex: 1; min-height: 0; }
 /* 2열: 왼쪽 식별정보(넓게) · 오른쪽 첨부. max-width 를 걸면 오른쪽이 텅 비어 보였다 */
-.reg-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: var(--sp-12);
+/* grid-template-rows: minmax(0,1fr) 이 없으면 행 높이가 콘텐츠(영상 미리보기) 만큼 늘어나
+   목록이 카드 밖·저장 버튼 위까지 밀려나온다. 자식 열에도 min-height:0 이 필요하다. */
+.reg-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr); gap: var(--sp-12);
   align-items: stretch; flex: 1; min-height: 0; }
-.reg-col { display: flex; flex-direction: column; gap: var(--sp-10); min-width: 0; }
+.reg-col { display: flex; flex-direction: column; gap: var(--sp-10); min-width: 0; min-height: 0; }
 .reg-row { display: flex; gap: var(--sp-10); }
 .reg-row .reg-field { flex: 1; min-width: 0; }
 /* 설명이 왼쪽 열의 남는 높이를 전부 차지 */
@@ -418,13 +433,6 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .reg-msg.ok { background: var(--success-bg-soft); border-color: var(--success-line); color: var(--success-ink); }
 .reg-msg.err { background: var(--danger-bg-soft); border-color: var(--danger-line); color: var(--danger-ink); }
 .csel-err { font-size: var(--fs-xs); color: var(--danger-ink); padding: var(--sp-3) var(--sp-4) 0; }
-/* 등록 폼에서 고른 영상 목록(개별 제거 가능) */
-.vid-picked { list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); }
-.vid-picked li { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-3) var(--sp-4);
-  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); font-size: var(--fs-sm); }
-.vid-picked li > svg { width: var(--ic-sm); height: var(--ic-sm); color: var(--accent); flex-shrink: 0; }
-.vp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
-.vp-size { color: var(--muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 /* 동영상: 프레임 클릭 -> 업로드/촬영 선택 팝오버(프레임 폭, 마지막 필드라 위로 열림) */
 .reg-vidwrap { position: relative; }
 .reg-vidpop { position: absolute; bottom: calc(100% + var(--sp-3)); left: 0; right: 0; z-index: 60;

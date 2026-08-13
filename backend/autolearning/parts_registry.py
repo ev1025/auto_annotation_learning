@@ -279,6 +279,22 @@ def list_part_videos(pid: int) -> dict:
         return {"part": p.name, "id": p.id, "videos": out}
 
 
+def video_file_path(pid: int, stem: str) -> Path | None:
+    """미리보기 재생용 실제 영상 파일 경로. 부품 폴더 밖은 거부(경로 탈출 방지)."""
+    with SessionLocal() as s:
+        p = s.get(Part, pid)
+        if not p:
+            return None
+        v = s.query(PartVideo).filter_by(part_id=p.id, stem=stem).first()
+        if not v:
+            return None
+        fp = (config.BASE_DIR / v.path).resolve()
+        root = (PARTS_ROOT / p.name).resolve()   # 세션 안에서 값을 뽑아둔다(닫힌 뒤 접근 금지)
+    if not str(fp).startswith(str(root)) or not fp.exists():
+        return None
+    return fp
+
+
 def delete_part_video(pid: int, stem: str) -> dict:
     """부품에서 영상 하나 삭제. 원본은 부품 폴더의 _trash 로 이동(복구 가능),
     프레임·라벨·참조샷은 정리하고 DB 행도 prune 된다(sam2_autolabel.delete_video 재사용)."""

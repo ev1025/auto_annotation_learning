@@ -8,7 +8,9 @@
   cd dashboard && npm install && npm run build   # 프론트 변경 시 1회
   python scripts/verify/dashboard_api.py             # http://127.0.0.1:7862
 """
+import mimetypes
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -16,8 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))  # 공�
 sys.path.insert(0, str(Path(__file__).resolve().parent))                   # backend/autolearning (dashboard_core·autolabel·sam2_autolabel)
 
 import uvicorn
-from fastapi import Body, FastAPI, File, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi import Body, FastAPI, File, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import config
@@ -156,6 +158,49 @@ def api_part_videos(pid: int):
 @app.delete("/api/parts/{pid}/video/{stem}")
 def api_part_video_delete(pid: int, stem: str):
     return reg.delete_part_video(pid, stem) if reg else _need_reg()
+
+
+@app.get("/api/parts/{pid}/video/{stem}/file")
+def api_part_video_file(pid: int, stem: str, request: Request):
+    """미리보기 재생용 영상 스트리밍. Range 를 처리해야 <video> 에서 탐색(시크)이 된다.
+    (StarletteFileResponse 는 부분 응답을 안 하므로 직접 206 을 만든다)"""
+    if not reg:
+        return _need_reg()
+    fp = reg.video_file_path(pid, stem)
+    if not fp:
+        return JSONResponse({"error": "영상을 찾지 못했습니다."}, status_code=404)
+    size = fp.stat().st_size
+    mime = mimetypes.guess_type(fp.name)[0] or "video/mp4"
+    rng = request.headers.get("range") or request.headers.get("Range")
+    if not rng:
+        return FileResponse(fp, media_type=mime,
+                            headers={"Accept-Ranges": "bytes", "Cache-Control": "no-store"})
+    m = re.match(r"bytes=(\d*)-(\d*)", rng)
+    if not m:
+        return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
+    start = int(m.group(1)) if m.group(1) else 0
+    end = int(m.group(2)) if m.group(2) else min(start + 4 * 1024 * 1024 - 1, size - 1)   # 4MB 청크
+    end = min(end, size - 1)
+    if start > end:
+        return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
+
+    def chunks():
+        with open(fp, "rb") as f:
+            f.seek(start)
+            left = end - start + 1
+            while left > 0:
+                buf = f.read(min(256 * 1024, left))
+                if not buf:
+                    break
+                left -= len(buf)
+                yield buf
+
+    return StreamingResponse(chunks(), status_code=206, media_type=mime, headers={
+        "Content-Range": f"bytes {start}-{end}/{size}",
+        "Content-Length": str(end - start + 1),
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store",
+    })
 
 
 @app.get("/api/methods")

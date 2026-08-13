@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 
 // Lucide 스타일 인라인 SVG 아이콘 (특수문자 ◀▶ 대체)
 const SVG = (children) => (
@@ -1563,6 +1563,14 @@ async function uploadVideos(pid, files, onProgress = () => {}) {
 
 // 등록 화면 = 신규 등록 + 기존 부품 수정 겸용.
 // editPart 가 있으면 수정 모드: 정보 저장 + 등록된 영상 목록 확인·삭제·추가를 한 화면에서 한다.
+// 업로드 전 로컬 파일 미리보기. src 에 URL.createObjectURL 을 직접 쓰면 렌더마다
+// 새 blob URL 이 생겨 누수되므로, 파일당 한 번만 만들고 닫힐 때 해제한다.
+function LocalVideoPreview({ file }) {
+  const url = useMemo(() => URL.createObjectURL(file), [file])
+  useEffect(() => () => URL.revokeObjectURL(url), [url])
+  return <video src={url} controls autoPlay muted playsInline />
+}
+
 function RegisterPart({ editPart, onExitEdit, onSaved }) {
   const editing = !!editPart
   const [name, setName] = useState('')
@@ -1575,6 +1583,7 @@ function RegisterPart({ editPart, onExitEdit, onSaved }) {
   const [busy, setBusy] = useState('')                 // 진행 문구(등록·업로드·프레임 추출)
   const [msg, setMsg] = useState(null)                 // {ok|err, text}
   const [confirmDel, setConfirmDel] = useState(null)   // 삭제할 영상
+  const [openVid, setOpenVid] = useState(null)         // 미리보기 펼친 영상 stem
   const vidRef = useRef(null)
   const vidInput = useRef(null)
   const m3dInput = useRef(null)
@@ -1593,7 +1602,7 @@ function RegisterPart({ editPart, onExitEdit, onSaved }) {
 
   // 수정 대상이 바뀌면 그 부품 값으로 폼을 채운다(탭이 언마운트되지 않으므로 명시적으로 동기화)
   useEffect(() => {
-    setMsg(null); setBusy(''); setVidFiles([]); setM3dFile(null)
+    setMsg(null); setBusy(''); setVidFiles([]); setM3dFile(null); setOpenVid(null)
     if (editPart) {
       setName(editPart.name); setCat(editPart.category_id); setDesc(editPart.description || '')
       setVids([]); loadVids(editPart.id)
@@ -1766,16 +1775,32 @@ function RegisterPart({ editPart, onExitEdit, onSaved }) {
                 <div className="vm-empty grow">선택한 영상이 여기에 표시됩니다</div>
               )}
               {!editing && vidFiles.length > 0 && (
-                <ul className="vid-picked grow">
-                  {vidFiles.map((f, i) => (
-                    <li key={`${f.name}_${i}`}>
-                      <IcVideo />
-                      <span className="vp-name">{f.name}</span>
-                      <span className="vp-size">{(f.size / 1048576).toFixed(1)} MB</span>
-                      <button type="button" className="csel-ic del" title="목록에서 제거"
-                              onClick={() => setVidFiles(vidFiles.filter((_, k) => k !== i))}><IcX /></button>
+                <ul className="vm-list grow">
+                  {vidFiles.map((f, i) => {
+                    const key = `${f.name}_${i}`
+                    const open = openVid === key
+                    return (
+                    <li key={key} className={open ? 'on' : ''}>
+                      {/* 업로드 전이라 서버에 없다 -> 로컬 파일을 objectURL 로 바로 재생 */}
+                      <div className="vm-row" role="button" tabIndex={0}
+                           onClick={() => setOpenVid(open ? null : key)}
+                           onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenVid(open ? null : key) } }}>
+                        <div className="vm-thumb none"><IcVideo /></div>
+                        <div className="vm-meta">
+                          <b>{f.name}</b>
+                          <span>{(f.size / 1048576).toFixed(1)} MB · 등록 시 프레임 추출</span>
+                        </div>
+                        <span className={`vm-caret${open ? ' on' : ''}`}><IcChevronDown /></span>
+                        <button type="button" className="csel-ic del" title="목록에서 제거"
+                                onClick={e => { e.stopPropagation(); setOpenVid(null); setVidFiles(vidFiles.filter((_, k) => k !== i)) }}><IcX /></button>
+                      </div>
+                      {open && (
+                        <div className="vm-player">
+                          <LocalVideoPreview file={f} />
+                        </div>
+                      )}
                     </li>
-                  ))}
+                  )})}
                 </ul>
               )}
 
@@ -1784,21 +1809,35 @@ function RegisterPart({ editPart, onExitEdit, onSaved }) {
                 vids.length === 0
                   ? <div className="vm-empty grow">등록된 영상이 없습니다. 위에서 추가하세요.</div>
                   : <ul className="vm-list grow">
-                      {vids.map(v => (
-                        <li key={v.stem}>
-                          {v.frames
-                            ? <img className="vm-thumb" loading="lazy" alt={v.stem}
-                                   src={`/api/autolabel/frame?src=${encodeURIComponent(v.src)}&idx=0&w=200`} />
-                            : <div className="vm-thumb none"><IcVideo /></div>}
-                          <div className="vm-meta">
-                            <b>{v.stem}</b>
-                            {/* 역할(train/test)은 내부 판정값이라 화면엔 노출하지 않는다 */}
-                            <span>프레임 {v.frames}장{v.size_mb != null ? ` · ${v.size_mb} MB` : ''}</span>
+                      {vids.map(v => {
+                        const open = openVid === v.stem
+                        return (
+                        <li key={v.stem} className={open ? 'on' : ''}>
+                          {/* 항목을 누르면 아래로 밀리면서 실제 영상 미리보기가 펼쳐진다 */}
+                          <div className="vm-row" role="button" tabIndex={0}
+                               onClick={() => setOpenVid(open ? null : v.stem)}
+                               onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenVid(open ? null : v.stem) } }}>
+                            {v.frames
+                              ? <img className="vm-thumb" loading="lazy" alt={v.stem}
+                                     src={`/api/autolabel/frame?src=${encodeURIComponent(v.src)}&idx=0&w=200`} />
+                              : <div className="vm-thumb none"><IcVideo /></div>}
+                            <div className="vm-meta">
+                              <b>{v.stem}</b>
+                              <span>프레임 {v.frames}장{v.size_mb != null ? ` · ${v.size_mb} MB` : ''}</span>
+                            </div>
+                            <span className={`vm-caret${open ? ' on' : ''}`}><IcChevronDown /></span>
+                            <button className="csel-ic del" type="button" disabled={!!busy} title="이 영상 삭제"
+                                    onClick={e => { e.stopPropagation(); setConfirmDel(v) }}><IcTrash /></button>
                           </div>
-                          <button className="csel-ic del" type="button" disabled={!!busy} title="이 영상 삭제"
-                                  onClick={() => setConfirmDel(v)}><IcTrash /></button>
+                          {open && (
+                            <div className="vm-player">
+                              {/* 펼칠 때만 로드해서 목록 열자마자 여러 영상을 내려받지 않게 한다 */}
+                              <video src={`/api/parts/${editPart.id}/video/${encodeURIComponent(v.stem)}/file`}
+                                     controls autoPlay muted playsInline preload="metadata" />
+                            </div>
+                          )}
                         </li>
-                      ))}
+                      )})}
                     </ul>
               )}
             </div>
