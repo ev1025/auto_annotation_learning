@@ -18,6 +18,15 @@ const IcCheck = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"
        strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}><polyline points="20 6 9 17 4 12" /></svg>
 )
+// 탭·폼용 아이콘
+const IcPlus = () => SVG(<><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>)
+const IcList = () => SVG(<><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></>)
+const IcLayers = () => SVG(<><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></>)
+const IcCube = () => SVG(<><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></>)
+const IcVideo = () => SVG(<><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></>)
+const IcCamera = () => SVG(<><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></>)
+const IcPencil = () => SVG(<><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></>)
+const IcTrash = () => SVG(<><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></>)
 const IcWarn = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
        strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}>
@@ -358,7 +367,7 @@ function AutoLabelView() {
   return (
     <div>
       {!src ? <p className="al-hint">부품 폴더가 없습니다. (data/bell412/parts/&lt;부품&gt;/videos)</p> : (
-        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 196px)', minHeight: 420, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 256px)', minHeight: 420, overflow: 'hidden' }}>
           {/* 상단 범례 제거 — 범례는 이미지·입력마스크 아래로 이동 */}
           {/* 상단 액션 버튼줄 */}
           <div className="al-controls" style={{ flexShrink: 0 }}>
@@ -1424,11 +1433,118 @@ function PartsApp() {
   )
 }
 
+// ===== 탭1: 부품 등록 (틀만 — 내부 로직 미구현) =====
+function RegisterPart() {
+  const [name, setName] = useState('')
+  const [desc, setDesc] = useState('')
+  return (
+    <div className="tab-body">
+      <h3 className="tab-h">부품 등록</h3>
+      <p className="tab-sub">부품 정보와 3D 모델·동영상을 등록합니다.</p>
+      <div className="reg-form">
+        <div className="reg-field">
+          <span className="reg-label">부품 이름</span>
+          <input className="reg-input" value={name} onChange={e => setName(e.target.value)} placeholder="예: gearbox" />
+        </div>
+        <div className="reg-field">
+          <span className="reg-label">부품 설명</span>
+          <textarea className="reg-textarea" value={desc} onChange={e => setDesc(e.target.value)} rows={4}
+                    placeholder="부품에 대한 설명 (선택)" />
+        </div>
+        <div className="reg-field">
+          <span className="reg-label">3D 모델</span>
+          <div className="reg-drop">
+            <IcCube />
+            <div className="reg-drop-txt"><b>3D 모델 불러오기</b><p>.glb · .obj · .stl · .ply 파일</p></div>
+            <button className="act-btn neutral" type="button">파일 선택</button>
+          </div>
+        </div>
+        <div className="reg-field">
+          <span className="reg-label">부품 동영상</span>
+          <div className="reg-media">
+            <div className="reg-drop">
+              <IcVideo />
+              <div className="reg-drop-txt"><b>동영상 업로드</b><p>.mp4 · .mov 파일</p></div>
+              <button className="act-btn neutral" type="button">파일 선택</button>
+            </div>
+            <div className="reg-drop">
+              <IcCamera />
+              <div className="reg-drop-txt"><b>직접 촬영</b><p>웹캠으로 부품 영상 촬영</p></div>
+              <button className="act-btn neutral" type="button">촬영 시작</button>
+            </div>
+          </div>
+        </div>
+        <div className="reg-actions">
+          <button className="act-btn train" type="button" disabled>부품 등록</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ===== 탭2: 부품 목록 (틀만 — 자리표시 행) =====
+function PartList() {
+  const rows = [   // TODO: 실제 등록 부품으로 교체
+    { name: 'a_test', desc: '테스트 부품', model: true, video: true },
+    { name: 'gearbox', desc: '기어박스', model: false, video: true },
+  ]
+  return (
+    <div className="tab-body">
+      <h3 className="tab-h">부품 목록</h3>
+      <p className="tab-sub">등록된 부품을 확인하고 수정·삭제합니다.</p>
+      {rows.length === 0 ? (
+        <div className="list-empty">등록된 부품이 없습니다. ‘부품 등록’ 탭에서 추가하세요.</div>
+      ) : (
+        <table className="part-table">
+          <thead>
+            <tr><th>부품 이름</th><th>설명</th><th>3D 모델</th><th>동영상</th><th className="pt-c">관리</th></tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.name}>
+                <td className="pt-name">{r.name}</td>
+                <td className="pt-desc">{r.desc}</td>
+                <td>{r.model ? <span className="pt-ok"><IcCheck /></span> : <span className="pt-no">—</span>}</td>
+                <td>{r.video ? <span className="pt-ok"><IcCheck /></span> : <span className="pt-no">—</span>}</td>
+                <td>
+                  <div className="pt-actions">
+                    <button className="act-btn ghost sm" type="button"><IcPencil /> 수정</button>
+                    <button className="act-btn dline sm" type="button"><IcTrash /> 삭제</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
+const APP_TABS = [
+  { id: 'register', label: '부품 등록', Icon: IcPlus },
+  { id: 'list', label: '부품 목록', Icon: IcList },
+  { id: 'train', label: '부품 학습', Icon: IcLayers },
+]
+
 export default function App() {
+  const [tab, setTab] = useState(() => localStorage.getItem('xr_tab') || 'register')
+  const go = (t) => { setTab(t); localStorage.setItem('xr_tab', t) }
   return (
     <main className="solo">
+      <div className="apptabs">
+        <div className="seg">
+          {APP_TABS.map(({ id, label, Icon }) => (
+            <button key={id} className={`apptab${tab === id ? ' on' : ''}`} onClick={() => go(id)} type="button">
+              <Icon /><span>{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="card">
-        <PartsApp />
+        {tab === 'register' && <RegisterPart />}
+        {tab === 'list' && <PartList />}
+        {tab === 'train' && <PartsApp />}
       </div>
     </main>
   )

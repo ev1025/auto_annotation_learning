@@ -496,7 +496,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .pb-btn { white-space: nowrap; }
 
 /* ===== 학습결과·평가 개편(ev2): 카드 그룹 + 하단 고정 액션바 ===== */
-.ev2 { display: flex; flex-direction: column; height: calc(100vh - 140px); min-height: 360px; overflow: hidden; }
+.ev2 { display: flex; flex-direction: column; height: calc(100vh - 200px); min-height: 360px; overflow: hidden; }
 .ev2-progress { display: flex; align-items: center; gap: 16px; padding: 24px 4px; }
 .ev2-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 14px;
   background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px 20px; }
@@ -686,3 +686,55 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
   .verc-grid, .ba-pair { grid-template-columns: 1fr; }
   .verc-vs, .ba-arrow { display: none; }
 }
+
+/* ===== 앱 상단 3탭 (부품 등록 / 부품 목록 / 부품 학습) ===== */
+.apptabs { max-width: 1280px; margin: 0 auto 14px; }
+.apptabs .seg { display: inline-flex; gap: 4px; padding: 4px; background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: var(--r-lg); }
+.apptab { display: inline-flex; align-items: center; gap: 7px; padding: 8px 16px; border: none;
+  background: transparent; border-radius: var(--r-md); font-family: inherit; font-size: 14px; font-weight: 600;
+  color: var(--muted); cursor: pointer; transition: background .12s, color .12s, box-shadow .12s; }
+.apptab svg { width: 16px; height: 16px; }
+.apptab:hover { color: var(--ink-strong); }
+.apptab.on { background: var(--surface); color: var(--accent-ink); box-shadow: var(--shadow-sm); }
+
+/* 탭 본문 공통 헤더 */
+.tab-body { display: flex; flex-direction: column; }
+.tab-h { font-size: 19px; font-weight: 800; letter-spacing: -.01em; color: var(--ink-strong); margin: 0; }
+.tab-sub { font-size: 13px; color: var(--muted); margin: 5px 0 22px; }
+
+/* 부품 등록 폼 */
+.reg-form { display: flex; flex-direction: column; gap: 18px; max-width: 680px; }
+.reg-field { display: flex; flex-direction: column; gap: 7px; }
+.reg-label { font-size: 13.5px; font-weight: 700; color: var(--ink-strong); }
+.reg-input, .reg-textarea { font-family: inherit; font-size: 14px; color: var(--ink);
+  padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--surface); }
+.reg-input::placeholder, .reg-textarea::placeholder { color: var(--faint); }
+.reg-input:focus, .reg-textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,.15); }
+.reg-textarea { resize: vertical; min-height: 84px; line-height: 1.55; }
+.reg-media { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.reg-drop { display: flex; align-items: center; gap: 14px; padding: 15px 16px;
+  border: 1.5px dashed var(--line-strong); border-radius: var(--r-md); background: var(--surface-2); }
+.reg-drop > svg { width: 26px; height: 26px; color: var(--accent); flex-shrink: 0; }
+.reg-drop-txt { flex: 1; min-width: 0; }
+.reg-drop-txt b { display: block; font-size: 13.5px; color: var(--ink-strong); }
+.reg-drop-txt p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+.reg-actions { margin-top: 4px; }
+
+/* 부품 목록 */
+.part-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.part-table th { text-align: left; font-weight: 700; font-size: 12.5px; color: var(--muted);
+  padding: 10px 12px; border-bottom: 1px solid var(--line); background: transparent; }
+.part-table td { padding: 12px; border-bottom: 1px solid var(--line); color: var(--ink); vertical-align: middle; }
+.part-table .pt-c { text-align: right; }
+.pt-name { font-weight: 700; color: var(--ink-strong); }
+.pt-desc { color: var(--muted); }
+.pt-ok { color: var(--success-ink); display: inline-flex; }
+.pt-no { color: var(--faint); }
+.pt-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.act-btn.sm { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 5px 11px; font-size: 12.5px; min-width: 0; }
+.act-btn.sm svg { width: 13px; height: 13px; }
+.act-btn.dline { background: #fff; color: var(--danger-ink); border-color: var(--danger-line); }
+.act-btn.dline:hover:not(:disabled) { background: var(--danger-bg); }
+.list-empty { padding: 40px; text-align: center; color: var(--faint); font-size: 14px;
+  border: 1px dashed var(--line); border-radius: var(--r-lg); background: var(--surface-2); }
