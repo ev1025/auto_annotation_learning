@@ -6,6 +6,7 @@
 - 숫자로 시작하는 실행 스크립트(1_, 2_, 3_)는 파이썬 식별자 규칙상 import 가 불가능하므로,
   '공유 상수'는 import 가능한 이 모듈(config.py)에 둔다.
 """
+import os
 from pathlib import Path
 
 # 프로젝트 루트 절대경로(이 파일은 scripts/ 안에 있으므로 한 단계 위).
@@ -20,7 +21,10 @@ NEW_MODEL_ONNX = MODELS_DIR / "model.onnx"  # ONNX 변환 산출물(Thor TensorR
 
 # --- YOLO 추론 서버(배포 타깃) ---  오토러닝 '신규 모델 적용' 시 여기로 자동 배포(복사+리로드)
 YOLO_SERVER_DIR = BASE_DIR / "backend" / "yolo_server"
-YOLO_SERVER_URL = "http://localhost:8000"   # /reload 호출용(서버 안 떠 있으면 파일만 배포)
+# 우리 YOLO 추론서버 포트 = 9412 (Bell 412 에서 따옴).
+# 8000 은 흔해서 다른 프로젝트 서버(화재/연기 API 등)와 충돌한다 — 실제로 충돌해 /reload 가 남의 서버로 갔었다.
+YOLO_SERVER_PORT = int(os.environ.get("YOLO_SERVER_PORT", "9412"))
+YOLO_SERVER_URL = os.environ.get("YOLO_SERVER_URL", f"http://127.0.0.1:{YOLO_SERVER_PORT}")   # /reload 호출용(서버 안 떠 있으면 파일만 배포)
 
 # --- 데이터셋 경로 ---
 DATA_DIR = BASE_DIR / "data"          # 모든 데이터(원본·데이터셋·등록영상)의 단일 루트
@@ -50,9 +54,9 @@ IMG_SIZE = 640
 BATCH = 16
 VAL_RATIO = 0.2  # 학습 / 검증 분할 비율(val 비율)
 
-# --- API 서버 ---
-HOST = "0.0.0.0"
-PORT = 8000
+# --- 서빙 모델 ---
+# (구 api_server 용 HOST/PORT 상수는 제거했다. 사용처가 없고 8000 이라 새 포트 9412 와 충돌하는 정보였음.
+#  각 서버는 자기 포트를 직접 정한다: 대시보드 7862, YOLO 추론 YOLO_SERVER_PORT=9412)
 SERVE_MODEL = NEW_MODEL_PT  # 서빙에 쓸 가중치(.pt 또는 .onnx 로 바꿔도 동작)
 
 # 지원 이미지 확장자(소문자 비교용)

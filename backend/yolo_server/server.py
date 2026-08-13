@@ -14,11 +14,11 @@
 실행:
   pip install -r requirements.txt   (최초 1회)
   python server.py                  (또는 run.bat 더블클릭)
-  → http://0.0.0.0:8000  (문서: http://localhost:8000/docs)
+  → http://0.0.0.0:9412  (문서: http://localhost:9412/docs)
 
 자가 테스트:
-  curl http://localhost:8000/health
-  curl -X POST http://localhost:8000/detect -F "image=@아무사진.jpg" -F "camera_id=TEST-01"
+  curl http://localhost:9412/health
+  curl -X POST http://localhost:9412/detect -F "image=@아무사진.jpg" -F "camera_id=TEST-01"
 """
 import io
 import os
@@ -50,7 +50,9 @@ BASE_DIR = Path(__file__).resolve().parent
 # ── .onnx 로 전환하려면 ── 아래 "model.pt" 를 "model.onnx" 로 바꾸거나(한 줄),
 #    실행 시 환경변수로: SERVE_MODEL_FILE=model.onnx  (onnxruntime 는 requirements 에 포함됨)
 MODEL_PATH = BASE_DIR / os.getenv("SERVE_MODEL_FILE", "model.pt")
-HOST, PORT = "0.0.0.0", 8000
+# 포트 9412 = Bell 412 에서 따옴. 8000 은 흔해서 다른 프로젝트 서버와 충돌한다(실제 충돌 이력).
+HOST = os.getenv("YOLO_SERVER_HOST", "0.0.0.0")
+PORT = int(os.getenv("YOLO_SERVER_PORT", "9412"))
 IMG_SIZE = 640
 CONFIDENCE_THRESHOLD = 0.7             # 요청서 규격: 0.7 미만은 detections 미포함
 
