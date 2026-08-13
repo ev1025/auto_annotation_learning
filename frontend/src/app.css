@@ -724,8 +724,8 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .reg-drop-txt { flex: 1; min-width: 0; }
 .reg-drop-txt b { display: block; font-size: 13.5px; color: var(--ink-strong); }
 .reg-drop-txt p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
-.reg-label-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.reg-label-row .act-btn { min-width: 110px; justify-content: center; }
+.reg-actions { display: flex; justify-content: flex-end; }   /* 등록 버튼: 맨 아래·부품 동영상 프레임 우측에 맞춤 */
+.reg-actions .act-btn { min-width: 110px; justify-content: center; }
 /* 동영상: 프레임 클릭 → 업로드/촬영 선택 팝오버(프레임 폭) */
 .reg-vidwrap { position: relative; }
 .reg-vidpop { position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; z-index: 60;   /* 마지막 필드라 위로 열림 */

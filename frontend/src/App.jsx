@@ -1533,10 +1533,7 @@ function RegisterPart() {
           </button>
         </div>
         <div className="reg-field">
-          <div className="reg-label-row">
-            <span className="reg-label">부품 동영상</span>
-            <button className="act-btn train" type="button" disabled>부품 등록</button>
-          </div>
+          <span className="reg-label">부품 동영상</span>
           {/* 프레임 전체 클릭 → 업로드/촬영 선택 */}
           <div className="reg-vidwrap" ref={vidRef}>
             <button type="button" className="reg-drop" onClick={() => setVidMenu(v => !v)} aria-expanded={vidMenu}>
@@ -1558,6 +1555,9 @@ function RegisterPart() {
               </div>
             )}
           </div>
+        </div>
+        <div className="reg-actions">
+          <button className="act-btn train" type="button" disabled>부품 등록</button>
         </div>
       </div>
     </div>
