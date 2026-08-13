@@ -705,6 +705,8 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 
 /* 부품 등록 폼 */
 .reg-form { display: flex; flex-direction: column; gap: 18px; max-width: 680px; }
+.reg-row { display: flex; gap: 18px; }
+.reg-row .reg-field { flex: 1; min-width: 0; }
 .reg-field { display: flex; flex-direction: column; gap: 7px; }
 .reg-label { font-size: 13.5px; font-weight: 700; color: var(--ink-strong); }
 .reg-input, .reg-textarea { font-family: inherit; font-size: 14px; color: var(--ink);
@@ -722,7 +724,8 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .reg-drop-txt { flex: 1; min-width: 0; }
 .reg-drop-txt b { display: block; font-size: 13.5px; color: var(--ink-strong); }
 .reg-drop-txt p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
-.reg-actions { margin-top: 4px; }
+.reg-label-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.reg-label-row .act-btn { min-width: 110px; justify-content: center; }
 /* 동영상: 프레임 클릭 → 업로드/촬영 선택 팝오버(프레임 폭) */
 .reg-vidwrap { position: relative; }
 .reg-vidpop { position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; z-index: 60;   /* 마지막 필드라 위로 열림 */
@@ -736,7 +739,7 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
 .reg-vopt span { font-size: 12px; color: var(--muted); }
 
 /* 부품 카테고리 선택(선택·추가·편집·삭제) */
-.csel { position: relative; max-width: 320px; }
+.csel { position: relative; }
 .csel-btn { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%;
   padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--surface);
   font-family: inherit; font-size: 14px; color: var(--ink); cursor: pointer; }
@@ -779,11 +782,22 @@ figcaption { font-size: 14px; color: var(--ink); margin: 0 0 6px; font-weight: 6
   padding: 10px 12px; border-bottom: 1px solid var(--line); background: transparent; }
 .part-table td { padding: 12px; border-bottom: 1px solid var(--line); color: var(--ink); vertical-align: middle; }
 .part-table .pt-c { text-align: right; }
-.pt-name { font-weight: 700; color: var(--ink-strong); }
+.pt-name { font-weight: 700; color: var(--ink-strong); position: relative; cursor: default; }
 .pt-desc { color: var(--muted); }
 .pt-ok { color: var(--success-ink); display: inline-flex; }
 .pt-no { color: var(--faint); }
 .pt-actions { display: flex; gap: 8px; justify-content: flex-end; }
+/* 부품 이름에 마우스를 올리면 뜨는 미리보기 카드 */
+.pt-preview { position: absolute; top: calc(100% + 8px); left: 0; z-index: 50; width: 220px;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg); padding: 10px; opacity: 0; visibility: hidden;
+  transform: translateY(-4px); transition: opacity .14s, transform .14s; pointer-events: none; }
+.pt-name:hover .pt-preview { opacity: 1; visibility: visible; transform: translateY(0); }
+.pt-preview-thumb { width: 100%; aspect-ratio: 16 / 9; border-radius: var(--r-sm); background: var(--surface-3);
+  display: flex; align-items: center; justify-content: center; color: var(--faint); margin-bottom: 8px; }
+.pt-preview-thumb svg { width: 26px; height: 26px; }
+.pt-preview b { display: block; font-size: 13px; font-weight: 700; color: var(--ink-strong); margin-bottom: 3px; }
+.pt-preview p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.45; font-weight: 400; }
 .act-btn.sm { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 5px 11px; font-size: 12.5px; min-width: 0; }
 .act-btn.sm svg { width: 13px; height: 13px; }
 .act-btn.dline { background: #fff; color: var(--danger-ink); border-color: var(--danger-line); }

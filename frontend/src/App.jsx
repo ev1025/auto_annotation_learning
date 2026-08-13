@@ -1509,13 +1509,15 @@ function RegisterPart() {
       <h3 className="tab-h">부품 등록</h3>
       <p className="tab-sub">부품 정보와 3D 모델·동영상을 등록합니다.</p>
       <div className="reg-form">
-        <div className="reg-field">
-          <span className="reg-label">부품 이름</span>
-          <input className="reg-input" value={name} onChange={e => setName(e.target.value)} placeholder="예: gearbox" />
-        </div>
-        <div className="reg-field">
-          <span className="reg-label">부품 카테고리</span>
-          <CategorySelect value={cat} onChange={setCat} />
+        <div className="reg-row">
+          <div className="reg-field">
+            <span className="reg-label">부품 이름</span>
+            <input className="reg-input" value={name} onChange={e => setName(e.target.value)} placeholder="예: gearbox" />
+          </div>
+          <div className="reg-field">
+            <span className="reg-label">부품 카테고리</span>
+            <CategorySelect value={cat} onChange={setCat} />
+          </div>
         </div>
         <div className="reg-field">
           <span className="reg-label">부품 설명</span>
@@ -1531,7 +1533,10 @@ function RegisterPart() {
           </button>
         </div>
         <div className="reg-field">
-          <span className="reg-label">부품 동영상</span>
+          <div className="reg-label-row">
+            <span className="reg-label">부품 동영상</span>
+            <button className="act-btn train" type="button" disabled>부품 등록</button>
+          </div>
           {/* 프레임 전체 클릭 → 업로드/촬영 선택 */}
           <div className="reg-vidwrap" ref={vidRef}>
             <button type="button" className="reg-drop" onClick={() => setVidMenu(v => !v)} aria-expanded={vidMenu}>
@@ -1553,9 +1558,6 @@ function RegisterPart() {
               </div>
             )}
           </div>
-        </div>
-        <div className="reg-actions">
-          <button className="act-btn train" type="button" disabled>부품 등록</button>
         </div>
       </div>
     </div>
@@ -1582,7 +1584,17 @@ function PartList() {
           <tbody>
             {rows.map(r => (
               <tr key={r.name}>
-                <td className="pt-name">{r.name}</td>
+                <td className="pt-name">
+                  {r.name}
+                  {/* 호버 미리보기: 동영상 있으면 그 썸네일, 없으면 3D 모델 썸네일(둘 다 없으면 안내) */}
+                  <div className="pt-preview">
+                    <div className="pt-preview-thumb">
+                      {r.video ? <IcVideo /> : r.model ? <IcCube /> : <IcX />}
+                    </div>
+                    <b>{r.name}</b>
+                    <p>{r.desc || '설명 없음'}</p>
+                  </div>
+                </td>
                 <td className="pt-desc">{r.desc}</td>
                 <td>{r.model ? <span className="pt-ok"><IcCheck /></span> : <span className="pt-no">—</span>}</td>
                 <td>{r.video ? <span className="pt-ok"><IcCheck /></span> : <span className="pt-no">—</span>}</td>
