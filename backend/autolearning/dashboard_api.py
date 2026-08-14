@@ -336,8 +336,19 @@ def api_sam2_status(job: str):
     return sa.job_status(job)
 
 
+class NoCacheHTML(StaticFiles):
+    """index.html 만 캐시 금지. 파일명에 해시가 붙는 asset 은 캐시해도 안전하지만,
+    index.html 이 캐시되면 새로 빌드해도 브라우저가 옛 번들을 계속 불러온다."""
+
+    async def get_response(self, path, scope):
+        r = await super().get_response(path, scope)
+        if path in ("", ".", "/") or str(path).endswith(".html"):
+            r.headers["Cache-Control"] = "no-store"
+        return r
+
+
 if DIST.exists():
-    app.mount("/", StaticFiles(directory=str(DIST), html=True), name="frontend")
+    app.mount("/", NoCacheHTML(directory=str(DIST), html=True), name="frontend")
 
 if __name__ == "__main__":
     if not DIST.exists():

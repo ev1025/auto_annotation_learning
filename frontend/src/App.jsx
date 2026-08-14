@@ -69,9 +69,9 @@ function AutoLabelView() {
       .then(d => setLabeledAnywhere(new Set(d.parts || [])))
       .catch(() => {})
   }, [])
-  useEffect(() => {   // 서버 영속 참조샷(shots.json) = 로컬 기준 단일 소스 → ptsBySrc 를 서버값으로 교체
-    // localStorage 는 오프라인 폴백/캐시일 뿐. 서버 로드 성공 시 통째 교체해서 stale 키(공백 변형 등 중복)를 폐기하고
-    // 항상 서버(=로컬 영상 stem) 기준으로 맞춘다. 서버 shots.json = {영상: {프레임: [[rx,ry,lab],...]}}.
+  // 서버 영속 참조샷(shots.json) = 단일 소스. localStorage 는 오프라인 폴백일 뿐이다.
+  // 로드 성공 시 통째 교체해서 stale 키를 폐기하고 서버 기준으로 맞춘다.
+  const loadShots = useCallback(() => {
     fetch('/api/sam2/shots').then(r => r.json()).then(d => {
       if (!d || typeof d !== 'object') return
       const conv = {}
@@ -85,6 +85,7 @@ function AutoLabelView() {
       setPtsBySrc(conv)   // 서버가 durable 소스 → 통째 교체(stale localStorage 키 제거, 로컬 기준 통일)
     }).catch(() => {})   // 실패 시 localStorage 초기값 유지(오프라인 폴백)
   }, [])
+  useEffect(() => { loadShots() }, [loadShots])
   const [showReview, setShowReview] = useState(false)   // 라벨 검수 모달
   const [reviewFrames, setReviewFrames] = useState([])
   const [selParts, setSelParts] = useState(() => new Set())   // 일괄 라벨 생성 대상 부품(체크박스 선택)
@@ -210,7 +211,13 @@ function AutoLabelView() {
   }
   const labeledParts = partFolders.filter(pf => pfTrain(pf).some(isLabeled)).map(pf => partOf(pf.folder))  // 라벨된 부품(클래스)명
   const nLabeled = labeledParts.length
-  const curShots = buildShots(src)                 // 현재 학습 테이크의 유효 참조샷
+  const curShots = buildShots(src)                 // 현재 영상의 유효 참조샷
+  // 같은 부품의 다른 영상에 찍어둔 참조샷(개수만). 영상을 바꿔도 찍어둔 게 보이게 한다
+  const otherShots = folderVideos.map(v => v.name).filter(n => n !== src)
+    .map(n => ({ name: n, n: buildShots(n).length })).filter(o => o.n > 0)
+  // 라벨 생성 대상 = 이 부품에서 참조샷이 있는 모든 영상(현재 영상만 하지 않는다)
+  const labelTargets = folderVideos.map(v => v.name)
+    .map(n => ({ name: n, shots: buildShots(n) })).filter(x => x.shots.length > 0)
   const shotFrames = Object.keys(pts).map(Number).filter(i => (pts[i] || []).length).sort((a, b) => a - b)  // 이 영상에서 탭한 프레임들
   // 부품 선택(체크박스) → 선택한 부품 중 참조샷 있는 것들 일괄 라벨 생성 대상
   const toggleSelPart = (folder) => setSelParts(s => { const n = new Set(s); n.has(folder) ? n.delete(folder) : n.add(folder); return n })
@@ -225,11 +232,23 @@ function AutoLabelView() {
     dropMask(src, i)
     setPtsBySrc(prev => { const vp = { ...(prev[src] || {}) }; delete vp[i]; return { ...prev, [src]: vp } })
     setActiveShot(c => c === shotKey(src, i) ? null : c)
-    // 화면만 지우면 새로고침 때 서버 값으로 되살아난다
-    await fetch('/api/sam2/delete_shot', {
+    // 화면만 지우면 새로고침 때 서버 값으로 되살아난다.
+    // 서버 반영이 실패하면 조용히 넘기지 않고 알린다(화면과 서버가 갈리는 게 더 나쁘다)
+    const r = await fetch('/api/sam2/delete_shot', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ video: keyOf(src), frame: i })
-    }).catch(() => {})
+    }).then(x => x.json()).catch(() => ({ error: '요청 실패' }))
+    if (r.error) {
+      setAlertMsg(`참조샷 삭제를 서버에 반영하지 못했습니다: ${r.error}`)
+      loadShots()          // 서버 값으로 화면을 되돌린다
+      return
+    }
+    if (r.removed_labels) {   // 참조샷이 0개가 되면 서버가 그 영상 라벨까지 지운다
+      setAlertMsg(`참조샷이 없어져 ${src} 의 라벨 ${r.removed_labels}건도 함께 삭제했습니다.`)
+      loadFolders(); loadSessions()
+      fetch('/api/sam2/labeled_parts').then(x => x.json())
+        .then(x => setLabeledAnywhere(new Set(x.parts || []))).catch(() => {})
+    }
   }
 
   // 현재 프레임 마스크 확인(가볍게, 단일 프레임) → 크게 표시
@@ -247,11 +266,18 @@ function AutoLabelView() {
 
   // 이 부품 라벨 생성: 참조샷 → SAM2 영상 전파 → 세션 폴더 누적
   const genLabel = async () => {
-    if (!curShots.length) return
-    const r = await fetch('/api/sam2/parts_label', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session, video: srcKey, shots: curShots })
-    }).then(x => x.json())
+    if (!labelTargets.length) return
+    // 이 부품에서 참조샷을 찍은 영상 전부를 한 번에 처리한다(예전에는 현재 영상만 했다)
+    const single = labelTargets.length === 1
+    const r = single
+      ? await fetch('/api/sam2/parts_label', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session, video: keyOf(labelTargets[0].name), shots: labelTargets[0].shots })
+        }).then(x => x.json())
+      : await fetch('/api/sam2/parts_label_batch', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session, items: labelTargets.map(x => ({ video: keyOf(x.name), shots: x.shots })) })
+        }).then(x => x.json())
     if (r.error) { setLabelStatus({ error: r.error }); return }
     if (r.session) { setSession(r.session); localStorage.setItem('parts_session_v1', r.session) }
     setLabelJob(r.job); setLabelStatus({ stage: 'start', running: true, video: src })
@@ -349,10 +375,11 @@ function AutoLabelView() {
 
           {/* (영상 선택 버튼은 상단 액션줄로 이동) */}
 
-          {/* 참조샷: 액션 버튼 바로 아래, 가로 칩 리스트 */}
-          {shotFrames.length > 0 && (
+          {/* 참조샷: 액션 버튼 바로 아래, 가로 칩 리스트.
+              현재 영상 프레임 + 같은 부품의 다른 영상 요약(클릭하면 그 영상으로 이동) */}
+          {(shotFrames.length > 0 || otherShots.length > 0) && (
             <div className="al-shots" style={{ flexShrink: 0, marginTop: 6 }}>
-              <span className="ref-shots-label">참조샷 {shotFrames.length}</span>
+              <span className="ref-shots-label">참조샷 {shotFrames.length + otherShots.reduce((a, o) => a + o.n, 0)}</span>
               {shotFrames.map(i => {
                 const npos = (pts[i] || []).filter(p => p.lab === 1).length
                 const done = !!masks[shotKey(src, i)] && !masks[shotKey(src, i)].error
@@ -363,6 +390,12 @@ function AutoLabelView() {
                   </span>
                 )
               })}
+              {otherShots.map(o => (   // 다른 영상에 찍어둔 참조샷 — 라벨 생성 시 함께 처리된다
+                <span key={o.name} className="al-shot other" title={`${o.name} 으로 이동`}
+                      onClick={() => !running && setSelVideo(o.name)}>
+                  <span className="al-shot-lbl">{o.name} {o.n}</span>
+                </span>
+              ))}
             </div>
           )}
 

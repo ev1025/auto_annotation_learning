@@ -355,14 +355,21 @@ def delete_shot(video, frame):
         return {"error": "shots.json 을 읽을 수 없습니다"}
     frames = data.get(vp.stem) or {}
     removed = frames.pop(str(int(frame)), None) is not None
+    removed_labels = 0
     if frames:
         data[vp.stem] = frames
     else:
         data.pop(vp.stem, None)      # 남은 참조샷이 없으면 그 영상 키도 지운다
+        # 참조샷이 하나도 없으면 그 라벨은 근거가 없어진다 -> 이 영상 라벨·박스 미리보기 삭제.
+        # (라벨은 참조샷 여러 개가 합쳐진 전파 결과라 참조샷 1개분만 골라 지울 수는 없다)
+        store = _store_for_part(autolabel.part_root_of(vp).name)
+        for g in (store["labels"].glob(f"{vp.stem}_*.txt"), store["boxs"].glob(f"{vp.stem}_*.jpg")):
+            for f in list(g):
+                f.unlink(missing_ok=True); removed_labels += 1
     fp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    _db_sync_part(video)             # DB 참조샷 색인도 맞춘다
-    logger.info(f"[delete_shot] {vp.stem} #{frame} removed={removed}")
-    return {"ok": True, "removed": removed}
+    _db_sync_part(video)             # DB 참조샷·라벨 색인도 맞춘다
+    logger.info(f"[delete_shot] {vp.stem} #{frame} removed={removed} labels={removed_labels}")
+    return {"ok": True, "removed": removed, "removed_labels": removed_labels}
 
 
 def load_shots():

@@ -158,6 +158,9 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .al-shot .al-shot-lbl { cursor: pointer; }
 .al-shot.on { background: var(--accent-bg); border-color: var(--accent-line); color: var(--accent-ink); font-weight: 600; }
 .al-shot.bad { border-color: var(--danger-line); color: var(--danger-ink); }
+/* 다른 영상에 찍어둔 참조샷 요약 칩(클릭하면 그 영상으로 이동) */
+.al-shot.other { cursor: pointer; background: var(--surface-2); border-style: dashed; color: var(--muted); }
+.al-shot.other:hover { background: var(--surface-3); color: var(--ink); }
 .al-shot-close {
   display: inline-flex; align-items: center; justify-content: center;
   width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%;   /* 칩 내부 micro 버튼 */
