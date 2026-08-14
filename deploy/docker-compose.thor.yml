@@ -27,7 +27,7 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.thor
       args:
-        L4T_BASE: ${L4T_BASE:-nvcr.io/nvidia/l4t-pytorch:r36.2.0-pth2.2-py3}
+        CUDA_BASE: ${CUDA_BASE:-nvidia/cuda:13.0.1-runtime-ubuntu24.04}
     image: xr-autolearning:thor
     container_name: xr_app
     restart: unless-stopped
