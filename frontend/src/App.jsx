@@ -1567,13 +1567,13 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
         const okN = res.filter(x => x.ok).length
         const frames = res.reduce((a, x) => a + (x.count || 0), 0)
         const fails = res.filter(x => !x.ok)
-        setMsg(fails.length
-          ? { ok: false, text: `${r.name} 등록됨 · 영상 ${okN}/${vidFiles.length} 성공(프레임 ${frames}장). 실패: ${fails.map(f => `${f.name}(${f.error})`).join(', ')}` }
-          : { ok: true, text: `${r.name} 등록 완료 · 영상 ${okN}개 · 프레임 ${frames}장 추출` })
-        reset(); return
+        if (fails.length) {   // 일부 영상이 실패하면 이유를 봐야 하니 이 화면에 남긴다
+          setMsg({ ok: false, text: `${r.name} 등록됨 · 영상 ${okN}/${vidFiles.length} 성공(프레임 ${frames}장). 실패: ${fails.map(f => `${f.name}(${f.error})`).join(', ')}` })
+          reset(); return
+        }
+        reset(); onSaved?.(r.name); return   // 성공 = 목록에서 방금 등록한 줄을 보여준다
       }
-      setMsg({ ok: true, text: `${r.name} 등록 완료 (영상은 부품 목록에서 수정으로 추가할 수 있습니다)` })
-      reset()
+      reset(); onSaved?.(r.name)
     } catch (e) {
       setMsg({ ok: false, text: `요청 실패: ${e}` })
     } finally { setBusy('') }
@@ -1595,7 +1595,7 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
         if (m.error) { setMsg({ ok: false, text: `정보는 저장됐지만 3D 모델 실패: ${m.error}` }); return }
         setM3dFile(null)
       }
-      onSaved?.()          // 저장 성공 = 목록으로 복귀(별도 알림 없이 결과 화면으로 보낸다)
+      onSaved?.(name.trim())   // 저장 성공 = 목록으로 복귀(방금 저장한 줄을 강조해서 보여준다)
     } catch (e) {
       setMsg({ ok: false, text: `요청 실패: ${e}` })
     } finally { setBusy('') }
@@ -1827,7 +1827,7 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
 
 
 // ===== 탭2: 부품 목록 (DB 실데이터. 수정은 등록 화면으로 이동, 삭제는 여기서) =====
-function PartList({ onEdit, onDeleted, active }) {
+function PartList({ onEdit, onDeleted, active, flash, onFlashDone }) {
   const [rows, setRows] = useState([])
   const [loaded, setLoaded] = useState(false)
   const [msg, setMsg] = useState(null)
@@ -1842,6 +1842,14 @@ function PartList({ onEdit, onDeleted, active }) {
   // 이 탭이 활성될 때마다 갱신. 탭은 언마운트되지 않으므로(keep-alive) 명시적으로 다시 읽어야
   // 수정 화면에서 저장하고 돌아온 결과가 반영된다.
   useEffect(() => { if (active) load() }, [active, load])
+  // 방금 등록·저장한 부품 줄로 스크롤하고 2초간 강조한다(토스트 대신 결과를 그 자리에서 보여준다)
+  useEffect(() => {
+    if (!flash || !active || !rows.length) return
+    const el = document.querySelector(`[data-part="${CSS.escape(flash)}"]`)
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    const t = setTimeout(() => onFlashDone?.(), 2000)
+    return () => clearTimeout(t)
+  }, [flash, active, rows, onFlashDone])
 
   const doDelete = async (p) => {
     setConfirmDel(null)
@@ -1874,7 +1882,7 @@ function PartList({ onEdit, onDeleted, active }) {
           </thead>
           <tbody>
             {rows.map(p => (
-              <tr key={p.id}>
+              <tr key={p.id} data-part={p.name} className={flash === p.name ? 'pt-flash' : undefined}>
                 <td className="pt-name">
                   <span className="pt-name-txt">{p.name}</span>
                   {/* 호버 미리보기: 미리 추출해둔 첫 프레임 */}
@@ -1932,12 +1940,13 @@ export default function App() {
     localStorage.setItem('xr_tab', t)
   }
   const openEdit = (p) => { setEditPart(p); go('register') }  // 수정은 등록 화면에서(영상 목록까지 한곳에서)
-  const doneEdit = () => { setEditPart(null); go('list') }     // 저장하면 결과를 볼 수 있는 목록으로 복귀
+  const [flash, setFlash] = useState(null)                    // 목록에서 잠깐 강조할 부품 이름
+  const doneEdit = (name) => { setEditPart(null); setFlash(name || null); go('list') }  // 결과를 볼 수 있는 목록으로
   // 삭제한 부품을 수정 중이었으면 편집 상태를 비운다(탭 keep-alive 라 그냥 두면
   // 등록 탭에 사라진 부품의 수정 화면이 계속 남는다)
   const dropEdit = (id) => setEditPart(p => (p && p.id === id ? null : p))
   const view = (id) => id === 'register' ? <RegisterPart editPart={editPart} onExitEdit={() => setEditPart(null)} onSaved={doneEdit} onDeleted={doneEdit} />
-                     : id === 'list' ? <PartList onEdit={openEdit} onDeleted={dropEdit} active={tab === 'list'} />
+                     : id === 'list' ? <PartList onEdit={openEdit} onDeleted={dropEdit} active={tab === 'list'} flash={flash} onFlashDone={() => setFlash(null)} />
                      : <PartsApp />
   return (
     <main className="solo">
