@@ -9,7 +9,7 @@
     프레임 results/autolabels/<부품>/images/<stem>/00000.jpg   (저장소는 이 한 곳뿐)
 - **프레임은 등록 시점에 백그라운드로 미리 추출**한다. 학습 화면에서 실시간으로 자르면
   화면 진입마다 OpenCV 연산을 기다려야 하고 부하가 반복된다.
-- 삭제는 폴더를 지우지 않고 data/bell412/_trash 로 옮긴다(복구 가능, 기존 delete_video 와 동일 규약).
+- 삭제는 폴더를 바로 지운다(보관함 없음).
 """
 from __future__ import annotations
 
@@ -33,7 +33,6 @@ from db.models import Category, Part, PartVideo
 from db.session import SessionLocal, rel
 
 PARTS_ROOT = config.DATA_DIR / "bell412"
-TRASH = PARTS_ROOT / "_trash"
 VIDEO_EXT = {".mp4", ".mov", ".avi", ".mkv"}
 MODEL3D_EXT = {".glb", ".gltf", ".obj", ".stl", ".ply", ".fbx"}
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")   # 폴더명 겸 YOLO 클래스명
@@ -181,23 +180,17 @@ def update_part(pid: int, name=None, category_id="keep", description=None) -> di
 
 
 def delete_part(pid: int) -> dict:
-    """부품 삭제. 폴더는 지우지 않고 _trash 로 옮긴다(복구 가능). DB 행은 CASCADE 로 함께 삭제."""
+    """부품 삭제. 영상·프레임·라벨 폴더를 바로 지운다. DB 행은 CASCADE 로 함께 삭제."""
     with SessionLocal() as s:
         p = s.get(Part, pid)
         if not p:
             return _err("없는 부품입니다.")
         name = p.name
         s.delete(p); s.commit()            # part_videos·part_frames·sam2_annotations 는 CASCADE
-    stamp = datetime.now().strftime("%y%m%d_%H%M%S")
-    TRASH.mkdir(parents=True, exist_ok=True)
-    moved = []
-    for src in (PARTS_ROOT / name, autolabel.AUTOLABELS / name):
-        if src.exists():
-            dst = TRASH / f"{name}_{stamp}_{src.parent.name}"
-            shutil.move(str(src), str(dst))
-            moved.append(rel(dst))
+    for d in (PARTS_ROOT / name, autolabel.AUTOLABELS / name):
+        shutil.rmtree(d, ignore_errors=True)
     autolabel._videos(force=True)
-    return {"ok": True, "name": name, "moved_to": moved}
+    return {"ok": True, "name": name}
 
 
 # ---------- 파일 업로드 ----------
@@ -299,7 +292,7 @@ def video_file_path(pid: int, stem: str) -> Path | None:
 
 
 def delete_part_video(pid: int, stem: str) -> dict:
-    """부품에서 영상 하나 삭제. 원본은 부품 폴더의 _trash 로 이동(복구 가능),
+    """부품에서 영상 하나 삭제. 원본 파일과
     프레임·라벨·참조샷은 정리하고 DB 행도 prune 된다(sam2_autolabel.delete_video 재사용)."""
     with SessionLocal() as s:
         p = s.get(Part, pid)

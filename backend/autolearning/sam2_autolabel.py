@@ -1283,10 +1283,9 @@ def delete_train_frame(session, name, part=None):
             p.unlink(missing_ok=True); removed = True
     return {"ok": True, "name": name} if removed else {"error": "대상 없음"}
 
-# ==================== 영상 삭제(모달) — 원본은 _trash 로 이동(복구 가능), 캐시·오토라벨은 정리 ====================
+# ==================== 영상 삭제(모달) — 원본·프레임·오토라벨 산출을 함께 정리 ====================
 def delete_video(src):
-    """영상 삭제: 원본 파일은 하드삭제하지 않고 data/bell412/<부품>/_trash/ 로 이동(복구 가능),
-    그 영상의 프레임캐시(부품별+레거시 중앙)와 오토라벨 산출(images/labels/masks 의 <stem>_*)은 삭제.
+    """영상 삭제: 원본 파일과 그 영상의 프레임·오토라벨 산출(<stem>_*)을 바로 지운다.
     src = 부품경로 키(bell412/<부품>/videos/<stem>) 또는 stem."""
     vp = autolabel.resolve_video(src)
     if not vp:
@@ -1296,16 +1295,9 @@ def delete_video(src):
     part_root = autolabel.part_root_of(vp)
     part = part_root.name
 
-    # 1) 원본 영상 → _trash 로 이동(같은 이름 있으면 시각 접미어)
-    trash = part_root / "_trash"
-    trash.mkdir(parents=True, exist_ok=True)
-    dst = trash / vp.name
-    if dst.exists():
-        dst = trash / f"{vp.stem}_{datetime.now().strftime('%y%m%d_%H%M%S')}{vp.suffix}"
-    moved_to = None
+    # 1) 원본 영상 삭제
     if vp.exists():
-        shutil.move(str(vp), str(dst))
-        moved_to = str(dst)
+        vp.unlink()
 
     # 2) 프레임 이미지 삭제: autolabels/<부품>/images/<stem> (저장소는 한 곳뿐) — 재생성 가능
     removed_cache = 0
@@ -1334,6 +1326,6 @@ def delete_video(src):
 
     autolabel._videos(force=True)   # 영상 목록 캐시 무효화(삭제 즉시 목록/폴더 반영)
     _db_sync_part(part)             # DB 색인 정리(sync 가 사라진 영상·프레임 행을 prune 한다)
-    logger.info(f"[delete_video] {part}/{stem} → trash={moved_to}, cache={removed_cache}, labels={removed_labels}")
-    return {"ok": True, "part": part, "stem": stem, "moved_to": moved_to,
+    logger.info(f"[delete_video] {part}/{stem} 삭제 (프레임 {removed_cache}장, 라벨 {removed_labels}건 정리)")
+    return {"ok": True, "part": part, "stem": stem,
             "removed_cache_frames": removed_cache, "removed_label_files": removed_labels}

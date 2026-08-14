@@ -41,7 +41,7 @@ _BUSY = {"on": False}  # GPU 라벨생성 동시 1건만
 _VIDX = {"t": 0.0, "vids": None}   # _videos() 결과 짧은 TTL 캐시(프레임 요청마다 rglob 반복 방지)
 
 def _videos(force=False):
-    """data/ 하위 모든 영상(부품 폴더 재귀). '_' 로 시작하는 폴더(_frame_cache·_trash 등)는 제외.
+    """data/ 하위 모든 영상(부품 폴더 재귀). '_' 로 시작하는 폴더(_eval 등)는 제외.
     프레임 요청마다 호출되므로 3초 TTL로 결과를 재사용(새 영상은 몇 초 내 반영)."""
     now = time.time()
     if not force and _VIDX["vids"] is not None and now - _VIDX["t"] < 3.0:
