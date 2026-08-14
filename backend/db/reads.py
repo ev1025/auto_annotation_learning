@@ -106,9 +106,18 @@ def labeled_parts() -> dict:
     return {"parts": list(names)}
 
 
+def _weights(r: TrainRun):
+    """저장된 경로가 다른 기계의 절대경로여서 존재하지 않으면 run 폴더 규약으로 되살린다."""
+    w = abspath(r.weights_path) if r.weights_path else None
+    if w and Path(w).exists():
+        return w
+    p = config.BASE_DIR / "results" / str(r.model_id) / "model" / "best.pt"
+    return p if p.exists() else None
+
+
 def _run_payload(r: TrainRun) -> dict:
     meta = r.meta or {}
-    w = abspath(r.weights_path)
+    w = _weights(r)
     return {"model_id": r.model_id, "label": r.label or "", "time": (meta.get("time") or ""),
             "classes": r.classes or [],
             "n_classes": r.n_classes if r.n_classes is not None else len(r.classes or []),
@@ -133,7 +142,7 @@ def served_model() -> dict | None:
         r = s.scalars(select(TrainRun).where(TrainRun.is_active.is_(True))).first()
         if not r:
             return None
-        w = abspath(r.weights_path)
+        w = _weights(r)
         if not (w and w.exists()):
             return None
         meta = r.meta or {}

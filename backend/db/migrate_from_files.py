@@ -241,7 +241,9 @@ def migrate_runs(s, stats: dict) -> None:
         run.epochs = meta.get("epochs")
         run.map50 = meta.get("map50")
         # 절대경로(C:\Users\...)로 저장돼 있던 것을 상대경로로 정규화 — Thor 에서도 유효하게
-        run.weights_path = rel(meta["weights"]) if meta.get("weights") else None
+        # meta["weights"] 는 학습 기계의 절대경로일 수 있다 -> run 폴더 규약을 우선한다
+        wp = d / "model" / "best.pt"
+        run.weights_path = rel(wp) if wp.exists() else (rel(meta["weights"]) if meta.get("weights") else None)
         run.onnx_path = rel(meta["onnx"]) if meta.get("onnx") else None
         run.meta = meta
         run.is_active = False

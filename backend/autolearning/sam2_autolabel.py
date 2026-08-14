@@ -848,6 +848,13 @@ def cancel_multiclass(job):
     return {"ok": True}
 
 # ==================== 3단계: 모델 평가·적용 (A/B 비교 → 서비스 적용/롤백) ====================
+def weights_of(runid):
+    """run 의 가중치 경로. meta.json 의 weights 문자열은 학습한 기계의 절대경로라
+    다른 기계(Thor·컨테이너)에서 깨진다. 폴더 규약으로 직접 찾는 것이 유일하게 안전하다."""
+    p = RESULTS / str(runid) / "model" / "best.pt"
+    return p if p.exists() else None
+
+
 SERVED_PTR = RESULTS / "_served.json"        # 현재 서비스 모델 포인터 {"run": "<시각>"}
 _RUN_RE = re.compile(r"^\d{6}_\d{6}$")       # 학습 run 폴더명 = YYMMDD_HHMMSS
 _ACTIVE = {"job": None, "kind": None, "session": None}   # 현재 진행 중인 학습/평가 잡(재진입 복구용)
@@ -903,7 +910,7 @@ def _sync_served_files(runid):
     항상 같은 고정 경로(config.NEW_MODEL_PT=models/model.pt, NEW_MODEL_ONNX=models/model.onnx)를 쓴다.
     onnx 가 없으면(구 run) 고정 onnx 를 지워 pt 와 안 맞는 낡은 onnx 서빙을 막는다."""
     m = _run_meta(runid) or {}
-    src_pt = Path(m.get("weights", ""))
+    src_pt = weights_of(runid) or Path(m.get("weights", ""))
     if not src_pt.exists():
         return
     config.MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -964,9 +971,10 @@ def served_model():
     """현재 서비스 중인 모델 = _served.json 이 가리키는 run. 없으면 None."""
     runid = _served_runid()
     m = _run_meta(runid) if runid else None
-    if m and Path(m.get("weights", "")).exists():
+    w = weights_of(runid) if runid else None
+    if m and w:
         cls = m.get("classes", [])
-        return {"weights": m["weights"], "classes": cls, "n_classes": len(cls),
+        return {"weights": str(w), "classes": cls, "n_classes": len(cls),
                 "label": m.get("label", ""), "session": runid, "applied": runid, "model_id": runid,
                 "time": m.get("time", ""), "map50": _last_map50(m.get("curve")),
                 "gen_rate": m.get("gen_rate"), "newp_rate": m.get("newp_rate")}
@@ -984,7 +992,7 @@ def list_models():
                     "n_classes": info.get("n_classes", len(info.get("classes", []))),
                     "n_images": info.get("n_images"), "map50": _last_map50(info.get("curve")),
                     "gen_rate": info.get("gen_rate"), "newp_rate": info.get("newp_rate"),
-                    "has_pt": Path(info.get("weights", "")).exists(),
+                    "has_pt": weights_of(mid) is not None,
                     "is_active": (active_mid is not None and active_mid == mid)})
     return {"models": out, "active": active_mid}
 
@@ -1026,12 +1034,12 @@ def _run_compare(job_id, session, base_model_id=None):
         meta = _run_meta(session)
         if not meta:
             raise RuntimeError("학습된 모델이 없습니다. 먼저 학습을 실행하세요.")
-        new_w = meta.get("weights")
+        new_w = str(weights_of(session) or meta.get("weights"))
         new_classes = list(meta.get("per_class", {}).keys())
         new_label = meta.get("label", session)
         if base_model_id:   # 타임라인에서 특정 과거 버전(run)을 기준으로 선택한 경우
             info = _run_meta(base_model_id)
-            bw = (info or {}).get("weights", "")
+            bw = str(weights_of(base_model_id) or (info or {}).get("weights", ""))
             base = ({"weights": bw, "classes": info.get("classes", []),
                      "label": info.get("label", "") or base_model_id, "session": base_model_id}
                     if info and Path(bw).exists() else served_model())
