@@ -292,7 +292,7 @@ function AutoLabelView() {
     }).catch(() => {})
     setReviewFrames(fs => fs.filter(x => !(x.session === f.session && x.name === f.name)))
   }
-  // 영상 삭제(모달): 원본은 서버 _trash 로 이동(복구 가능), 프레임캐시·오토라벨은 삭제
+  // 영상 삭제(모달): 원본은 서버 보관함(_trash)으로 이동, 프레임·라벨은 삭제
   const deleteVideo = async (name) => {
     if (running) return
     if (!window.confirm(`'${name}' 영상을 삭제할까요?\n· 원본은 _trash 폴더로 이동(복구 가능)\n· 이 영상의 프레임캐시와 자동생성 라벨은 삭제됩니다.`)) return
@@ -498,7 +498,7 @@ function AutoLabelView() {
                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setSelVideo(v); setShowVideoPick(false) } }}
                        className={`vpick-card${on ? ' on' : ''}`}>
                     {on && <span className="vpick-badge">선택됨</span>}
-                    {/* 영상 삭제(X): 원본은 _trash 로 이동(복구 가능), 캐시·라벨은 삭제 */}
+                    {/* 영상 삭제(X): 원본은 보관함으로 이동, 프레임·라벨은 삭제 */}
                     <button className="review-del vpick-del" title="이 영상 삭제" disabled={running}
                             onClick={(e) => { e.stopPropagation(); deleteVideo(v) }}><IcX /></button>
                     <img src={`/api/autolabel/frame?src=${encodeURIComponent(keyOf(v))}&idx=0&w=360`} alt={v} loading="lazy" />
@@ -1503,7 +1503,7 @@ function LocalVideoPreview({ file }) {
   return <video src={url} controls autoPlay muted playsInline />
 }
 
-function RegisterPart({ editPart, onExitEdit, onSaved }) {
+function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
   const editing = !!editPart
   const [name, setName] = useState('')
   const [cat, setCat] = useState(null)                 // category_id
@@ -1516,6 +1516,7 @@ function RegisterPart({ editPart, onExitEdit, onSaved }) {
   const [msg, setMsg] = useState(null)                 // {ok|err, text}
   const [confirmDel, setConfirmDel] = useState(null)   // 삭제할 영상
   const [openVid, setOpenVid] = useState(null)         // 미리보기 펼친 영상 stem
+  const [confirmDelPart, setConfirmDelPart] = useState(false)   // 이 부품 자체를 삭제
   const vidRef = useRef(null)
   const vidInput = useRef(null)
   const m3dInput = useRef(null)
@@ -1636,8 +1637,17 @@ function RegisterPart({ editPart, onExitEdit, onSaved }) {
       .then(x => x.json()).catch(() => ({ error: '요청 실패' }))
     setBusy('')
     setMsg(r.error ? { ok: false, text: r.error }
-                   : { ok: true, text: `${v.stem} 삭제됨 (원본은 _trash 로 이동, 프레임·라벨 정리)` })
+                   : { ok: true, text: `${v.stem} 삭제됨` })
     loadVids(editPart.id)
+  }
+
+  // 수정 화면에서 이 부품 자체를 삭제. 목록으로 돌아가지 않고 여기서 끝낼 수 있게 한다.
+  const delPart = async () => {
+    setConfirmDelPart(false)
+    const r = await fetch(`/api/parts/${editPart.id}`, { method: 'DELETE' })
+      .then(x => x.json()).catch(() => ({ error: '요청 실패' }))
+    if (r.error) { setMsg({ ok: false, text: r.error }); return }
+    onDeleted?.(editPart.id)          // 목록 갱신 + 편집 상태 해제(사라진 부품 화면이 남지 않게)
   }
 
   return (
@@ -1649,7 +1659,12 @@ function RegisterPart({ editPart, onExitEdit, onSaved }) {
             ? '부품 정보를 수정하고 등록된 영상을 확인·삭제·추가합니다.'
             : '부품 정보와 3D 모델·동영상을 등록합니다.'}</p>
         </div>
-        {editing && <button className="act-btn neutral" type="button" onClick={onExitEdit}>+ 새 부품 등록</button>}
+        {editing && (
+          <div className="tab-head-actions">
+            <button className="act-btn dline" type="button" onClick={() => setConfirmDelPart(true)}><IcTrash /> 부품 삭제</button>
+            <button className="act-btn neutral" type="button" onClick={onExitEdit}>+ 새 부품 등록</button>
+          </div>
+        )}
       </div>
       <div className="reg-form">
         {/* 2열: 왼쪽 = 식별 정보(이름·카테고리·설명), 오른쪽 = 첨부(3D·동영상) */}
@@ -1799,16 +1814,20 @@ function RegisterPart({ editPart, onExitEdit, onSaved }) {
         </div>
       </div>
       <ConfirmModal open={!!confirmDel} title="영상 삭제"
-                    message={confirmDel ? `${confirmDel.stem} 을(를) 삭제할까요? 원본은 _trash 로 옮겨 복구할 수 있고, 이 영상의 프레임·라벨·참조샷은 정리됩니다.` : ''}
+                    message={confirmDel ? `${confirmDel.stem} 을(를) 삭제할까요? 이 영상으로 만든 프레임·라벨·참조샷도 함께 사라집니다.` : ''}
                     confirmLabel="삭제" danger
                     onCancel={() => setConfirmDel(null)} onConfirm={() => delVideo(confirmDel)} />
+      <ConfirmModal open={confirmDelPart} title="부품 삭제"
+                    message={editing ? `${editPart.name} 을(를) 삭제할까요? 등록한 영상과 생성된 라벨이 함께 사라집니다.` : ''}
+                    confirmLabel="삭제" danger
+                    onCancel={() => setConfirmDelPart(false)} onConfirm={delPart} />
     </div>
   )
 }
 
 
 // ===== 탭2: 부품 목록 (DB 실데이터. 수정은 등록 화면으로 이동, 삭제는 여기서) =====
-function PartList({ onEdit, active }) {
+function PartList({ onEdit, onDeleted, active }) {
   const [rows, setRows] = useState([])
   const [loaded, setLoaded] = useState(false)
   const [msg, setMsg] = useState(null)
@@ -1828,7 +1847,7 @@ function PartList({ onEdit, active }) {
     setConfirmDel(null)
     const r = await fetch(`/api/parts/${p.id}`, { method: 'DELETE' }).then(x => x.json()).catch(() => ({ error: '요청 실패' }))
     if (r.error) setMsg({ ok: false, text: r.error })
-    else { setMsg({ ok: true, text: `${p.name} 삭제됨 (폴더는 _trash 로 이동, 복구 가능)` }); load() }
+    else { setMsg({ ok: true, text: `${p.name} 삭제됨` }); onDeleted?.(p.id); load() }
   }
 
   return (
@@ -1887,7 +1906,7 @@ function PartList({ onEdit, active }) {
         </div>
       )}
       <ConfirmModal open={!!confirmDel} title="부품 삭제"
-                    message={confirmDel ? `${confirmDel.name} 을(를) 삭제할까요? 영상·프레임·라벨 폴더는 _trash 로 옮겨 복구할 수 있습니다.` : ''}
+                    message={confirmDel ? `${confirmDel.name} 을(를) 삭제할까요? 등록한 영상과 생성된 라벨이 함께 사라집니다.` : ''}
                     confirmLabel="삭제" danger
                     onCancel={() => setConfirmDel(null)} onConfirm={() => doDelete(confirmDel)} />
     </div>
@@ -1914,8 +1933,11 @@ export default function App() {
   }
   const openEdit = (p) => { setEditPart(p); go('register') }  // 수정은 등록 화면에서(영상 목록까지 한곳에서)
   const doneEdit = () => { setEditPart(null); go('list') }     // 저장하면 결과를 볼 수 있는 목록으로 복귀
-  const view = (id) => id === 'register' ? <RegisterPart editPart={editPart} onExitEdit={() => setEditPart(null)} onSaved={doneEdit} />
-                     : id === 'list' ? <PartList onEdit={openEdit} active={tab === 'list'} />
+  // 삭제한 부품을 수정 중이었으면 편집 상태를 비운다(탭 keep-alive 라 그냥 두면
+  // 등록 탭에 사라진 부품의 수정 화면이 계속 남는다)
+  const dropEdit = (id) => setEditPart(p => (p && p.id === id ? null : p))
+  const view = (id) => id === 'register' ? <RegisterPart editPart={editPart} onExitEdit={() => setEditPart(null)} onSaved={doneEdit} onDeleted={doneEdit} />
+                     : id === 'list' ? <PartList onEdit={openEdit} onDeleted={dropEdit} active={tab === 'list'} />
                      : <PartsApp />
   return (
     <main className="solo">

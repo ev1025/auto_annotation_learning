@@ -356,6 +356,7 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .tab-sub { font-size: var(--fs-sm); color: var(--muted); margin: var(--sp-3) 0 var(--sp-10); }
 /* 탭 제목행 + 우측 보조 버튼(새 부품 등록·새로고침) */
 .tab-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-6); }
+.tab-head-actions { display: flex; gap: var(--sp-4); flex-shrink: 0; }
 
 /* 등록 화면(수정 모드)의 등록된 영상 목록 */
 .vm-list { list-style: none; display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-4); }
