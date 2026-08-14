@@ -257,8 +257,13 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
   background: #fff; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden;
 }
 .img-pane > img { display: block; max-width: 100%; object-fit: contain; }
-.tap-box { position: relative; display: inline-block; height: 100%; max-width: 100%; line-height: 0; cursor: crosshair; user-select: none; }
-.tap-box img { display: block; height: 100%; width: auto; max-width: 100%; }
+/* 박스에 프레임의 실제 비율(aspect-ratio, JS 가 onLoad 때 넣어준다)을 주고 그 안을 이미지가 꽉 채운다.
+   - height:100% + max-width:100% 조합은 좁은 창에서 가로만 눌려 찌그러졌다
+   - img 에 max-height:100% 만 주면 부모 높이가 auto 라 무시되고 세로 영상이 넘쳤다
+   탭 좌표는 이 박스 rect 기준이라 박스가 이미지와 정확히 일치해야 한다(레터박스가 생기면 안 됨). */
+.tap-box { position: relative; display: block; max-width: 100%; max-height: 100%;
+  line-height: 0; cursor: crosshair; user-select: none; }
+.tap-box img { display: block; width: 100%; height: 100%; }
 
 /* 라벨 마스크 상태 배너 */
 .mask-alert {

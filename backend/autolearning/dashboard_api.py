@@ -230,6 +230,12 @@ def api_parts_sessions():
     return sa.parts_sessions()
 
 
+@app.post("/api/sam2/delete_shot")
+def api_sam2_delete_shot(payload: dict = Body(...)):
+    """참조샷 1개 삭제(화면에서 x). shots.json 에 즉시 반영한다."""
+    return sa.delete_shot(payload.get("video"), payload.get("frame"))
+
+
 @app.get("/api/sam2/shots")
 def api_sam2_shots():
     """부품별 참조샷 취합 → {"<영상>": {"<프레임>": [[rx,ry,lab],...]}}. 프론트 참조샷 복원."""

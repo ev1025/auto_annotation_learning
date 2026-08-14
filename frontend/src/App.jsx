@@ -46,6 +46,8 @@ function AutoLabelView() {
   const [selVideo, setSelVideo] = useState(null)    // 선택해서 보고 있는 영상(없으면 기본=첫 학습영상)
   const [confirmDelVid, setConfirmDelVid] = useState(null)   // 삭제 확인 중인 영상 이름
   const [alertMsg, setAlertMsg] = useState(null)             // 인앱 알림(네이티브 alert 대체)
+  // 프레임 원본 크기(가로세로 비율). 부품마다 세로/가로 영상이 섞여 있어 박스 비율을 이걸로 맞춘다.
+  const [natSize, setNatSize] = useState(null)
   const [showVideoPick, setShowVideoPick] = useState(false)  // 영상 선택 모달(라벨검수식)
   const [count, setCount] = useState(0)             // 현재 테이크 프레임 수
   const [idx, setIdx] = useState(0)                 // 현재 프레임
@@ -219,10 +221,15 @@ function AutoLabelView() {
     .filter(x => buildShots(x.stem).length > 0).map(x => ({ video: `${x.pf.folder}/${x.stem}`, shots: buildShots(x.stem) }))
   const batchMode = selParts.size > 0
   const goShot = (i) => { setIdx(i); setActiveShot(shotKey(src, i)) }   // 그 프레임으로 이동 + (캐시 있으면) 마스크 표시
-  const deleteShotFrame = (i) => {                  // 그 프레임 탭 삭제
+  const deleteShotFrame = async (i) => {            // 그 프레임 탭 삭제(서버 shots.json 까지 즉시 반영)
     dropMask(src, i)
     setPtsBySrc(prev => { const vp = { ...(prev[src] || {}) }; delete vp[i]; return { ...prev, [src]: vp } })
     setActiveShot(c => c === shotKey(src, i) ? null : c)
+    // 화면만 지우면 새로고침 때 서버 값으로 되살아난다
+    await fetch('/api/sam2/delete_shot', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video: keyOf(src), frame: i })
+    }).catch(() => {})
   }
 
   // 현재 프레임 마스크 확인(가볍게, 단일 프레임) → 크게 표시
@@ -375,9 +382,10 @@ function AutoLabelView() {
                 <div className="img-pane">
                   {preparing
                     ? <span className="al-hint">프레임 컷 중...</span>
-                    : <div className="tap-box" onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}>
+                    : <div className="tap-box" onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}
+                           style={natSize ? { aspectRatio: `${natSize.w} / ${natSize.h}` } : undefined}>
                         {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(srcKey)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false}
-                                     style={{ height: '100%', width: 'auto', maxWidth: '100%' }} />}
+                                     onLoad={(e) => { const im = e.currentTarget; setNatSize({ w: im.naturalWidth, h: im.naturalHeight }) }} />}
                         {cur.map((p, i) => (
                           <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
                                 style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />

@@ -340,6 +340,31 @@ def _save_shots(video, shots):
     data[stem] = frames
     fp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
+def delete_shot(video, frame):
+    """참조샷 1개(그 프레임의 탭 포인트) 삭제 → shots.json 에 즉시 반영.
+    화면에서만 지우면 새로고침 때 서버 값으로 되살아난다."""
+    vp = autolabel.resolve_video(video)
+    if not vp:
+        return {"error": f"영상을 찾지 못함: {video}"}
+    fp = _autolabel_store(video)["root"] / "shots.json"
+    if not fp.exists():
+        return {"ok": True, "removed": False}
+    try:
+        data = json.loads(fp.read_text(encoding="utf-8"))
+    except Exception:
+        return {"error": "shots.json 을 읽을 수 없습니다"}
+    frames = data.get(vp.stem) or {}
+    removed = frames.pop(str(int(frame)), None) is not None
+    if frames:
+        data[vp.stem] = frames
+    else:
+        data.pop(vp.stem, None)      # 남은 참조샷이 없으면 그 영상 키도 지운다
+    fp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    _db_sync_part(video)             # DB 참조샷 색인도 맞춘다
+    logger.info(f"[delete_shot] {vp.stem} #{frame} removed={removed}")
+    return {"ok": True, "removed": removed}
+
+
 def load_shots():
     """모든 부품 shots.json 취합 → {"<영상stem>": {"<프레임>": [[rx,ry,lab],...]}}. 프론트 참조샷 복원용."""
     out = {}
