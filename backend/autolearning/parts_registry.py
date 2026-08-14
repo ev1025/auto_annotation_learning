@@ -224,14 +224,17 @@ def upload_video(pid: int, filename: str, data: bytes) -> dict:
         if not p:
             return _err("없는 부품입니다.")
         part_name = p.name
-    fn = _safe_filename(filename)
-    if Path(fn).suffix.lower() not in VIDEO_EXT:
+    ext = Path(_safe_filename(filename)).suffix.lower()
+    if ext not in VIDEO_EXT:
         return _err(f"영상 확장자만 됩니다: {', '.join(sorted(VIDEO_EXT))}")
     vdir = PARTS_ROOT / part_name / "videos"
     vdir.mkdir(parents=True, exist_ok=True)
-    fp = vdir / fn
-    if fp.exists():
-        return _err(f"같은 이름의 영상이 이미 있습니다: {fn}")
+    # 원본 파일명을 쓰면 한글이 전부 '_' 로 뭉개져 서로 충돌한다(기어박스 촬영본.mp4 -> ________.mp4).
+    # <부품명><번호> 로 저장하고, 번호는 비어 있는 가장 작은 값을 쓴다.
+    n = 1
+    while any(vdir.glob(f"{part_name}{n}.*")):
+        n += 1
+    fp = vdir / f"{part_name}{n}{ext}"
     fp.write_bytes(data)
     autolabel._videos(force=True)          # 새 영상이 즉시 인덱스에 잡히게
     job = uuid.uuid4().hex[:8]
