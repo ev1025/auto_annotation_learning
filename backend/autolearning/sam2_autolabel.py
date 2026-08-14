@@ -508,14 +508,19 @@ def _synth_augment(oi, ol, logln, n_syn=400):
     free_sam2()
     if not cuts:
         logln("누끼 대상 없음 → 배경 합성 증강 생략", "info"); return 0
-    logln(f"누끼 {len(cuts)}개 → 배경 합성 증강 생성 중...", "info")
+    # 클래스별로 나눠 담는다. 한 통에서 뽑으면 라벨 많은 부품이 합성까지 독점한다.
+    by_cls = {}
+    for rgba, ci in cuts:
+        by_cls.setdefault(ci, []).append(rgba)
+    logln(f"누끼 {len(cuts)}개({len(by_cls)}종) → 배경 합성 증강 생성 중...", "info")
 
     # 2) 합성: 배경에 1~2개 랜덤 붙여넣기(회전·스케일), 멀티클래스 라벨 기록
     made = 0
     for k in range(n_syn):
         bg = _prep_bg(random.choice(bgs)); H, W = bg.shape[:2]; labels = []
         for _ in range(1 if random.random() > 0.25 else 2):
-            rgba, ci = random.choice(cuts)
+            ci = random.choice(list(by_cls))          # 클래스 먼저 균등하게, 그 안에서 객체
+            rgba = random.choice(by_cls[ci])
             hh, ww = rgba.shape[:2]
             M = cv2.getRotationMatrix2D((ww / 2, hh / 2), random.uniform(-20, 20), 1.0)
             c, s = abs(M[0, 0]), abs(M[0, 1]); nw, nh = int(hh * s + ww * c), int(hh * c + ww * s)

@@ -90,12 +90,9 @@ function AutoLabelView() {
   const [labelJob, setLabelJob] = useState(null)
   const [labelStatus, setLabelStatus] = useState(null)
 
-  const [trainJob, setTrainJob] = useState(null)
-  const [trainStatus, setTrainStatus] = useState(null)
-  const [excluded, setExcluded] = useState([])      // 학습에서 뺀 부품(클래스). 기본=라벨된 것 전부 포함
   const preppedRef = useRef(new Set())              // 그룹별 '전체 프레임 미리 컷' 1회만
 
-  const running = !!labelStatus?.running || !!trainStatus?.running
+  const running = !!labelStatus?.running
 
   const isPartFolder = (rel) => rel.replace(/\/videos$/, '').split('/').length >= 3   // bell412/<컨테이너>/<부품> = 중첩 = 부품
   const nestedParts = folders.filter(f => isPartFolder(f.folder))
@@ -209,13 +206,8 @@ function AutoLabelView() {
   }
   const labeledParts = partFolders.filter(pf => pfTrain(pf).some(isLabeled)).map(pf => partOf(pf.folder))  // 라벨된 부품(클래스)명
   const nLabeled = labeledParts.length
-  const selectedClasses = labeledParts.filter(p => !excluded.includes(p))   // 학습에 포함할 클래스
-  const toggleExcluded = (p) => setExcluded(c => c.includes(p) ? c.filter(x => x !== p) : [...c, p])
   const curShots = buildShots(src)                 // 현재 학습 테이크의 유효 참조샷
   const shotFrames = Object.keys(pts).map(Number).filter(i => (pts[i] || []).length).sort((a, b) => a - b)  // 이 영상에서 탭한 프레임들
-  // 탭해둔(참조샷 있는) 학습 테이크 전체 → 한 번에 라벨 생성용 (video=부품경로 키)
-  const tappedItems = partFolders.map(pf => ({ pf, stem: pfTrain(pf)[0] })).filter(x => x.stem)
-    .filter(x => buildShots(x.stem).length > 0).map(x => ({ video: `${x.pf.folder}/${x.stem}`, shots: buildShots(x.stem) }))
   // 부품 선택(체크박스) → 선택한 부품 중 참조샷 있는 것들 일괄 라벨 생성 대상
   const toggleSelPart = (folder) => setSelParts(s => { const n = new Set(s); n.has(folder) ? n.delete(folder) : n.add(folder); return n })
   const allPartsSelected = partFolders.length > 0 && partFolders.every(pf => selParts.has(pf.folder))
@@ -224,9 +216,6 @@ function AutoLabelView() {
     .map(pf => ({ pf, stem: pfTrain(pf)[0] })).filter(x => x.stem)
     .filter(x => buildShots(x.stem).length > 0).map(x => ({ video: `${x.pf.folder}/${x.stem}`, shots: buildShots(x.stem) }))
   const batchMode = selParts.size > 0
-  // 학습 체크박스 전체선택/해제
-  const allSelected = labeledParts.length > 0 && labeledParts.every(p => !excluded.includes(p))
-  const toggleAll = () => setExcluded(allSelected ? [...labeledParts] : [])
   const goShot = (i) => { setIdx(i); setActiveShot(shotKey(src, i)) }   // 그 프레임으로 이동 + (캐시 있으면) 마스크 표시
   const deleteShotFrame = (i) => {                  // 그 프레임 탭 삭제
     dropMask(src, i)
@@ -290,28 +279,7 @@ function AutoLabelView() {
 
   const goPart = (i) => { setPartIdx(Math.max(0, Math.min(i, partFolders.length - 1))); setTakeIdx(0); setSelVideo(null) }
 
-  // 멀티클래스 학습: 세션 누적 라벨 → 클래스 통합 → YOLO 학습
-  const runTrain = async () => {
-    const r = await fetch('/api/sam2/multiclass', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session, epochs: 100, classes: selectedClasses })
-    }).then(x => x.json())
-    if (r.error) { setTrainStatus({ error: r.error }); return }
-    setTrainJob(r.job); setTrainStatus({ stage: 'start', running: true })
-  }
-  useEffect(() => {
-    if (!trainJob || !trainStatus?.running) return
-    const t = setInterval(async () => {
-      const d = await fetch(`/api/sam2/status?job=${trainJob}`).then(r => r.json())
-      setTrainStatus(d)
-      if (!d.running) clearInterval(t)
-    }, 1500)
-    return () => clearInterval(t)
-  }, [trainJob, trainStatus?.running])
-  const trainStage = { start: '준비 중', build: '라벨 통합(클래스 매핑)', train: 'YOLO 학습 중', eval: 'test 영상 평가 중', done: '완료', error: '오류' }
-
   const activeMask = masks[shotKey(src, idx)] || null   // 현재 프레임의 마스크만 표시(프레임 바뀌면 자동으로 사라짐)
-  const genDone = labelStatus?.stage === 'done' && labelStatus?.video === src
   const partName = curPartFolder ? partOf(curPartFolder.folder) : ''
   const openReview = () => {   // 현재 부품의 생성된 학습 프레임(세션 무관)을 검수 모달로
     if (!partName) return
@@ -995,10 +963,6 @@ function PartsApp() {
     fetch('/api/sam2/served').then(r => r.json()).then(d => setServed(d && !d.none ? d : null)).catch(() => {})
     fetch('/api/sam2/models').then(r => r.json()).then(d => setModels(d.models || [])).catch(() => {})
   }
-  const onTimelineClick = (mid) => {   // 신규 학습 있으면 그 버전 기준 재비교, 없으면(관리 모드) 아래에 상세 표시
-    if (status?.model_id) runCompare(mid)
-    else setSelVer(mid)
-  }
   const doDeleteModel = async (mid) => {   // 타임라인/히스토리에서 버전 삭제(현재 서비스 모델은 백엔드가 거부)
     if (!window.confirm(`모델 #${mid} 을(를) 삭제할까요? 되돌릴 수 없습니다.`)) return
     const r = await fetch('/api/sam2/delete_model', {
@@ -1131,7 +1095,6 @@ function PartsApp() {
 
   const ep = status?.epoch || 0
   const tot = status?.total_epochs || epochs
-  const ingD = status?.ingest_done || 0
   const ingT = status?.ingest_total || 0
   const stageText = {
     start: '학습 준비 중...',
@@ -1164,8 +1127,6 @@ function PartsApp() {
     return <span className="delta flat">0%p</span>
   }
   // 평가 화면용 파생값
-  const newClasses = status?.per_class ? Object.keys(status.per_class)
-    : [...new Set((cmp?.rows || []).map(r => r.part))]
   const baseModel = (selVer && models.find(m => m.model_id === selVer)) || served   // 비교 기준(선택 or 현재 서비스)
   const baseSet = new Set(baseModel?.classes || [])
   // 검출 샘플: 백엔드가 부품(part)당 여러 프레임을 평평한 리스트로 줌 → part로 묶어 부품별 슬라이더 구성

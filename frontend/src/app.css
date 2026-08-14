@@ -393,8 +393,6 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
   grid-template-rows: minmax(0, 1fr); gap: var(--sp-12);
   align-items: stretch; flex: 1; min-height: 0; }
 .reg-col { display: flex; flex-direction: column; gap: var(--sp-10); min-width: 0; min-height: 0; }
-.reg-row { display: flex; gap: var(--sp-10); }
-.reg-row .reg-field { flex: 1; min-width: 0; }
 /* 설명이 왼쪽 열의 남는 높이를 전부 차지 */
 .reg-desc-field { flex: 1; min-height: 0; }
 .reg-desc-field .reg-textarea { flex: 1; min-height: 140px; resize: none; }
@@ -501,7 +499,6 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .pt-w-stat { width: 100px; }     /* 아이콘만이라 좁게, 나머지 폭은 설명이 전부 가져감 */
 .pt-w-manage2 { width: 190px; }  /* 수정·삭제 2버튼 */
 .pt-cat { color: var(--muted); }
-.pt-edit-in { min-height: var(--ctl-sm); font-size: var(--fs-sm); width: 100%; }
 .pt-preview-img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--r-sm);
   background: var(--surface-3); display: block; margin-bottom: var(--sp-4); }
 .pt-name { font-weight: 700; color: var(--ink-strong); position: relative; cursor: default; }

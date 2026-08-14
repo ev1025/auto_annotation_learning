@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
-"""scripts/verify/dashboard_api.py - 대시보드 API 서버 (FastAPI) + React 프론트 서빙.
+"""대시보드 API 서버(FastAPI) + React 프론트 서빙.
 
-프론트 소스: dashboard/ (React + Vite). 빌드 산출물 dashboard/dist 를 루트에 서빙.
-데이터 계층은 scripts/dashboard_core.py 공용 모듈.
+프론트 소스: frontend/ (React + Vite). 빌드 산출물 frontend/dist 를 루트에 서빙.
 
 실행:
-  cd dashboard && npm install && npm run build   # 프론트 변경 시 1회
-  python scripts/verify/dashboard_api.py             # http://127.0.0.1:7862
+  cd frontend && npm install && npm run build            # 프론트 변경 시 1회
+  XR_DB_READS=1 python backend/autolearning/dashboard_api.py   # http://127.0.0.1:7862
 """
 import mimetypes
 import os
@@ -14,8 +13,8 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))  # 공용 config·experiments(build_multiclass·point_ref_lib)
-sys.path.insert(0, str(Path(__file__).resolve().parent))                   # backend/autolearning (dashboard_core·autolabel·sam2_autolabel)
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))  # 공용 config·experiments(build_multiclass)
+sys.path.insert(0, str(Path(__file__).resolve().parent))                   # backend/autolearning (autolabel·sam2_autolabel)
 
 import uvicorn
 from fastapi import Body, FastAPI, File, Request, UploadFile
@@ -23,7 +22,6 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 
 import config
-import dashboard_core as core
 import autolabel
 import sam2_autolabel as sa
 
@@ -203,53 +201,6 @@ def api_part_video_file(pid: int, stem: str, request: Request):
     })
 
 
-@app.get("/api/methods")
-def api_methods():
-    return [{"id": m["id"], "no": m["no"], "title": m["title"],
-             "badge": m["badge"], "badge_label": m["badge_label"], "live": m["live"]}
-            for m in core.METHODS]
-
-
-@app.get("/api/method/{mid}")
-def api_method(mid: str):
-    m = core.method_by_id(mid)
-    if not m:
-        return JSONResponse({"error": "unknown method"}, status_code=404)
-    return {"id": m["id"], "no": m["no"], "title": m["title"],
-            "badge": m["badge"], "badge_label": m["badge_label"], "live": m["live"],
-            "subtitle": m.get("subtitle", ""), "ordered": m.get("ordered", False),
-            "tech": core.resolve_tech(m), "flow": m.get("flow", []),
-            "bullets": m["bullets"], "code": m.get("code", []),
-            "gallery": core.method_gallery(m),
-            "metrics": core.method_metrics(m),
-            "extras": core.method_extras(m)}
-
-
-@app.get("/api/compare")
-def api_compare(idx: int = 0, conf: float = 0.6):
-    return core.compare(idx, conf)
-
-
-@app.get("/api/glossary")
-def api_glossary():
-    return core.GLOSSARY
-
-
-@app.get("/api/experiments")
-def api_experiments():
-    return {cat: list(topics.keys()) for cat, topics in core.EXPERIMENTS.items()}
-
-
-@app.get("/api/experiment")
-def api_experiment(cat: str, topic: str):
-    return core.experiment_metrics(cat, topic)
-
-
-@app.post("/api/export")
-def api_export():
-    return {"path": core.export_report()}
-
-
 @app.get("/api/autolabel/folders")
 def api_autolabel_folders():
     return _read("list_folders", autolabel.list_folders)
@@ -377,14 +328,6 @@ def api_sam2_rollback_to(payload: dict = Body(...)):
 @app.get("/api/sam2/status")
 def api_sam2_status(job: str):
     return sa.job_status(job)
-
-
-@app.get("/previews/{sub}/{name}")
-def api_preview(sub: str, name: str):
-    p = (core.PREV_DIR / sub / name).resolve()
-    if not str(p).startswith(str(core.PREV_DIR.resolve())) or not p.exists():
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return FileResponse(p)
 
 
 if DIST.exists():

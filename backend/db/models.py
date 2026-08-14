@@ -74,8 +74,10 @@ class Part(Base):
 
 
 class PartVideo(Base):
-    """부품 촬영 테이크. 부품 1개에 영상 N개(학습용 여러 개 + 평가용 1개)라서 별도 테이블이 필요하다.
-    role 은 프론트 takeRoles() 규칙과 동일하게 채운다(이름에 test 포함 → test, 없으면 마지막 번호가 test)."""
+    """부품 촬영 테이크. 부품 1개에 영상 N개라서 별도 테이블이 필요하다.
+
+    role 은 항상 'train' 이다. 파일명으로 학습/평가를 가르던 규칙은 제거했고(2026-08-14),
+    평가용 영상은 제품 밖(data/_eval/<부품>)에 따로 둔다. 컬럼은 과거 행 호환으로 남겨둔다."""
     __tablename__ = "part_videos"
     __table_args__ = (UniqueConstraint("part_id", "stem", name="uq_part_video_stem"),)
 
