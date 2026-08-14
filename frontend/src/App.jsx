@@ -869,6 +869,7 @@ function PartsApp() {
   const [cmpJob, setCmpJob] = useState(() => sessionStorage.getItem('xr_cmpJob') || null)
   const [cmp, setCmp] = useState(null)               // 신규↔기존 모델 비교(평가) 상태
   const [applied, setApplied] = useState(false)      // 신규 모델 서비스 적용 완료
+  const [svcMsg, setSvcMsg] = useState(null)         // 모델 변경 결과(적용·유지·롤백 공통 한 줄)
   const [served, setServed] = useState(null)         // 현재 서비스(기존) 모델 정보
   const [servedLoaded, setServedLoaded] = useState(false)   // served fetch 완료 여부(기본선택 타이밍용)
   const didInitPick = useRef(false)                  // 학습됨 부품 기본선택을 최초 1회만 적용
@@ -917,7 +918,7 @@ function PartsApp() {
     }
   }
   const backToLabel = () => setPage('label')               // 학습은 계속 진행(폴링 유지), 라벨 화면으로 복귀
-  const newRun = () => { setJob(null); setStatus(null); setCmpJob(null); setCmp(null); setApplied(false); setPicked(trainedPartList()); setPage('training') }
+  const newRun = () => { setJob(null); setStatus(null); setCmpJob(null); setCmp(null); setApplied(false); setSvcMsg(null); setPicked(trainedPartList()); setPage('training') }
 
   const [confirmState, setConfirmState] = useState(null)   // 인앱 확인 모달 {title,message,confirmLabel,danger,onOk}
   const ask = (opts) => setConfirmState(opts)
@@ -1078,27 +1079,44 @@ function PartsApp() {
     fetch('/api/sam2/models').then(r => r.json()).then(d => setModels(d.models || [])).catch(() => {})
   }, [cmp?.stage, loadServed])
 
-  const doRollbackTo = async (mid) => {   // 선택 버전으로 롤백(타임라인에서 직접 호출)
+  // 모델 변경 3가지(신규 적용 · 기존 유지 · 과거 롤백)는 동작을 통일한다.
+  //   화면 이동 없음 / 결과는 같은 자리 한 줄 / 버튼은 사라지지 않고 상태만 바뀐다.
+  const refreshServed = async () => {
+    const [s, m] = await Promise.all([
+      fetch('/api/sam2/served').then(x => x.json()).catch(() => null),
+      fetch('/api/sam2/models').then(x => x.json()).catch(() => null),
+    ])
+    if (s) setServed(s && !s.none ? s : null)
+    if (m) setModels(m.models || [])
+    return s && !s.none ? s : null
+  }
+
+  const doRollbackTo = async (mid) => {   // 과거 버전을 서비스 모델로
     if (!mid) return
     const r = await fetch('/api/sam2/rollback_to', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id: mid })
     }).then(x => x.json()).catch(() => ({ error: '롤백 실패' }))
-    if (!r.error) {
-      setRolledTo(mid); setApplied(false)
-      fetch('/api/sam2/served').then(x => x.json()).then(d => setServed(d && !d.none ? d : null)).catch(() => {})
-      fetch('/api/sam2/models').then(x => x.json()).then(d => setModels(d.models || [])).catch(() => {})
-    } else { notify(r.error) }
+    if (r.error) { notify(r.error); return }
+    setRolledTo(mid); setApplied(false)
+    const s = await refreshServed()
+    setSvcMsg(`과거 버전으로 롤백했습니다 · 현재 서비스 모델 ${s?.label || mid}`)
   }
 
-  const doRollback = async () => {   // 신규 폐기 → 라벨 화면 복귀
+  const doRollback = async () => {   // 신규 폐기(기존 모델 유지) — 화면은 그대로 둔다
     await fetch('/api/sam2/rollback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {})
-    setJob(null); setStatus(null); setCmpJob(null); setCmp(null); setApplied(false); setPage('label')
+    setApplied(false)
+    const s = await refreshServed()
+    setSvcMsg(`기존 모델을 유지했습니다 · 현재 서비스 모델 ${s?.label || '없음'}`)
   }
-  const doApply = async () => {   // 신규 모델을 서비스에 적용
+
+  const doApply = async () => {   // 신규 모델을 서비스에 적용(추론 서버 배포는 백엔드가 함께 처리)
     const r = await fetch('/api/sam2/apply_model', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session })
-    }).then(x => x.json()).catch(() => ({ error: 'apply failed' }))
-    if (!r.error) setApplied(true)
+    }).then(x => x.json()).catch(() => ({ error: '적용 실패' }))
+    if (r.error) { notify(r.error); return }
+    setApplied(true)
+    const s = await refreshServed()
+    setSvcMsg(`신규 모델을 적용했습니다 · 현재 서비스 모델 ${s?.label || session}`)
   }
   const doCancel = async () => {   // 학습 중단
     if (!job || job === 'err') return
@@ -1267,19 +1285,27 @@ function PartsApp() {
       ) : (
         // ===== 3단계: 모델 평가 · 적용 (버전 비교 → 서비스 적용 / 선택형 롤백) =====
         <div className="ev2">
+          {svcMsg && (   // 세 액션의 결과가 항상 같은 자리·같은 모양으로 나온다
+            <div className="svc-msg"><IcCheck /><span>{svcMsg}</span>
+              <button className="svc-msg-x" type="button" onClick={() => setSvcMsg(null)} aria-label="닫기"><IcX /></button>
+            </div>
+          )}
           <PageHead title={cmpDone ? '모델 평가' : cmp?.running ? '모델 평가 중' : '모델관리'} back={openTrain}
                     right={(!cmp?.running && !cmp?.error) ? (
                       <div className="ev2-head-actions">
                         <RollbackMenu models={models} servedId={served?.model_id}
                                       onRollbackTo={askRollbackTo} onDeleteModel={askDeleteModel}
                                       onKeep={null} onApply={null} applied={applied} />
-                        {cmpDone && cmp.recommend && !applied && (   // 과거 조회 | 기존 유지 | 신규 적용 나란히
+                        {cmpDone && cmp.recommend && (   // 과거 조회 | 기존 유지 | 신규 적용 나란히(적용 후에도 남는다)
                           <>
-                            <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'danger' : 'ghost'}`} onClick={doRollback}>기존 모델 유지</button>
-                            <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'ghost' : 'train'}`} onClick={doApply}>신규 모델 적용</button>
+                            <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'danger' : 'ghost'}`}
+                                    onClick={doRollback}>기존 모델 유지</button>
+                            <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'ghost' : 'train'}`}
+                                    onClick={doApply} disabled={applied}>
+                              {applied ? '✓ 적용됨' : '신규 모델 적용'}
+                            </button>
                           </>
                         )}
-                        {cmpDone && applied && <span className="ok-flash"><IcCheck /> 적용됨</span>}
                       </div>
                     ) : null} />
           {cmp?.running && (

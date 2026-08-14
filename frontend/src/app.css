@@ -616,6 +616,15 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 /* ===== 모델 평가·관리(ev2) ===== */
 /* 카드 높이를 flex 로 채운다. 예전엔 calc(100vh - 208px) 같은 매직넘버였는데
    탭 바·헤더 높이가 바뀔 때마다 어긋나고 카드 아래 여백이 남았다. */
+/* 모델 변경 결과(적용·유지·롤백 공통). 세 액션 모두 이 자리에 같은 모양으로 표시 */
+.svc-msg { display: flex; align-items: center; gap: var(--sp-4); flex-shrink: 0;
+  margin-bottom: var(--sp-5); padding: var(--sp-4) var(--sp-6);
+  background: var(--success-bg-soft); border: 1px solid var(--success-line); border-radius: var(--r-md);
+  color: var(--success-ink); font-size: var(--fs-sm); font-weight: 600; }
+.svc-msg svg { width: var(--ic-sm); height: var(--ic-sm); flex-shrink: 0; }
+.svc-msg span { flex: 1; min-width: 0; }
+.svc-msg-x { background: none; border: 0; color: inherit; cursor: pointer; padding: 0; display: inline-flex; opacity: .7; }
+.svc-msg-x:hover { opacity: 1; }
 .ev2 { display: flex; flex-direction: column; flex: 1; min-height: 360px; overflow: hidden; }
 .ev2-progress { display: flex; align-items: center; gap: var(--sp-8); padding: var(--sp-12) var(--sp-2); }
 .ev2-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: var(--sp-6);
