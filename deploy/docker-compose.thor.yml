@@ -1,0 +1,71 @@
+# Jetson Thor 배포용. 전부 컨테이너로 돈다(DB · 대시보드 · 추론 서버).
+#   준비: deploy/.env.example -> deploy/.env (비밀번호 채우기), 프론트는 개발기에서 npm run build 후 dist 포함
+#   빌드: docker compose --env-file deploy/.env -f deploy/docker-compose.thor.yml build
+#   기동: docker compose --env-file deploy/.env -f deploy/docker-compose.thor.yml up -d
+#   최초 1회: docker compose ... exec app python3 backend/db/migrate_from_files.py   (파일 -> DB 색인)
+services:
+  db:
+    image: postgres:16-alpine          # arm64 이미지 있음. 개발기 compose 와 같은 설정
+    container_name: xr_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${XR_DB_NAME:-xr_autolearning}
+      POSTGRES_USER: ${XR_DB_USER:-xr}
+      POSTGRES_PASSWORD: ${XR_DB_PASSWORD:?deploy/.env 에 XR_DB_PASSWORD 를 설정하세요}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - xr_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${XR_DB_USER:-xr} -d ${XR_DB_NAME:-xr_autolearning}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # 대시보드 = 등록·라벨·학습·평가. SAM2 와 YOLO 학습이 이 컨테이너 안에서 돈다.
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.thor
+      args:
+        L4T_BASE: ${L4T_BASE:-nvcr.io/nvidia/l4t-pytorch:r36.2.0-pth2.2-py3}
+    image: xr-autolearning:thor
+    container_name: xr_app
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      XR_DB_HOST: db                   # 컨테이너 이름으로 접속(127.0.0.1 아님)
+      XR_DB_PORT: 5432
+      XR_DB_NAME: ${XR_DB_NAME:-xr_autolearning}
+      XR_DB_USER: ${XR_DB_USER:-xr}
+      XR_DB_PASSWORD: ${XR_DB_PASSWORD}
+      XR_DB_READS: "1"
+      YOLO_SERVER_URL: http://infer:9412   # '신규 모델 적용' 시 /reload 를 호출할 대상
+    ports:
+      - "7862:7862"
+    volumes:
+      # DB 의 경로가 저장소 루트 기준 상대경로라, /app 아래 같은 이름으로 붙이면 그대로 유효하다.
+      - ../data:/app/data
+      - ../results:/app/results
+      - ../models:/app/models
+    runtime: nvidia                    # Jetson 은 nvidia-container-runtime
+    shm_size: "2gb"                    # YOLO DataLoader 워커용(기본 64MB 로는 부족)
+
+  # 현장 추론 API. 같은 이미지에서 커맨드만 바꿔 띄운다.
+  infer:
+    image: xr-autolearning:thor
+    container_name: xr_infer
+    restart: unless-stopped
+    command: ["python3", "backend/yolo_server/server.py"]
+    environment:
+      # 컨테이너가 나뉘어 있으니 앱이 복사해 주는 backend/yolo_server/model.pt 를 볼 수 없다.
+      # 대신 공유 볼륨의 고정 경로를 직접 읽는다(앱이 '적용' 시 여기에 써 넣고 /reload 를 호출).
+      SERVE_MODEL_FILE: /app/models/model.pt
+    ports:
+      - "9412:9412"
+    volumes:
+      - ../models:/app/models
+    runtime: nvidia
+
+volumes:
+  xr_pgdata:
