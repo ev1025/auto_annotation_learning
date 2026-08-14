@@ -622,9 +622,10 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
   background: var(--success-bg-soft); border: 1px solid var(--success-line); border-radius: var(--r-md);
   color: var(--success-ink); font-size: var(--fs-sm); font-weight: 600; }
 .svc-msg svg { width: var(--ic-sm); height: var(--ic-sm); flex-shrink: 0; }
+.svc-msg { animation: svcIn .16s ease-out; }
+@keyframes svcIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .svc-msg { animation: none; } }
 .svc-msg span { flex: 1; min-width: 0; }
-.svc-msg-x { background: none; border: 0; color: inherit; cursor: pointer; padding: 0; display: inline-flex; opacity: .7; }
-.svc-msg-x:hover { opacity: 1; }
 .ev2 { display: flex; flex-direction: column; flex: 1; min-height: 360px; overflow: hidden; }
 .ev2-progress { display: flex; align-items: center; gap: var(--sp-8); padding: var(--sp-12) var(--sp-2); }
 .ev2-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: var(--sp-6);

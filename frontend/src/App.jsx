@@ -870,6 +870,13 @@ function PartsApp() {
   const [cmp, setCmp] = useState(null)               // 신규↔기존 모델 비교(평가) 상태
   const [applied, setApplied] = useState(false)      // 신규 모델 서비스 적용 완료
   const [svcMsg, setSvcMsg] = useState(null)         // 모델 변경 결과(적용·유지·롤백 공통 한 줄)
+  const svcTimer = useRef(null)
+  const flashSvc = (text) => {                       // 2초 뒤 자동으로 사라진다(닫기 버튼 없음)
+    clearTimeout(svcTimer.current)
+    setSvcMsg(text)
+    svcTimer.current = setTimeout(() => setSvcMsg(null), 2000)
+  }
+  useEffect(() => () => clearTimeout(svcTimer.current), [])
   const [served, setServed] = useState(null)         // 현재 서비스(기존) 모델 정보
   const [servedLoaded, setServedLoaded] = useState(false)   // served fetch 완료 여부(기본선택 타이밍용)
   const didInitPick = useRef(false)                  // 학습됨 부품 기본선택을 최초 1회만 적용
@@ -1099,14 +1106,14 @@ function PartsApp() {
     if (r.error) { notify(r.error); return }
     setRolledTo(mid); setApplied(false)
     const s = await refreshServed()
-    setSvcMsg(`과거 버전으로 롤백했습니다 · 현재 서비스 모델 ${s?.label || mid}`)
+    flashSvc(`과거 버전으로 롤백했습니다 · 현재 서비스 모델 ${s?.label || mid}`)
   }
 
   const doRollback = async () => {   // 신규 폐기(기존 모델 유지) — 화면은 그대로 둔다
     await fetch('/api/sam2/rollback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {})
     setApplied(false)
     const s = await refreshServed()
-    setSvcMsg(`기존 모델을 유지했습니다 · 현재 서비스 모델 ${s?.label || '없음'}`)
+    flashSvc(`기존 모델을 유지했습니다 · 현재 서비스 모델 ${s?.label || '없음'}`)
   }
 
   const doApply = async () => {   // 신규 모델을 서비스에 적용(추론 서버 배포는 백엔드가 함께 처리)
@@ -1119,7 +1126,7 @@ function PartsApp() {
     if (r.error) { notify(r.error); return }
     setApplied(true)
     const s = await refreshServed()
-    setSvcMsg(`신규 모델을 적용했습니다 · 현재 서비스 모델 ${s?.label || r.session || target}`)
+    flashSvc(`신규 모델을 적용했습니다 · 현재 서비스 모델 ${s?.label || r.session || target}`)
   }
   const doCancel = async () => {   // 학습 중단
     if (!job || job === 'err') return
@@ -1288,10 +1295,8 @@ function PartsApp() {
       ) : (
         // ===== 3단계: 모델 평가 · 적용 (버전 비교 → 서비스 적용 / 선택형 롤백) =====
         <div className="ev2">
-          {svcMsg && (   // 세 액션의 결과가 항상 같은 자리·같은 모양으로 나온다
-            <div className="svc-msg"><IcCheck /><span>{svcMsg}</span>
-              <button className="svc-msg-x" type="button" onClick={() => setSvcMsg(null)} aria-label="닫기"><IcX /></button>
-            </div>
+          {svcMsg && (   // 세 액션의 결과가 항상 같은 자리·같은 모양으로 나오고 2초 뒤 사라진다
+            <div className="svc-msg" role="status"><IcCheck /><span>{svcMsg}</span></div>
           )}
           <PageHead title={cmpDone ? '모델 평가' : cmp?.running ? '모델 평가 중' : '모델관리'} back={openTrain}
                     right={(!cmp?.running && !cmp?.error) ? (

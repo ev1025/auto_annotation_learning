@@ -496,9 +496,10 @@ def _synth_augment(oi, ol, logln, n_syn=400):
         step = max(1, len(items) // CUT_PER_CLASS)
         picked += [(ip, lp, ci) for ip, lp in items[::step][:CUT_PER_CLASS]]
     if not picked:
-        logln("누끼 대상 없음 → 배경 합성 증강 생략", "info"); return 0
+        logln("배경 합성 증강 생략(대상 없음)", "info"); return 0
 
-    logln(f"배경 합성 증강: 누끼 {len(picked)}장 선별(부품당 최대 {CUT_PER_CLASS})", "info")
+    logln("배경 합성 증강 중...", "info")
+    logger.info(f"[synth] 누끼 대상 {len(picked)}장 선별(부품당 최대 {CUT_PER_CLASS})")
     cuts, hit, miss = [], 0, 0
     pred = None
     for ip, lp, ci in picked:
@@ -537,13 +538,12 @@ def _synth_augment(oi, ol, logln, n_syn=400):
     if pred is not None:
         free_sam2()
     if not cuts:
-        logln("누끼 결과 없음 → 배경 합성 증강 생략", "info"); return 0
+        logln("배경 합성 증강 생략(대상 없음)", "info"); return 0
     # 클래스별로 나눠 담는다. 한 통에서 뽑으면 라벨 많은 부품이 합성까지 독점한다.
     by_cls = {}
     for rgba, ci in cuts:
         by_cls.setdefault(ci, []).append(rgba)
-    logln(f"누끼 완료: 캐시 재사용 {hit} · 신규 {miss}", "info")
-    logln(f"누끼 {len(cuts)}개({len(by_cls)}종) → 배경 합성 증강 생성 중...", "info")
+    logger.info(f"[synth] 누끼 완료: 캐시 재사용 {hit} · 신규 {miss} · 총 {len(cuts)}개({len(by_cls)}종)")
 
     # 2) 합성: 배경에 1~2개 랜덤 붙여넣기(회전·스케일), 멀티클래스 라벨 기록
     made = 0
@@ -571,7 +571,7 @@ def _synth_augment(oi, ol, logln, n_syn=400):
             cv2.imwrite(str(oi / f"syn_{k:05d}.jpg"), bg)
             (ol / f"syn_{k:05d}.txt").write_text("\n".join(labels) + "\n", encoding="utf-8")
             made += 1
-    logln(f"배경 합성 증강 완료: {made}장 추가(원본 프레임 + 합성)", "ok")
+    logln(f"배경 합성 증강 완료 · {made}장 추가", "ok")
     return made
 
 # ---- 내부 평가용 영상(제품 로직 밖) ----
