@@ -36,30 +36,6 @@ RESULTS = config.BASE_DIR / "results"
 DEFAULT_CATEGORIES = ["공구", "계측기", "전장 부품", "기타"]   # UI 기본값과 동일
 
 
-def trail_num(name: str) -> int:
-    """이름 끝 숫자(테이크 번호). 없으면 0 — 프론트 trailNum 과 같은 규칙."""
-    m = re.search(r"(\d+)\s*$", Path(name).stem)
-    return int(m.group(1)) if m else 0
-
-
-def take_roles(stems: list[str]) -> dict[str, str]:
-    """프론트 takeRoles() 와 동일 규칙으로 stem -> 'train'|'test' 판정.
-    - 이름에 test 가 있으면 그것들 중 마지막이 test, 나머지는 train
-    - 없고 2개 이상이면 끝번호 가장 큰 것이 test
-    - 1개면 그 영상이 train 겸 test(단일 테이크) -> 여기서는 train 으로 기록
-    """
-    if not stems:
-        return {}
-    explicit = [s for s in stems if re.search(r"test", s, re.I)]
-    if explicit:
-        test = explicit[-1]
-    elif len(stems) >= 2:
-        test = sorted(stems, key=trail_num)[-1]
-    else:
-        return {stems[0]: "train"}
-    return {s: ("test" if s == test else "train") for s in stems}
-
-
 def frames_dir_for(part_dir: Path, stem: str) -> Path | None:
     """영상의 프레임 저장소(results/autolabels/<부품>/images/<stem>). 저장소는 한 곳뿐이다.
 
@@ -140,7 +116,6 @@ def sync_part_dir(s, pdir: Path, stats: dict) -> None:
         s.flush()
         stats["parts"] += 1
 
-        roles = take_roles([v.stem for v in vids])
         shots = {}
         sj = AUTOLABELS / pdir.name / "shots.json"
         if sj.exists():
@@ -152,11 +127,11 @@ def sync_part_dir(s, pdir: Path, stats: dict) -> None:
         for v in vids:
             video = s.query(PartVideo).filter_by(part_id=part.id, stem=v.stem).first()
             if not video:
-                video = PartVideo(part_id=part.id, stem=v.stem, path=rel(v), role=roles.get(v.stem, "train"))
+                video = PartVideo(part_id=part.id, stem=v.stem, path=rel(v), role="train")
                 s.add(video)
                 stats["videos_new"] += 1
             else:
-                video.path, video.role = rel(v), roles.get(v.stem, "train")
+                video.path, video.role = rel(v), "train"
             s.flush()
             stats["videos"] += 1
 

@@ -36,19 +36,7 @@ const IcWarn = () => (
 // **굵게** 마커를 <b>로 변환
 // data/bell412/<그룹>/<부품>/videos → 부품 파싱. 폴더=부품, 폴더 안 영상=그 부품의 train/test 테이크
 const partOf = (rel) => { const p = rel.replace(/\/videos$/, '').split('/'); return p.length > 2 ? p.slice(2).join('/') : (p[1] || rel) }
-const trailNum = (s) => { const m = String(s).match(/(\d+)\s*$/); return m ? +m[1] : 0 }
 // 부품 폴더의 테이크 → {train:[...], test} : test* 있으면 그게 테스트, 없고 2개+면 끝수 최대("2")가 테스트, 단일이면 학습영상으로 테스트
-const takeRoles = (videos) => {
-  const names = (videos || []).map(v => v.name)
-  if (!names.length) return { train: [], test: null }
-  const explicit = names.filter(n => /test/i.test(n))
-  if (explicit.length) return { train: names.filter(n => !/test/i.test(n)), test: explicit[explicit.length - 1] }
-  if (names.length >= 2) {
-    const sorted = [...names].sort((a, b) => trailNum(a) - trailNum(b))
-    return { train: sorted.slice(0, -1), test: sorted[sorted.length - 1] }
-  }
-  return { train: names, test: names[0] }   // 단일 테이크 → 학습영상으로 테스트
-}
 
 // 부품 라벨링(SAM2): 데이터셋(그룹)→부품(폴더) 순회. 부품마다 학습 테이크 탭 → 입력 마스크 확인 → 라벨 생성 → 다음 부품
 function AutoLabelView() {
@@ -114,11 +102,8 @@ function AutoLabelView() {
   const partFolders = nestedParts.length ? nestedParts : folders          // 부품 폴더들(중첩 없으면 전체)
   const curPartFolder = partFolders[partIdx]
   const folderVideos = curPartFolder?.videos || []                       // 이 부품의 테이크들
-  const roles = takeRoles(folderVideos)
-  const src = (selVideo && folderVideos.some(v => v.name === selVideo))   // 선택한 영상(없으면 기본=첫 학습영상 or 첫 영상)
-    ? selVideo : (roles.train[0] || folderVideos[0]?.name || null)
-  const testTake = roles.test                                            // 이 부품 테스트 테이크(2 또는 학습영상 자체)
-  const testIsSelf = testTake && roles.train.includes(testTake)
+  const src = (selVideo && folderVideos.some(v => v.name === selVideo))   // 선택한 영상(없으면 첫 영상)
+    ? selVideo : (folderVideos[0]?.name || null)
   // 부품경로 기반 유니크 키(bell412/<부품>/videos/<stem>). 같은 이름 영상이 다른 부품에 있어도 안 꼬이게
   // API(prepare·frame·mask·parts_label)엔 이 키를 넘긴다. 화면/상태 키는 여전히 stem(부품 폴더 내 유니크).
   const keyOf = (name) => {
@@ -215,8 +200,8 @@ function AutoLabelView() {
   }
   const hasTaps = (name) => Object.values(ptsBySrc[name] || {}).some(a => a.length)
   const isLabeled = (name) => !!labeledMap[name]
-  const pfTrain = (pf) => takeRoles(pf.videos).train                     // 부품 폴더의 학습 테이크들
-  const pfStatus = (pf) => {                                             // 부품 상태(학습 테이크 기준)
+  const pfTrain = (pf) => (pf.videos || []).map(v => v.name)             // 부품 폴더의 영상들(전부 학습용)
+  const pfStatus = (pf) => {                                             // 부품 상태
     const tr = pfTrain(pf)
     if (tr.some(isLabeled)) return 'done'
     if (tr.some(hasTaps)) return 'tapped'
@@ -305,20 +290,11 @@ function AutoLabelView() {
 
   const goPart = (i) => { setPartIdx(Math.max(0, Math.min(i, partFolders.length - 1))); setTakeIdx(0); setSelVideo(null) }
 
-  // 멀티클래스 학습: 세션 누적 라벨 → 클래스 통합 → YOLO 학습 → 부품별 테스트 테이크 검출 평가
-  const testSrcs = () => {   // 라벨된 부품마다 테스트 테이크(끝수 "2" 또는 학습영상 자체)
-    const s = []
-    partFolders.forEach(pf => { const r = takeRoles(pf.videos); if (r.train.some(isLabeled) && r.test && !s.includes(r.test)) s.push(r.test) })
-    return s
-  }
+  // 멀티클래스 학습: 세션 누적 라벨 → 클래스 통합 → YOLO 학습
   const runTrain = async () => {
-    const tests = testSrcs().filter(t => {   // 선택 클래스에 해당하는 테스트 테이크만
-      const pf = partFolders.find(pf => takeRoles(pf.videos).test === t)
-      return pf && selectedClasses.includes(partOf(pf.folder))
-    })
     const r = await fetch('/api/sam2/multiclass', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session, epochs: 100, test_srcs: tests, classes: selectedClasses })
+      body: JSON.stringify({ session, epochs: 100, classes: selectedClasses })
     }).then(x => x.json())
     if (r.error) { setTrainStatus({ error: r.error }); return }
     setTrainJob(r.job); setTrainStatus({ stage: 'start', running: true })
@@ -337,7 +313,6 @@ function AutoLabelView() {
   const activeMask = masks[shotKey(src, idx)] || null   // 현재 프레임의 마스크만 표시(프레임 바뀌면 자동으로 사라짐)
   const genDone = labelStatus?.stage === 'done' && labelStatus?.video === src
   const partName = curPartFolder ? partOf(curPartFolder.folder) : ''
-  const evalList = testSrcs()
   const openReview = () => {   // 현재 부품의 생성된 학습 프레임(세션 무관)을 검수 모달로
     if (!partName) return
     fetch(`/api/sam2/part_frames?part=${encodeURIComponent(partName)}`).then(r => r.json())
@@ -374,7 +349,7 @@ function AutoLabelView() {
           {/* 상단 범례 제거 — 범례는 이미지·입력마스크 아래로 이동 */}
           {/* 상단 액션 버튼줄 */}
           <div className="al-controls" style={{ flexShrink: 0 }}>
-            {roles.train.length >= 1 && (
+            {folderVideos.length >= 1 && (
               <button className="act-btn neutral" onClick={() => setShowVideoPick(true)} disabled={running} title="학습 영상 선택·미리보기">영상 선택</button>
             )}
             <button className="act-btn neutral" onClick={undo} disabled={running || !cur.length}>점 취소</button>
@@ -548,7 +523,7 @@ function AutoLabelView() {
               <button className="icon-x" onClick={() => setShowVideoPick(false)} aria-label="닫기"><IcX /></button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, padding: 16, maxHeight: '64vh', overflow: 'auto' }}>
-              {roles.train.map(v => {
+              {folderVideos.map(o => o.name).map(v => {
                 const on = v === src
                 return (
                   <div key={v} role="button" tabIndex={0} onClick={() => { setSelVideo(v); setShowVideoPick(false) }}
@@ -939,10 +914,7 @@ function PartsApp() {
   const folderOf = (video) => folders.find(f => f.videos.some(v => v.name === video))
   const items = Object.keys(labeledMap).map(video => {   // 라벨 1장 이상 생성된 부품만 학습 대상
     const f = folderOf(video)
-    const teststem = f ? takeRoles(f.videos).test : video
-    // test_srcs 는 부품경로 키로 넘긴다(같은 이름 test 영상이 다른 부품에 있어도 평가 대상 안 꼬임)
-    const test = f && teststem ? `${f.folder}/${teststem}` : teststem
-    return { video, part: f ? partOf(f.folder) : video, test,
+    return { video, part: f ? partOf(f.folder) : video,
              labels: labeledMap[video].labels, trained: trainedVideos.includes(video) }
   }).filter(it => it.labels > 0).sort((a, b) => a.part.localeCompare(b.part))
   const selected = items.filter(it => picked.includes(it.part))
@@ -987,10 +959,9 @@ function PartsApp() {
 
   const runTrain = async () => {
     const classes = selected.map(it => it.part)
-    const tests = [...new Set(selected.map(it => it.test).filter(Boolean))]
     const r = await fetch('/api/sam2/multiclass', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session, epochs, test_srcs: tests, classes, augment: true })   // 배경 합성 증강 항상 적용
+      body: JSON.stringify({ session, epochs, classes, augment: true })   // 배경 합성 증강 항상 적용
     }).then(x => x.json())
     if (r.error) { setJob('err'); setStatus({ error: r.error, running: false, log: [] }); return }
     setCmpJob(null); setCmp(null); setApplied(false)   // 새로 학습하면 이전 평가 결과는 무효(재비교 대상)

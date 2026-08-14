@@ -538,7 +538,18 @@ def _synth_augment(oi, ol, logln, n_syn=400):
     logln(f"배경 합성 증강 완료: {made}장 추가(원본 프레임 + 합성)", "ok")
     return made
 
-def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None, augment=False):
+# ---- 내부 평가용 영상(제품 로직 밖) ----
+# data/_eval/<부품>/*.mp4 : 성능 확인용 미학습 영상. '_' 로 시작해 autolabel._videos() 인덱스에서
+# 빠지므로 등록·목록·학습 화면에는 보이지 않는다. 프레임 저장소 규칙은 부품 영상과 같다
+# (results/autolabels/<부품>/images/<stem>) — cache_dir_of 가 부모 폴더명을 부품으로 보기 때문.
+EVAL_ROOT = config.DATA_DIR / "_eval"
+
+def eval_videos(part):
+    d = EVAL_ROOT / part
+    return sorted(f for f in d.glob("*") if f.suffix.lower() in autolabel.VIDEO_EXT) if d.is_dir() else []
+
+
+def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
     """세션에 누적된 per-part 라벨(class 0) → 영상명→부품→클래스 remap → YOLO 학습 → 검출 평가.
     only_classes 지정 시 그 클래스만 학습. augment=True면 학습 전 배경 합성 증강 추가."""
     j = JOBS[job_id]
@@ -728,15 +739,17 @@ def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None, augme
 
         # 3) test 영상 검출 평가 (정답 라벨 없어 mAP 아님 = 검출률+신뢰도+클래스분포+육안)
         eval_res = []
-        if test_srcs:
-            j.update(stage="eval", eval_total=len(test_srcs), eval_done=0, eval_frac=0.0)
+        # 학습한 부품 중 내부 평가 영상(data/_eval/<부품>)이 있는 것만 검출률을 낸다. 없으면 건너뛴다.
+        tests = [(cls, vp) for cls in sorted(per.keys()) for vp in eval_videos(cls)]
+        if tests:
+            j.update(stage="eval", eval_total=len(tests), eval_done=0, eval_frac=0.0)
             det = YOLO(str(w1))
-            total_frames = sum(len(autolabel._frames(ts)) for ts in test_srcs) or 1
+            frames_of = lambda vp: autolabel._cached_frames(autolabel._frames_dir(vp))
+            total_frames = sum(len(frames_of(vp)) for _, vp in tests) or 1
             done_frames = 0
-            for ts in test_srcs:
-                fs = autolabel._frames(ts)
-                vp_ts = autolabel.resolve_video(ts)          # 예측 결과 = results/<시각>/<부품>/pred (꼬인 eval 경로 정리)
-                part = autolabel.part_root_of(vp_ts).name if vp_ts else re.sub(r"[\\/]", "_", str(ts))
+            for part, vp_ts in tests:
+                fs = frames_of(vp_ts)
+                ts = vp_ts.stem                              # 결과 표기용 이름
                 outd = sess / "pred" / part
                 outd.mkdir(parents=True, exist_ok=True)
                 hit, confs, cls_cnt = 0, [], {}
@@ -807,7 +820,7 @@ def _run_multiclass(job_id, session, epochs, test_srcs, only_classes=None, augme
         _BUSY["on"] = False
         gc.collect(); torch.cuda.empty_cache()
 
-def start_multiclass(session, epochs, test_srcs, only_classes=None, augment=False):
+def start_multiclass(session, epochs, only_classes=None, augment=False):
     with _LOCK:
         if _BUSY["on"]:
             return {"error": "이미 실행 중입니다."}
@@ -817,7 +830,7 @@ def start_multiclass(session, epochs, test_srcs, only_classes=None, augment=Fals
     JOBS[jid] = {"stage": "start", "running": True, "error": None, "log": [], "curve": []}
     _ACTIVE.update(job=jid, kind="multiclass", session=session)
     threading.Thread(target=_run_multiclass,
-                     args=(jid, session, int(epochs or EPOCHS), test_srcs or [], only_classes or None, bool(augment)),
+                     args=(jid, session, int(epochs or EPOCHS), only_classes or None, bool(augment)),
                      daemon=True).start()
     return {"job": jid}
 
@@ -1023,20 +1036,23 @@ def _run_compare(job_id, session, base_model_id=None):
         base_set = set(base_classes)
         base_label = (base.get("label") or base.get("session")) if base else "기존 모델 없음"
 
-        # 클래스 → 대표 영상 stem (학습과 동일한 stem_to_class 규칙)
-        stem_by_class = {}
+        # 클래스 → 비교에 쓸 영상. 내부 평가 영상(data/_eval/<부품>)이 있으면 그것(미학습),
+        # 없으면 그 부품 영상 아무거나(학습에 쓴 영상일 수 있음 = in-sample).
+        vid_by_class = {}
         for vp in autolabel._videos():
-            c = bm.stem_to_class(vp.stem + "_0")
-            stem_by_class.setdefault(c, vp.stem)
+            vid_by_class.setdefault(bm.stem_to_class(vp.stem + "_0"), vp)
+        def _pick_video(c):
+            ev = eval_videos(c)
+            return ev[0] if ev else vid_by_class.get(c)
 
         # 테스트 대상: 신규 부품(전부) + 기존 부품 표본(최대 12)
-        items = []   # (class, stem, kind)
+        items = []   # (class, video_path, kind)
         for c in [x for x in new_classes if x not in base_set]:
-            if c in stem_by_class:
-                items.append((c, stem_by_class[c], "new"))
+            if _pick_video(c):
+                items.append((c, _pick_video(c), "new"))
         for c in sorted(base_classes)[:12]:
-            if c in stem_by_class:
-                items.append((c, stem_by_class[c], "base"))
+            if _pick_video(c):
+                items.append((c, _pick_video(c), "base"))
         if not items:
             raise RuntimeError("비교할 테스트 영상을 찾지 못했습니다.")
 
@@ -1094,8 +1110,8 @@ def _run_compare(job_id, session, base_model_id=None):
         scale = min(1.0, TOTAL_CAP / want) if want else 1.0
 
         rows, samples = [], []
-        for k, (c, stem, kind) in enumerate(items, 1):
-            fs = autolabel._frames(stem)
+        for k, (c, vp, kind) in enumerate(items, 1):
+            fs = autolabel._cached_frames(autolabel._frames_dir(vp))
             sub = fs[::max(1, len(fs) // 15)][:15]
             new_r = _rate(new_model, sub, c)
             base_r = _rate(base_model, sub, c) if base_model else None

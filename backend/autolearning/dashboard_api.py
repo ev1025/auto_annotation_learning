@@ -297,7 +297,7 @@ def api_parts_label_batch(payload: dict = Body(...)):
 
 @app.post("/api/sam2/multiclass")
 def api_multiclass(payload: dict = Body(...)):
-    return sa.start_multiclass(payload.get("session"), payload.get("epochs"), payload.get("test_srcs", []),
+    return sa.start_multiclass(payload.get("session"), payload.get("epochs"),
                                payload.get("classes"), payload.get("augment", False))
 
 
