@@ -44,6 +44,8 @@ function AutoLabelView() {
   const [partIdx, setPartIdx] = useState(0)         // 부품(폴더) 인덱스
   const [takeIdx, setTakeIdx] = useState(0)         // (구) 학습 테이크 인덱스
   const [selVideo, setSelVideo] = useState(null)    // 선택해서 보고 있는 영상(없으면 기본=첫 학습영상)
+  const [confirmDelVid, setConfirmDelVid] = useState(null)   // 삭제 확인 중인 영상 이름
+  const [alertMsg, setAlertMsg] = useState(null)             // 인앱 알림(네이티브 alert 대체)
   const [showVideoPick, setShowVideoPick] = useState(false)  // 영상 선택 모달(라벨검수식)
   const [count, setCount] = useState(0)             // 현재 테이크 프레임 수
   const [idx, setIdx] = useState(0)                 // 현재 프레임
@@ -292,15 +294,14 @@ function AutoLabelView() {
     }).catch(() => {})
     setReviewFrames(fs => fs.filter(x => !(x.session === f.session && x.name === f.name)))
   }
-  // 영상 삭제(모달): 원본은 서버 보관함(_trash)으로 이동, 프레임·라벨은 삭제
+  // 영상 삭제: 확인·오류 모두 인앱 모달(네이티브 dialog 안 씀). 프레임·라벨도 함께 정리된다
   const deleteVideo = async (name) => {
     if (running) return
-    if (!window.confirm(`'${name}' 영상을 삭제할까요?\n· 원본은 _trash 폴더로 이동(복구 가능)\n· 이 영상의 프레임캐시와 자동생성 라벨은 삭제됩니다.`)) return
     const key = keyOf(name)
     const r = await fetch('/api/sam2/delete_video', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ src: key })
     }).then(x => x.json()).catch(() => ({ error: '삭제 요청 실패' }))
-    if (r.error) { window.alert(r.error); return }
+    if (r.error) { setAlertMsg(r.error); return }
     setPtsBySrc(prev => { const n = { ...prev }; delete n[name]; return n })   // 이 영상 탭 정리
     if (selVideo === name) setSelVideo(null)
     loadFolders(); loadSessions()
@@ -500,7 +501,7 @@ function AutoLabelView() {
                     {on && <span className="vpick-badge">선택됨</span>}
                     {/* 영상 삭제(X): 원본은 보관함으로 이동, 프레임·라벨은 삭제 */}
                     <button className="review-del vpick-del" title="이 영상 삭제" disabled={running}
-                            onClick={(e) => { e.stopPropagation(); deleteVideo(v) }}><IcX /></button>
+                            onClick={(e) => { e.stopPropagation(); if (!running) setConfirmDelVid(v) }}><IcX /></button>
                     <img src={`/api/autolabel/frame?src=${encodeURIComponent(keyOf(v))}&idx=0&w=360`} alt={v} loading="lazy" />
                     <span className="vpick-name">{isLabeled(v) ? '✓ ' : ''}{v}</span>
                   </div>
@@ -511,6 +512,13 @@ function AutoLabelView() {
         </div>
       )}
 
+      <ConfirmModal open={!!confirmDelVid} title="영상 삭제"
+                    message={confirmDelVid ? `${confirmDelVid} 영상을 삭제할까요? 이 영상으로 만든 프레임·라벨·참조샷도 함께 사라집니다.` : ''}
+                    confirmLabel="삭제" danger
+                    onCancel={() => setConfirmDelVid(null)}
+                    onConfirm={() => { const v = confirmDelVid; setConfirmDelVid(null); deleteVideo(v) }} />
+      <ConfirmModal open={!!alertMsg} title="알림" message={alertMsg || ''} confirmLabel="확인" alertOnly
+                    onCancel={() => setAlertMsg(null)} onConfirm={() => setAlertMsg(null)} />
     </div>
   )
 }
@@ -824,8 +832,8 @@ function PartSelect({ options, value, onChange }) {
   )
 }
 
-// 인앱 확인 모달(네이티브 window.confirm 대체). danger=파괴적 액션(빨강 버튼)
-function ConfirmModal({ open, title, message, confirmLabel, danger, onConfirm, onCancel }) {
+// 인앱 확인 모달(네이티브 confirm·alert 대체). danger=파괴적 액션(빨강), alertOnly=알림만(취소 없음)
+function ConfirmModal({ open, title, message, confirmLabel, danger, alertOnly, onConfirm, onCancel }) {
   useEffect(() => {
     if (!open) return
     const onKey = (e) => { if (e.key === 'Escape') onCancel() }
@@ -839,7 +847,7 @@ function ConfirmModal({ open, title, message, confirmLabel, danger, onConfirm, o
         {title && <div className="cfm-title">{title}</div>}
         <div className="cfm-msg">{message}</div>
         <div className="cfm-act">
-          <button className="act-btn ghost" onClick={onCancel}>취소</button>
+          {!alertOnly && <button className="act-btn ghost" onClick={onCancel}>취소</button>}
           <button className={`act-btn ${danger ? 'stop' : 'train'}`} onClick={onConfirm} autoFocus>{confirmLabel || '확인'}</button>
         </div>
       </div>
@@ -963,12 +971,16 @@ function PartsApp() {
     fetch('/api/sam2/served').then(r => r.json()).then(d => setServed(d && !d.none ? d : null)).catch(() => {})
     fetch('/api/sam2/models').then(r => r.json()).then(d => setModels(d.models || [])).catch(() => {})
   }
-  const doDeleteModel = async (mid) => {   // 타임라인/히스토리에서 버전 삭제(현재 서비스 모델은 백엔드가 거부)
-    if (!window.confirm(`모델 #${mid} 을(를) 삭제할까요? 되돌릴 수 없습니다.`)) return
+  const notify = (message) =>   // 인앱 알림(네이티브 alert 대체)
+    ask({ title: '알림', message, confirmLabel: '확인', alertOnly: true, onOk: () => {} })
+  const askDeleteModel = (mid) =>   // 타임라인/히스토리에서 버전 삭제(현재 서비스 모델은 백엔드가 거부)
+    ask({ title: '모델 삭제', message: `모델 #${mid} 을(를) 삭제할까요? 되돌릴 수 없습니다.`,
+          confirmLabel: '삭제', danger: true, onOk: () => doDeleteModel(mid) })
+  const doDeleteModel = async (mid) => {
     const r = await fetch('/api/sam2/delete_model', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id: mid })
     }).then(x => x.json()).catch(() => ({ error: '삭제 실패' }))
-    if (r.error) { window.alert(r.error); return }
+    if (r.error) { notify(r.error); return }
     if (selVer === mid) setSelVer(null)
     fetch('/api/sam2/models').then(x => x.json()).then(d => setModels(d.models || [])).catch(() => {})
   }
@@ -1075,7 +1087,7 @@ function PartsApp() {
       setRolledTo(mid); setApplied(false)
       fetch('/api/sam2/served').then(x => x.json()).then(d => setServed(d && !d.none ? d : null)).catch(() => {})
       fetch('/api/sam2/models').then(x => x.json()).then(d => setModels(d.models || [])).catch(() => {})
-    } else { window.alert(r.error) }
+    } else { notify(r.error) }
   }
 
   const doRollback = async () => {   // 신규 폐기 → 라벨 화면 복귀
@@ -1259,7 +1271,7 @@ function PartsApp() {
                     right={(!cmp?.running && !cmp?.error) ? (
                       <div className="ev2-head-actions">
                         <RollbackMenu models={models} servedId={served?.model_id}
-                                      onRollbackTo={askRollbackTo} onDeleteModel={doDeleteModel}
+                                      onRollbackTo={askRollbackTo} onDeleteModel={askDeleteModel}
                                       onKeep={null} onApply={null} applied={applied} />
                         {cmpDone && cmp.recommend && !applied && (   // 과거 조회 | 기존 유지 | 신규 적용 나란히
                           <>

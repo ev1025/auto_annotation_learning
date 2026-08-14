@@ -515,11 +515,14 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .pt-no { color: var(--faint); }
 .pt-actions { display: flex; gap: var(--sp-4); justify-content: flex-end; }
 /* 부품 이름 호버 미리보기 카드 */
+/* display:none 으로 숨긴다. visibility:hidden 이면 절대배치 카드가 스크롤 영역을 넓혀
+   마지막 부품 아래로 카드 높이만큼(약 210px) 헛스크롤이 생긴다. 등장 효과는 animation 으로. */
 .pt-preview { position: absolute; top: calc(100% + var(--sp-4)); left: 0; z-index: 50; width: 220px;
   background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-md);
-  box-shadow: var(--shadow-lg); padding: var(--sp-6); opacity: 0; visibility: hidden;
-  transform: translateY(-4px); transition: opacity .14s, transform .14s; pointer-events: none; }
-.pt-name:hover .pt-preview { opacity: 1; visibility: visible; transform: translateY(0); }
+  box-shadow: var(--shadow-lg); padding: var(--sp-6); display: none; pointer-events: none; }
+.pt-name:hover .pt-preview { display: block; animation: ptPop .14s ease-out; }
+@keyframes ptPop { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .pt-name:hover .pt-preview { animation: none; } }
 .pt-preview-thumb { width: 100%; aspect-ratio: 16 / 9; border-radius: var(--r-sm); background: var(--surface-3);
   display: flex; align-items: center; justify-content: center; color: var(--faint); margin-bottom: var(--sp-4); }
 .pt-preview-thumb svg { width: var(--ic-xl); height: var(--ic-xl); }
