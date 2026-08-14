@@ -81,6 +81,8 @@ DEV = "cuda" if torch.cuda.is_available() else "cpu"
 CFG = "configs/sam2.1/sam2.1_hiera_b+.yaml"
 CKPT = config.BASE_DIR / "models" / "sam2" / "sam2.1_hiera_base_plus.pt"
 RESULTS = config.BASE_DIR / "results"
+CUTS_DIR = config.BASE_DIR / "results" / "autolabels" / "_cuts"   # 누끼 캐시(라벨이 그대로면 재사용)
+CUT_PER_CLASS = 60          # 부품당 누끼 상한. 인접 프레임은 사실상 같은 그림이라 더 뽑아도 다양성이 안 늘어난다
 VAL_CONF = 0.4
 EPOCHS = 100
 
@@ -472,26 +474,51 @@ def _synth_augment(oi, ol, logln, n_syn=400):
         ys, xs = np.where(sub[:, :, 3] > 15)
         return None if len(xs) == 0 else (x0 + int(xs.min()), y0 + int(ys.min()), x0 + int(xs.max()), y0 + int(ys.max()))
 
-    # 1) 누끼: 실학습 프레임의 각 객체를 SAM2 마스크로 오려 RGBA + 클래스idx 보관
-    logln("배경 합성 증강: 객체 누끼 중...", "info")
-    pred = _img_predictor()
-    cuts = []
+    # 1) 누끼: 객체를 SAM2 마스크로 오려 RGBA 로 보관.
+    #    비용이 큰 단계라 두 가지로 줄인다.
+    #      (a) 부품당 CUT_PER_CLASS 장만 고르게 뽑는다. 인접 프레임은 거의 같은 그림이라
+    #          495장을 다 돌려도 다양성이 늘지 않고 시간만 든다(실측 495장 = 2분 13초).
+    #      (b) 잘라낸 조각을 캐시한다. 라벨이 그대로면 다음 학습부터 SAM2 를 안 돈다.
+    CUTS_DIR.mkdir(parents=True, exist_ok=True)
+    by_cls_src = {}                        # 클래스 -> [(이미지, 라벨)]
     for ip in sorted(oi.glob("*.jpg")):
         if ip.stem.startswith("syn_"):
             continue
         lp = ol / f"{ip.stem}.txt"
         if not lp.exists():
             continue
+        head = lp.read_text(encoding="utf-8").split()
+        if len(head) < 5:
+            continue
+        by_cls_src.setdefault(int(head[0]), []).append((ip, lp))
+    picked = []
+    for ci, items in sorted(by_cls_src.items()):
+        step = max(1, len(items) // CUT_PER_CLASS)
+        picked += [(ip, lp, ci) for ip, lp in items[::step][:CUT_PER_CLASS]]
+    if not picked:
+        logln("누끼 대상 없음 → 배경 합성 증강 생략", "info"); return 0
+
+    logln(f"배경 합성 증강: 누끼 {len(picked)}장 선별(부품당 최대 {CUT_PER_CLASS})", "info")
+    cuts, hit, miss = [], 0, 0
+    pred = None
+    for ip, lp, ci in picked:
+        cache = CUTS_DIR / f"{ip.stem}.png"
+        if cache.exists() and cache.stat().st_mtime >= lp.stat().st_mtime:
+            rgba = cv2.imread(str(cache), cv2.IMREAD_UNCHANGED)
+            if rgba is not None and rgba.ndim == 3 and rgba.shape[2] == 4:
+                cuts.append((rgba, ci)); hit += 1; continue
+        if pred is None:                   # 캐시 미스가 하나라도 있을 때만 SAM2 를 올린다
+            pred = _img_predictor()
         im = _rd(ip); h, w = im.shape[:2]
         try:
             pred.set_image(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))
         except Exception:
             continue
         for line in lp.read_text(encoding="utf-8").splitlines():
-            p = line.split()
-            if len(p) != 5:
+            f = line.split()
+            if len(f) != 5:
                 continue
-            ci = int(p[0]); cx, cy, bw, bh = map(float, p[1:])
+            cx, cy, bw, bh = map(float, f[1:])
             box = np.array([(cx - bw / 2) * w, (cy - bh / 2) * h, (cx + bw / 2) * w, (cy + bh / 2) * h], np.float32)
             try:
                 with torch.inference_mode(), torch.autocast(DEV, dtype=torch.bfloat16):
@@ -504,14 +531,18 @@ def _synth_augment(oi, ol, logln, n_syn=400):
                 continue
             xa, ya, xb, yb = bb
             a = cv2.GaussianBlur(m[ya:yb + 1, xa:xb + 1].astype(np.uint8) * 255, (3, 3), 0)
-            cuts.append((np.dstack([im[ya:yb + 1, xa:xb + 1], a]), ci))
-    free_sam2()
+            rgba = np.dstack([im[ya:yb + 1, xa:xb + 1], a])
+            cuts.append((rgba, int(f[0]))); miss += 1
+            cv2.imwrite(str(cache), rgba)   # 다음 학습에서 재사용
+    if pred is not None:
+        free_sam2()
     if not cuts:
-        logln("누끼 대상 없음 → 배경 합성 증강 생략", "info"); return 0
+        logln("누끼 결과 없음 → 배경 합성 증강 생략", "info"); return 0
     # 클래스별로 나눠 담는다. 한 통에서 뽑으면 라벨 많은 부품이 합성까지 독점한다.
     by_cls = {}
     for rgba, ci in cuts:
         by_cls.setdefault(ci, []).append(rgba)
+    logln(f"누끼 완료: 캐시 재사용 {hit} · 신규 {miss}", "info")
     logln(f"누끼 {len(cuts)}개({len(by_cls)}종) → 배경 합성 증강 생성 중...", "info")
 
     # 2) 합성: 배경에 1~2개 랜덤 붙여넣기(회전·스케일), 멀티클래스 라벨 기록
@@ -997,8 +1028,14 @@ def list_models():
     return {"models": out, "active": active_mid}
 
 def apply_model(session=None):
-    """학습 run 을 서비스로 지정(_served.json 포인터). session 이 유효 run 이면 그것, 아니면 최신 run."""
+    """학습 run 을 서비스로 지정(_served.json 포인터).
+
+    session 은 run id(results/<시각>)여야 한다. 프론트가 평가 중인 run 을 명시해서 보낸다.
+    유효한 run id 가 아니면 최신 run 으로 폴백하지만, 그 경우 평가 중에 끝난 다른 학습이
+    올라갈 수 있어 경고를 남긴다."""
     runid = session if _run_meta(session) else _latest_run()
+    if session and runid != session:
+        logger.warning(f"[apply] run id 가 아닌 값({session}) -> 최신 run({runid}) 으로 폴백")
     if not runid:
         return {"error": "학습된 모델이 없습니다."}
     m = _run_meta(runid) or {}

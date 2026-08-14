@@ -1110,13 +1110,16 @@ function PartsApp() {
   }
 
   const doApply = async () => {   // 신규 모델을 서비스에 적용(추론 서버 배포는 백엔드가 함께 처리)
+    // 화면에서 평가한 그 run 을 명시해서 보낸다. 안 보내면 백엔드가 '가장 최신 run' 을
+    // 적용해서, 평가 중에 다른 학습이 끝나면 엉뚱한 모델이 서비스로 올라간다.
+    const target = status?.model_id || cmp?.session || status?.session || session
     const r = await fetch('/api/sam2/apply_model', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session })
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session: target })
     }).then(x => x.json()).catch(() => ({ error: '적용 실패' }))
     if (r.error) { notify(r.error); return }
     setApplied(true)
     const s = await refreshServed()
-    setSvcMsg(`신규 모델을 적용했습니다 · 현재 서비스 모델 ${s?.label || session}`)
+    setSvcMsg(`신규 모델을 적용했습니다 · 현재 서비스 모델 ${s?.label || r.session || target}`)
   }
   const doCancel = async () => {   // 학습 중단
     if (!job || job === 'err') return
