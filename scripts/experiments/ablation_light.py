@@ -58,6 +58,12 @@ CONDS = [
     ("train1_206", "train1", 206),
     ("train1_292", "train1", None),
 ]
+# ABL_CONDS=g1_206 처럼 조건을 골라 돌릴 수 있다(합성 장수 축만 볼 때 씀)
+_only = [s.strip() for s in os.environ.get("ABL_CONDS", "").split(",") if s.strip()]
+if _only:
+    CONDS = [c for c in CONDS if c[0] in _only]
+# ABL_SYN_LIST=250,500,1000,1500 이면 합성 장수를 축으로 스윕한다(원본만 조건은 1회만 돈다)
+SYN_LIST = [int(x) for x in os.environ.get("ABL_SYN_LIST", "").split(",") if x.strip()]
 
 
 def pairs_of(store, stem, cap=None):
@@ -204,25 +210,29 @@ def main():
             log(f"  [{name}] 프레임 부족({len(gp)}) — 건너뜀"); continue
         bright = brightness([p[0] for p in gp])
         log(f"  [{name}] {stem} {len(gp)}장 · 평균 밝기 {bright} (GT 대비 {bright - gt_bright:+.1f})")
-        for synth in (False, True):
-            tag = f"{name}_{'synth' if synth else 'raw'}"
+        # (합성장수) 목록. 0 = 원본만
+        plan = [0] + (SYN_LIST if SYN_LIST else [n_syn])
+        for cur_syn in plan:
+            synth = cur_syn > 0
+            tag = f"{name}_{('syn' + str(cur_syn)) if synth else 'raw'}"
             dsdir = f"{rundir}/_ds_{tag}"
             try:
                 di, dl, n_at = build_dataset(dsdir, gp)
                 made = 0
                 if synth:
                     sa.CUT_PER_CLASS = CUT_PER_CLASS
-                    made = sa._synth_augment(di, dl, lambda s, lvl="info": None, n_syn=n_syn)
+                    made = sa._synth_augment(di, dl, lambda s, lvl="info": None, n_syn=cur_syn)
                 r = train_eval(di, tag, rundir, gt_yaml, eps)
                 r.update(cond=name, stem=stem, n_gear=len(gp), n_atest=n_at, brightness=bright,
-                         synth=synth, n_synth=made, n_train=len(gp) + n_at + made, tag=tag)
+                         synth=synth, syn_req=cur_syn, n_synth=made,
+                         n_train=len(gp) + n_at + made, tag=tag)
                 results.append(r)
                 pc = r["per_class_map50"]
-                log(f"    {'합성' if synth else '원본만'}: 학습 {r['n_train']}장 -> mAP50 {r['gt_map50']} "
+                log(f"    {('합성 ' + str(cur_syn)) if synth else '원본만'}: 학습 {r['n_train']}장 -> mAP50 {r['gt_map50']} "
                     + (f"(gearbox {pc.get('gearbox', '-')} / a_test {pc.get('a_test', '-')}) " if TWO else "")
                     + f"mAP50-95 {r['gt_map5095']} P {r['precision']} R {r['recall']} ({r['min']}분)")
             except Exception as e:
-                log(f"    {'합성' if synth else '원본만'} 실패: {type(e).__name__}: {e}")
+                log(f"    {('합성 ' + str(cur_syn)) if synth else '원본만'} 실패: {type(e).__name__}: {e}")
             save()
             shutil.rmtree(dsdir, ignore_errors=True)   # 조건마다 수백 MB — 지표만 남긴다
 
