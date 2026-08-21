@@ -39,7 +39,9 @@ const partOf = (rel) => { const p = rel.replace(/\/videos$/, '').split('/'); ret
 // 부품 폴더의 테이크 → {train:[...], test} : test* 있으면 그게 테스트, 없고 2개+면 끝수 최대("2")가 테스트, 단일이면 학습영상으로 테스트
 
 // 부품 라벨링(SAM2): 데이터셋(그룹)→부품(폴더) 순회. 부품마다 학습 테이크 탭 → 입력 마스크 확인 → 라벨 생성 → 다음 부품
-function AutoLabelView() {
+// onPrep: 전체 프레임 미리 컷 진행상황을 화면 제목줄(PageHead)로 올려 보낸다.
+// 예전에는 색상 범례 줄 오른쪽에 끼워 넣어 배경작업 상태가 범례처럼 보였다.
+function AutoLabelView({ onPrep }) {
   const [folders, setFolders] = useState([])        // [{folder,label,videos:[{name,count,ready}]}]
   const [partIdx, setPartIdx] = useState(0)         // 부품(폴더) 인덱스
   const [takeIdx, setTakeIdx] = useState(0)         // (구) 학습 테이크 인덱스
@@ -55,7 +57,6 @@ function AutoLabelView() {
     try { return JSON.parse(localStorage.getItem('autolabel_shots_v1') || '{}') } catch { return {} }
   })
   const [preparing, setPreparing] = useState(false)
-  const [prepProg, setPrepProg] = useState('')      // 전체 프레임 미리 컷 진행표시
   const [masks, setMasks] = useState({})            // {"영상:프레임": {combo,area_frac,bbox}}
   const [activeShot, setActiveShot] = useState(null)// 크게 보고 있는 마스크 참조샷 키
   const [maskBusy, setMaskBusy] = useState(false)
@@ -88,6 +89,7 @@ function AutoLabelView() {
   useEffect(() => { loadShots() }, [loadShots])
   const [showReview, setShowReview] = useState(false)   // 라벨 검수 모달
   const [reviewFrames, setReviewFrames] = useState([])
+  const [zoomFrame, setZoomFrame] = useState(null)      // 검수에서 클릭해 확대한 프레임
   const [selParts, setSelParts] = useState(() => new Set())   // 일괄 라벨 생성 대상 부품(체크박스 선택)
 
   const [session, setSession] = useState(() => localStorage.getItem('parts_session_v1') || null)
@@ -123,15 +125,16 @@ function AutoLabelView() {
     setPreparing(false); setCount(d.count || 0); markReady(name, d.count || 0)
   }
   const prepareAll = async (pfs) => {   // 그룹 전체 프레임 미리 컷(탭 전에 자동, 백그라운드)
-    for (const pf of pfs) {
-      for (const v of pf.videos) {
-        if (v.ready) continue
-        setPrepProg(`프레임 미리 컷: ${v.name}`)
-        const k = v.key || `${pf.folder}/${v.name}`
-        try { const d = await fetch(`/api/autolabel/prepare?src=${encodeURIComponent(k)}`).then(r => r.json()); markReady(v.name, d.count || 0) } catch { /* skip */ }
-      }
+    // 아직 안 잘린 영상만 센다(이미 캐시된 것은 건너뛰므로 진행률에 넣으면 안 됨)
+    const todo = pfs.flatMap(pf => pf.videos.filter(v => !v.ready).map(v => ({ pf, v })))
+    let done = 0
+    for (const { pf, v } of todo) {
+      onPrep?.({ done, total: todo.length, name: v.name })
+      const k = v.key || `${pf.folder}/${v.name}`
+      try { const d = await fetch(`/api/autolabel/prepare?src=${encodeURIComponent(k)}`).then(r => r.json()); markReady(v.name, d.count || 0) } catch { /* skip */ }
+      done += 1
     }
-    setPrepProg('')
+    onPrep?.(null)
   }
 
   const loadFolders = useCallback(() => {
@@ -306,6 +309,7 @@ function AutoLabelView() {
           if (d.results) setLabeledMap(m => { const n = { ...m }; d.results.forEach(x => { n[x.video] = { labels: x.labels, frames: x.frames } }); return n })
           else if (d.video) setLabeledMap(m => ({ ...m, [d.video]: { labels: d.labels, frames: d.frames } }))
           fetch('/api/sam2/labeled_parts').then(r => r.json()).then(x => setLabeledAnywhere(new Set(x.parts || []))).catch(() => {})   // 검수 활성 목록 갱신
+          openReview()   // 라벨 생성이 끝나면 바로 검수 화면을 띄운다(눈으로 확인하는 것이 다음 단계라서)
         }
       }
     }, 1200)
@@ -347,7 +351,7 @@ function AutoLabelView() {
       {!src ? <p className="al-hint">부품 폴더가 없습니다. (data/bell412/parts/&lt;부품&gt;/videos)</p> : (
         // flex-basis 0 으로 높이를 확정해야 자식의 height:100%(프레임 이미지)가 부모 기준으로 풀린다.
         // basis auto 면 이미지가 원본 높이로 커져 페이지가 스크롤된다.
-        <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0', minHeight: 0, overflow: 'hidden' }}>
+        <div className="al-view" style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0', minHeight: 0, overflow: 'hidden' }}>
           {/* 상단 범례 제거 — 범례는 이미지·입력마스크 아래로 이동 */}
           {/* 상단 액션 버튼줄 */}
           <div className="al-controls" style={{ flexShrink: 0 }}>
@@ -369,15 +373,28 @@ function AutoLabelView() {
             </button>
             <button className="act-btn neutral" onClick={openReview} disabled={running || !(isLabeled(src) || labeledAnywhere.has(partName))}
                     title="현재 부품에 생성된 학습 라벨 프레임을 확인하고 잘못된 사진을 삭제">라벨 검수</button>
-            {labelStatus && !labelStatus.error && labelStatus.video === src && labelStatus.running &&
-              <span className="al-hint">전파 중...</span>}
+            {/* 라벨 생성 진행: 스피너 + 개수(tqdm 처럼). 전파는 프레임 수만큼 돌기 때문에
+                숫자가 없으면 멈춘 것처럼 보인다. 배치 생성이면 부품 진행(3/5)도 함께 보여준다. */}
+            {labelStatus && !labelStatus.error && labelStatus.running && (
+              <span className="al-prog">
+                <span className="spinner" />
+                {labelStatus.prog_total > 0
+                  ? `${labelStatus.prog_step === 'write' ? '라벨 쓰기 ' : ''}`
+                    + `${labelStatus.prog_done}/${labelStatus.prog_total} `
+                    + `(${Math.round((labelStatus.prog_done / labelStatus.prog_total) * 100)}%)`
+                  : '준비 중'}
+                {labelStatus.total > 1 && ` · 부품 ${Math.min((labelStatus.done || 0) + 1, labelStatus.total)}/${labelStatus.total}`}
+              </span>
+            )}
           </div>
 
           {/* (영상 선택 버튼은 상단 액션줄로 이동) */}
 
           {/* 참조샷: 액션 버튼 바로 아래, 가로 칩 리스트.
-              현재 영상 프레임 + 같은 부품의 다른 영상 요약(클릭하면 그 영상으로 이동) */}
-          {(shotFrames.length > 0 || otherShots.length > 0) && (
+              현재 영상 프레임 + 같은 부품의 다른 영상 요약(클릭하면 그 영상으로 이동)
+              참조샷이 없어도 줄을 항상 띄운다. 첫 탭에서 줄이 새로 생기면 아래 이미지가
+              그만큼 밀려 크기가 바뀌었다(들썩임). 자리를 미리 잡아두면 그 현상이 없다. */}
+          {(
             <div className="al-shots" style={{ flexShrink: 0, marginTop: 6 }}>
               <span className="ref-shots-label">참조샷 {shotFrames.length + otherShots.reduce((a, o) => a + o.n, 0)}</span>
               {shotFrames.map(i => {
@@ -396,22 +413,23 @@ function AutoLabelView() {
                   <span className="al-shot-lbl">{o.name} {o.n}</span>
                 </span>
               ))}
+              {shotFrames.length === 0 && otherShots.length === 0 && (
+                <span className="al-hint">프레임을 눌러 참조샷을 만드세요</span>
+              )}
             </div>
           )}
 
           {/* 본문: 좌(이미지+범례+재생) / 우(리스트). 남는 공간 채움 */}
-          <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0, overflow: 'hidden', marginTop: 8 }}>
-            <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          {/* al-row / al-work / al-panes = 폰(<=560px)에서 세로로 쌓기 위한 선택자(app.css 반응형) */}
+          <div className="al-row" style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0, overflow: 'hidden', marginTop: 8 }}>
+            <div className="al-work" style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
              {/* 이미지+범례+재생 = 남는 폭을 채우되 상한(사이드바 넓혀도 겹치지 않게 반응형) */}
              <div style={{ width: '100%', flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-              {/* 마스크 상태: 참조샷과 이미지 사이 */}
-              {activeMask && !activeMask.error && (
-                activeMask.verdict === 'over'
-                  ? <div className="mask-alert warn" style={{ flexShrink: 0, marginBottom: 8 }}><IcWarn /><span>배경까지 넓게 잡힘 · 부품 안쪽 점만 남기고 배경엔 제외점을 찍어보세요</span></div>
-                  : <div className="mask-alert ok" style={{ flexShrink: 0, marginBottom: 8 }}><IcCheck /><span>부품이 잘 잡혔어요</span></div>
-              )}
+              {/* 마스크 판정 배너 제거(2026-08-19): 판정 문구가 실제와 잘 안 맞았고,
+                  배너가 세로 47px 을 차지해 프레임 이미지가 12% 작아졌다 커지는 들썩임을 만들었다.
+                  마스크는 오른쪽 칸에서 눈으로 확인한다. */}
               {/* 듀얼 이미지: 좌우 동일 비율로 축소(스크롤 없음), 여백 흰색 */}
-              <div style={{ display: 'flex', gap: 12, flex: '1 1 0', minHeight: 0 }}>
+              <div className="al-panes" style={{ display: 'flex', gap: 12, flex: '1 1 0', minHeight: 0 }}>
                 <div className="img-pane">
                   {preparing
                     ? <span className="al-hint">프레임 컷 중...</span>
@@ -442,7 +460,6 @@ function AutoLabelView() {
                   <span className="lg-item"><i className="lg-dot" style={{ background: '#f87171' }} />제외점</span>
                   <span className="lg-item"><i className="lg-dot" style={{ background: '#34d399' }} />마스크</span>
                   <span className="lg-item"><i className="lg-dot" style={{ background: '#fb923c' }} />박스</span>
-                  {prepProg && <span className="al-hint" style={{ marginLeft: 'auto' }}>⏳ {prepProg}</span>}
                 </div>
               </div>
 
@@ -499,18 +516,25 @@ function AutoLabelView() {
 
       {/* 라벨 검수 모달: 생성된 학습 프레임(bbox) 확인 + 잘못된 사진 삭제 */}
       {showReview && (
-        <div className="modal-scrim" onClick={() => setShowReview(false)}>
+        <div className="modal-scrim" onClick={() => { setShowReview(false); setZoomFrame(null) }}>
           <div className="modal-card wide" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <b>라벨 검수 — {partName} {reviewFrames.length}장</b>
               <button className="icon-x" onClick={() => setShowReview(false)} aria-label="닫기"><IcX /></button>
             </div>
+            {zoomFrame && (
+              <div className="review-zoom" onClick={() => setZoomFrame(null)}>
+                <img alt={zoomFrame.name}
+                     src={`/api/sam2/train_frame?session=${encodeURIComponent(zoomFrame.session)}&name=${encodeURIComponent(zoomFrame.name)}&w=1280&part=${encodeURIComponent(zoomFrame.part || '')}`} />
+                <span className="rz-name">{zoomFrame.name} · 클릭하면 닫힙니다</span>
+              </div>
+            )}
             <div className="review-grid">
               {reviewFrames.length === 0 && <p className="al-hint" style={{ padding: 16 }}>이 부품의 생성된 라벨이 없습니다.</p>}
               {reviewFrames.map(f => (
                 <figure key={`${f.session}/${f.name}`} className="review-cell">
-                  <img loading="lazy" alt={f.part}
-                       src={`/api/sam2/train_frame?session=${encodeURIComponent(f.session)}&name=${encodeURIComponent(f.name)}&w=240&part=${encodeURIComponent(f.part || '')}`} />
+                  <img loading="lazy" alt={f.part} onClick={() => setZoomFrame(f)}
+                       src={`/api/sam2/train_frame?session=${encodeURIComponent(f.session)}&name=${encodeURIComponent(f.name)}&w=360&part=${encodeURIComponent(f.part || '')}`} />
                   <figcaption title={f.name}>{f.part}</figcaption>
                   <button className="review-del" title="이 프레임 삭제" onClick={() => delReviewFrame(f)}><IcX /></button>
                 </figure>
@@ -623,7 +647,7 @@ function MiniLineChart({ title, data, series }) {
     series.forEach(s => pts.forEach(p => { if (p[s.key] != null) ys.push(p[s.key]) }))
     let ymin = Math.min(...ys), ymax = Math.max(...ys)
     if (ymin === ymax) { ymin -= 0.01; ymax += 0.01 }
-    const sx = x => pl + (xmax === xmin ? 0 : (x - xmin) / (xmax - xmin)) * (W - pl - pr)
+    const sx = x => pl + (xmax === xmin ? 0.5 : (x - xmin) / (xmax - xmin)) * (W - pl - pr)   // 1점이면 가운데
     const sy = y => pt + (1 - (y - ymin) / (ymax - ymin)) * (H - pt - pb)
     const fmt = v => Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(2)
     body = (
@@ -637,10 +661,24 @@ function MiniLineChart({ title, data, series }) {
         {series.map(s => {
           const sp = pts.filter(p => p[s.key] != null)
           const d = sp.map((p, i) => `${i ? 'L' : 'M'}${sx(p.epoch).toFixed(1)} ${sy(p[s.key]).toFixed(1)}`).join(' ')
-          return <path key={s.key} d={d} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" />
+          const last = sp[sp.length - 1]
+          return (
+            <g key={s.key}>
+              {sp.length > 1 && <path d={d} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" />}
+              {/* 마지막 값에 점을 찍는다. 에포크가 1개면 선이 그려지지 않아 예전에는
+                  빈 격자만 보였다(1에포크 학습에서 "점이 안 찍힌다"). */}
+              {last && <circle cx={sx(last.epoch)} cy={sy(last[s.key])} r={sp.length > 1 ? 3 : 4}
+                               fill={s.color} stroke="#fff" strokeWidth="1.5" />}
+            </g>
+          )
         })}
-        <text x={pl} y={H - 5} className="chart-tick">{xmin}</text>
-        <text x={W - pr} y={H - 5} className="chart-tick" textAnchor="end">{xmax}</text>
+        {/* 에포크가 1개면 축 양끝에 같은 숫자가 찍혀 이상해 보였다 → 가운데 하나만 */}
+        {xmin === xmax
+          ? <text x={(pl + W - pr) / 2} y={H - 5} className="chart-tick" textAnchor="middle">{xmin}</text>
+          : (<>
+              <text x={pl} y={H - 5} className="chart-tick">{xmin}</text>
+              <text x={W - pr} y={H - 5} className="chart-tick" textAnchor="end">{xmax}</text>
+            </>)}
       </svg>
     )
   }
@@ -801,10 +839,43 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
   )
 }
 
+// 프레임 사진 위에 검출 박스를 SVG로 겹쳐 그린다(사진에는 굽지 않는다 -> 박스를 끌 수 있다).
+// SVG 의 viewBox + preserveAspectRatio 는 img 의 object-fit:contain 과 같은 방식으로 여백을 잡으므로
+// 사진 비율이 세로든 가로든 박스가 사진에 정확히 겹친다.
+function Shot({ f, det, show, alt }) {
+  // 구 백엔드(박스를 사진에 구워 보내던 버전)의 응답도 그대로 보여준다 — 서버 재시작 전 공백 방지
+  if (typeof det === 'string') return <div className="ba-shot"><img src={det} alt={alt} /></div>
+  const bs = show ? (det.box || []) : []
+  const fz = Math.max(f.iw || 640, f.ih || 480) / 40      // 라벨 글자 크기(사진 원본 픽셀 기준)
+  return (
+    <div className="ba-shot">
+      <img src={f.img} alt={alt} />
+      {bs.length > 0 && (
+        <svg className="ba-ov" viewBox={`0 0 ${f.iw} ${f.ih}`} aria-hidden="true">
+          {bs.map((b, i) => (
+            <g key={i} className={b.ok ? 'ok' : 'ng'}>
+              <rect x={b.x} y={b.y} width={b.w} height={b.h} vectorEffect="non-scaling-stroke" />
+              {i < 3 && (   // 라벨은 신뢰도 상위 3개만. 박스가 겹쳐 있으면 글자도 겹치므로 한 줄씩 내려 쓴다
+                <text x={b.x} y={Math.max(b.y - fz * 0.3, fz) + i * fz * 1.15} fontSize={fz}>
+                  {b.cls} {b.conf.toFixed(2)}
+                </text>
+              )}
+            </g>
+          ))}
+        </svg>
+      )}
+      <span className="ba-cnt">
+        검출 {det.n}개{show && det.n > bs.length ? ` · 상위 ${bs.length}개 표시` : ''}
+      </span>
+    </div>
+  )
+}
+
 // 부품 하나의 여러 테스트 프레임을 좌우 화살표로 넘겨보는 Before/After 슬라이더
-// frames = [{ before: dataURI|null, after: dataURI|null }, ...] (같은 part의 여러 프레임)
+// frames = [{ img, iw, ih, before: {n,box}|null, after: {n,box} }, ...] (같은 part의 여러 프레임)
 function BaGroup({ part, kind, frames }) {
   const [idx, setIdx] = useState(0)          // 현재 보고 있는 프레임 인덱스
+  const [showBox, setShowBox] = useState(true)   // 박스 표시(끄면 원본 사진만 본다)
   const n = frames.length
   const i = Math.min(idx, n - 1)             // 프레임 수가 줄어도 인덱스 안전
   const cur = frames[i] || {}
@@ -816,12 +887,16 @@ function BaGroup({ part, kind, frames }) {
         <div className="ba-pair big">
           <figure className="ba-fig">
             <figcaption>기존 모델</figcaption>
-            {cur.before ? <img src={cur.before} alt={`${part} 기존 모델 검출`} /> : <div className="ba-none">기존 모델 없음</div>}
+            {cur.before
+              ? <Shot f={cur} det={cur.before} show={showBox} alt={`${part} 기존 모델 검출`} />
+              : <div className="ba-none">기존 모델 없음</div>}
           </figure>
           <div className="ba-arrow" aria-hidden="true"><IcChevronRight /></div>
           <figure className="ba-fig after">
             <figcaption>신규 모델</figcaption>
-            {cur.after ? <img src={cur.after} alt={`${part} 신규 모델 검출`} /> : <div className="ba-none">신규 모델 없음</div>}
+            {cur.after
+              ? <Shot f={cur} det={cur.after} show={showBox} alt={`${part} 신규 모델 검출`} />
+              : <div className="ba-none">신규 모델 없음</div>}
           </figure>
         </div>
         {n > 1 && <button className="ba-nav next" onClick={() => go(1)} aria-label="다음 프레임"><IcChevronRight /></button>}
@@ -829,6 +904,10 @@ function BaGroup({ part, kind, frames }) {
       <div className="ba-legend">
         <span className="lg-item"><i className="lg-sw green" /> 정답 부품 검출</span>
         <span className="lg-item"><i className="lg-sw orange" /> 다른 부품으로 오검출</span>
+        <button type="button" className="lg-toggle" aria-pressed={showBox}
+                onClick={() => setShowBox(v => !v)}>
+          {showBox ? '박스 숨기기' : '박스 보기'}
+        </button>
       </div>
       {n > 1 && (
         <div className="ba-dots">
@@ -896,7 +975,7 @@ function ConfirmModal({ open, title, message, confirmLabel, danger, alertOnly, o
   )
 }
 
-function PartsApp() {
+function PartsApp({ onPrep }) {
   const [folders, setFolders] = useState([])
   // F5 복구용: page·job·cmpJob·session을 세션스토리지에서 초기화(같은 탭 새로고침이면 있던 자리로 복원)
   const [session, setSession] = useState(() => sessionStorage.getItem('xr_session') || null)
@@ -907,6 +986,9 @@ function PartsApp() {
   const [job, setJob] = useState(() => sessionStorage.getItem('xr_job') || null)
   const [status, setStatus] = useState(null)
   const [page, setPage] = useState(() => sessionStorage.getItem('xr_page') || 'label')   // 'label' | 'training' | 'evaluate'
+  // 이 탭에서 처음 여는가(복구할 화면이 없나). 첫 렌더에서만 읽는다 —
+  // 아래 저장 effect 가 곧 xr_page 를 덮어써서 effect 안에서는 구분할 수 없다.
+  const freshTab = useRef(!sessionStorage.getItem('xr_page'))
   const [cmpJob, setCmpJob] = useState(() => sessionStorage.getItem('xr_cmpJob') || null)
   const [cmp, setCmp] = useState(null)               // 신규↔기존 모델 비교(평가) 상태
   const [applied, setApplied] = useState(false)      // 신규 모델 서비스 적용 완료
@@ -1071,12 +1153,20 @@ function PartsApp() {
       if (cj) fetch(`/api/sam2/status?job=${cj}`).then(r => r.json())
         .then(d => { if (d && !d.error) setCmp(d) }).catch(() => {})
     } else {
-      // 세션 복구 없음(새 탭 등): 다른 곳에서 실행 중인 잡이 있으면 그거라도 재진입
+      // 다른 곳(폰 등)에서 실행 중인 잡이 있으면 그 잡에 다시 붙는다.
+      // 화면 이동은 '이 탭에서 처음 여는 경우'에만 한다. 예전에는 항상 옮겼는데,
+      // 라벨 화면에서 새로고침하거나 폰에서 탭을 다시 열면 화면이 저절로 학습/평가로
+      // 튀어 '오락가락'하는 것처럼 보였다(QA 2026-08-20). 진행 중 표시는 헤더 칩으로 알린다.
       fetch('/api/sam2/active').then(r => r.json()).then(a => {
         if (!a || !a.job || !a.running) return
         if (a.session) setSession(a.session)
-        if (a.kind === 'multiclass') { setJob(a.job); setStatus(a); setPage('training'); loadTrain() }
-        else if (a.kind === 'compare') { setCmpJob(a.job); setCmp(a); setPage('evaluate') }
+        if (a.kind === 'multiclass') {
+          setJob(a.job); setStatus(a); loadTrain()
+          if (freshTab.current) setPage('training')
+        } else if (a.kind === 'compare') {
+          setCmpJob(a.job); setCmp(a)
+          if (freshTab.current) setPage('evaluate')
+        }
       }).catch(() => {})
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1219,7 +1309,8 @@ function PartsApp() {
       if (!byPart.has(key)) byPart.set(key, { part: key, kind: s.kind || 'base', frames: [] })
       const g = byPart.get(key)
       if (s.kind === 'new') g.kind = 'new'          // 한 프레임이라도 신규 부품이면 신규로 표기
-      g.frames.push({ before: s.before || null, after: s.after || s.img || null })   // img는 구계약 하위호환
+      g.frames.push({ img: s.img || null, iw: s.iw || 640, ih: s.ih || 480,
+                      before: s.before || null, after: s.after || null })
     }
     return [...byPart.values()]
   })()
@@ -1230,8 +1321,22 @@ function PartsApp() {
       {page === 'label' ? (
         <>
           <PageHead title="부품 학습 데이터 생성" flat
-                    right={<button className="icon-back" onClick={openTrain} title="학습 설정으로 이동" aria-label="학습 설정"><IcChevronRight /></button>} />
-          <AutoLabelView />
+                    right={<>
+                      {/* 다른 곳에서 학습/평가가 돌고 있으면 알려주고, 누르면 그 화면으로 간다
+                          (화면을 자동으로 바꾸지 않는다 — 사용자가 있던 자리를 지킨다) */}
+                      {status?.running && (
+                        <button className="prep-chip" onClick={openTrain} type="button">
+                          <span className="prep-spin" aria-hidden="true" />학습 진행 중
+                        </button>)}
+                      {!status?.running && cmp?.running && (
+                        <button className="prep-chip" onClick={() => setPage('evaluate')} type="button">
+                          <span className="prep-spin" aria-hidden="true" />모델 평가 중
+                        </button>)}
+                      <button className="ph-next" onClick={openTrain} title="학습 설정으로 이동" aria-label="학습 설정">
+                        부품 학습<IcChevronRight />
+                      </button>
+                    </>} />
+          <AutoLabelView onPrep={onPrep} />
         </>
       ) : page === 'training' ? (
         // ===== 2단계: 학습 (설정 → 진행 → 결과 요약) =====
@@ -1240,12 +1345,13 @@ function PartsApp() {
             title="부품 학습"
             back={onBackFromTrain}
             right={<>
-              {!job && <button className="icon-back" onClick={goManage} title="모델관리" aria-label="모델관리"><IcChevronRight /></button>}
-              {trainDone && <button className="icon-back" onClick={goEvaluate} title="모델 평가 · 적용" aria-label="다음 단계: 모델 평가·적용"><IcChevronRight /></button>}
+              {!job && <button className="ph-next" onClick={goManage} title="모델관리" aria-label="모델관리">모델관리<IcChevronRight /></button>}
+              {trainDone && <button className="ph-next" onClick={goEvaluate} title="모델 평가 · 적용" aria-label="다음 단계: 모델 평가·적용">모델 평가<IcChevronRight /></button>}
             </>}
           />
 
-          <div className="train-split">
+          {/* running 클래스: 폰에서 학습 중일 때 진행률·로그를 목록 위로 올리기 위한 표식(app.css) */}
+          <div className={`train-split${running ? ' running' : ''}`}>
             {/* 좌측: 학습 대상 선택 폼 */}
             <aside className="train-config">
               <div className="tc-head">
@@ -1296,20 +1402,27 @@ function PartsApp() {
                   <button className="act-btn train" onClick={runTrain} disabled={selected.length === 0}>학습 시작</button>
                 </div>
               )}
+              {/* 로그창 크기는 고정한다. 예전에는 학습 중 compact(120px) -> 완료 200px 로 바뀌어
+                  화면이 커졌다 작아졌다 했다. */}
+              {job && status && <LogConsole log={status?.log} />}
+              {status?.error && <div className="reco-banner rollback"><IcWarn /><span>학습 오류: {status.error}</span></div>}
+              {status?.stage === 'cancelled' && <div className="reco-banner review"><IcWarn /><span>학습이 중단되었습니다.</span></div>}
+              {/* 곡선을 결과 요약보다 먼저 보여준다(학습 경과 -> 최종 요약 순서) */}
               {job && status?.curve?.length > 0 && (
                 <div className="ev2-card">
                   <h4 className="ev2-h">학습 곡선</h4>
                   <div className="charts">
                     <MiniLineChart title="Loss" data={status.curve}
                       series={[{ key: 'box', name: 'box_loss', color: '#ef4444' }, { key: 'cls', name: 'cls_loss', color: '#f59e0b' }, { key: 'dfl', name: 'dfl_loss', color: '#8b5cf6' }]} />
-                    <MiniLineChart title="mAP" data={status.curve}
-                      series={[{ key: 'map50', name: 'mAP50', color: '#10b981' }, { key: 'map5095', name: 'mAP50-95', color: '#06b6d4' }]} />
+                    {/* mAP 는 이 학습에서 train=val 이라 0.99 로 포화돼 판단에 못 쓴다.
+                        대신 '인지했다/못했다'를 그대로 보여주는 두 지표를 그린다. */}
+                    <MiniLineChart title="Recall · Precision · F1" data={status.curve}
+                      series={[{ key: 'r', name: 'Recall', color: '#10b981' },
+                               { key: 'p', name: 'Precision', color: '#06b6d4' },
+                               { key: 'f1', name: 'F1', color: '#8b5cf6' }]} />
                   </div>
                 </div>
               )}
-              {job && status && <LogConsole log={status?.log} compact={running} />}
-              {status?.error && <div className="reco-banner rollback"><IcWarn /><span>학습 오류: {status.error}</span></div>}
-              {status?.stage === 'cancelled' && <div className="reco-banner review"><IcWarn /><span>학습이 중단되었습니다.</span></div>}
               {trainDone && (
                 <div className="train-result">
                   {/* 결과 요약 카드 */}
@@ -1339,7 +1452,9 @@ function PartsApp() {
           {svcMsg && (   // 세 액션의 결과가 항상 같은 자리·같은 모양으로 나오고 2초 뒤 사라진다
             <div className="svc-msg" role="status"><IcCheck /><span>{svcMsg}</span></div>
           )}
-          <PageHead title={cmpDone ? '모델 평가' : cmp?.running ? '모델 평가 중' : '모델관리'} back={openTrain}
+          {/* 제목이 평가/평가 중/모델관리 세 가지로 바뀌어 같은 화면인지 알기 어려웠다.
+              비교를 하러 온 경우는 계속 '모델 평가', 학습 없이 관리만 하러 온 경우는 '모델관리' 로 고정한다. */}
+          <PageHead title={cmp ? '모델 평가' : '모델관리'} back={openTrain}
                     right={(!cmp?.running && !cmp?.error) ? (
                       <div className="ev2-head-actions">
                         <RollbackMenu models={models} servedId={served?.model_id}
@@ -1606,6 +1721,7 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
   const [confirmDelPart, setConfirmDelPart] = useState(false)   // 이 부품 자체를 삭제
   const vidRef = useRef(null)
   const vidInput = useRef(null)
+  const camInput = useRef(null)     // 직접 촬영용(capture 속성이 붙은 별도 input)
   const m3dInput = useRef(null)
 
   useEffect(() => {                                    // 바깥 클릭 시 팝오버 닫기
@@ -1794,6 +1910,11 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
               <input ref={vidInput} type="file" multiple accept="video/mp4,video/quicktime,.mp4,.mov,.avi,.mkv"
                      style={{ display: 'none' }}
                      onChange={editing ? addVideos : pickVideos} />
+              {/* 직접 촬영: capture 속성이 폰 기본 카메라(동영상 모드)를 띄운다. 찍으면 파일로 돌아와
+                  업로드 경로를 그대로 탄다(HTTPS 불필요 — getUserMedia 를 쓰지 않으므로). */}
+              <input ref={camInput} type="file" accept="video/*" capture="environment"
+                     style={{ display: 'none' }}
+                     onChange={editing ? addVideos : pickVideos} />
               <div className="reg-vidwrap" ref={vidRef}>
                 <button type="button" className="reg-drop" onClick={() => setVidMenu(v => !v)} aria-expanded={vidMenu}>
                   <IcVideo />
@@ -1810,8 +1931,11 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
                     <button className="reg-vopt" type="button" onClick={() => { setVidMenu(false); vidInput.current?.click() }}>
                       <IcVideo /><div><b>동영상 업로드</b><span>.mp4 · .mov 파일 선택(여러 개)</span></div>
                     </button>
-                    <button className="reg-vopt" type="button" disabled title="추후 지원">
-                      <IcCamera /><div><b>직접 촬영</b><span>웹캠 촬영 (추후 지원)</span></div>
+                    <button className="reg-vopt" type="button"
+                            onClick={() => { setVidMenu(false); camInput.current?.click() }}>
+                      <IcCamera /><div><b>직접 촬영</b><span>{IS_TOUCH
+                        ? '폰 카메라로 바로 촬영'
+                        : '폰에서 촬영 (PC 는 파일 선택창이 열립니다)'}</span></div>
                     </button>
                   </div>
                 )}
@@ -1990,8 +2114,11 @@ function PartList({ onEdit, onDeleted, active, flash, onFlashDone }) {
                 <td className="pt-mid">{p.has_model3d ? <span className="pt-ok"><IcCheck /></span> : <span className="pt-no">—</span>}</td>
                 <td>
                   <div className="pt-actions">
-                    <button className="act-btn ghost sm" type="button" onClick={() => onEdit?.(p)}><IcPencil /> 수정</button>
-                    <button className="act-btn dline sm" type="button" onClick={() => setConfirmDel(p)}><IcTrash /> 삭제</button>
+                    {/* 글자는 span 으로 분리 — 폰(<=560px)에서는 폭이 모자라 아이콘만 남긴다(app.css .btn-txt) */}
+                    <button className="act-btn ghost sm" type="button" aria-label={`${p.name} 수정`}
+                            onClick={() => onEdit?.(p)}><IcPencil /> <span className="btn-txt">수정</span></button>
+                    <button className="act-btn dline sm" type="button" aria-label={`${p.name} 삭제`}
+                            onClick={() => setConfirmDel(p)}><IcTrash /> <span className="btn-txt">삭제</span></button>
                   </div>
                 </td>
               </tr>
@@ -2009,6 +2136,9 @@ function PartList({ onEdit, onDeleted, active, flash, onFlashDone }) {
 }
 
 
+// 손가락 입력 기기인지(폰·태블릿) — '직접 촬영' 설명 문구를 기기에 맞게 쓰기 위한 판별
+const IS_TOUCH = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches
+
 const APP_TABS = [
   { id: 'register', label: '부품 등록', Icon: IcPlus },
   { id: 'list', label: '부품 목록', Icon: IcList },
@@ -2017,6 +2147,7 @@ const APP_TABS = [
 
 export default function App() {
   const [tab, setTab] = useState(() => localStorage.getItem('xr_tab') || 'register')
+  const [prep, setPrep] = useState(null)   // 프레임 미리 컷 진행 {done,total,name} — 헤더 오른쪽에 표시
   // 한 번 열어본 탭은 언마운트하지 않고 숨기기만 한다(display:none).
   // 언마운트하면 진행 중 학습·찍어둔 참조샷·비교 결과·입력값이 전부 날아가고 재진입 때 전부 재조회(=재로드)됨.
   const [seen, setSeen] = useState(() => ({ [tab]: true }))   // 안 가본 탭은 마운트 안 해 초기 로딩 비용 절약
@@ -2034,7 +2165,7 @@ export default function App() {
   const dropEdit = (id) => setEditPart(p => (p && p.id === id ? null : p))
   const view = (id) => id === 'register' ? <RegisterPart editPart={editPart} onExitEdit={() => setEditPart(null)} onSaved={doneEdit} onDeleted={doneEdit} />
                      : id === 'list' ? <PartList onEdit={openEdit} onDeleted={dropEdit} active={tab === 'list'} flash={flash} onFlashDone={() => setFlash(null)} />
-                     : <PartsApp />
+                     : <PartsApp onPrep={setPrep} />
   return (
     <main className="solo">
       <div className="apptabs">
@@ -2045,6 +2176,13 @@ export default function App() {
             </button>
           ))}
         </div>
+        {/* 배경 작업(영상 -> 프레임 미리 컷) 진행. 앱 헤더에 두면 어느 탭에 있어도 계속 보인다 */}
+        {prep && (
+          <span className="prep-chip" title={`영상에서 프레임을 미리 잘라 두는 중: ${prep.name}`}>
+            <span className="prep-spin" aria-hidden="true" />
+            프레임 준비 {prep.done + 1}/{prep.total}
+          </span>
+        )}
       </div>
       <div className="card">
         {APP_TABS.map(({ id }) => seen[id] && (

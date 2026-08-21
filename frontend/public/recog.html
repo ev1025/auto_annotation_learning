@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>부품 인식 테스트</title>
+<!--
+  폰으로 여는 인식 테스트 페이지. 빌드 없이 이 파일 하나로 동작한다(vite public -> dist 로 복사됨).
+  주소: http://<서버>:7862/recog.html
+
+  추론은 대시보드(:7862)의 /api/detect 프록시를 통해 추론서버(:9412)로 간다.
+  브라우저에서 :9412 를 직접 부르면 CORS 에 막히고, 포트도 두 개를 열어야 한다.
+
+  두 가지 방식:
+    1) 사진 찍어 인식  - 폰 기본 카메라 앱으로 1장 촬영 -> 업로드. HTTP 에서도 된다.
+    2) 라이브 인식     - 화면에 카메라를 띄우고 3fps 로 계속 보낸다.
+                         브라우저 정책상 HTTPS(또는 localhost)에서만 카메라를 준다.
+-->
+<style>
+  :root {
+    --bg:#0b1020; --panel:#151b2e; --line:#2b3450; --ink:#e2e8f0; --muted:#94a3b8;
+    --accent:#6366f1; --accent-ink:#c7d2fe; --ok:#22c55e; --ok-bg:#14532d; --no:#f59e0b; --err:#f87171;
+    --font:'Noto Sans KR','Malgun Gothic',system-ui,sans-serif;
+    --tap:52px;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; }
+  body {
+    background:var(--bg); color:var(--ink); font-family:var(--font); font-size:15px; line-height:1.5;
+    display:flex; flex-direction:column; padding-bottom:env(safe-area-inset-bottom);
+  }
+  button { font:inherit; color:inherit; font-weight:700; cursor:pointer; }
+
+  header {
+    flex:none; display:flex; align-items:center; gap:10px; padding:12px 14px;
+    background:var(--panel); border-bottom:1px solid var(--line);
+  }
+  header h1 { margin:0; font-size:16px; font-weight:700; flex:0 0 auto; white-space:nowrap; }
+  .model { flex:1 1 0; min-width:0; font-size:11px; color:var(--muted); text-align:right; line-height:1.35; }
+  .model b { color:var(--accent-ink); display:block; font-size:12px; }
+
+  /* 미디어를 스테이지에 꽉 채우고 object-fit:contain 으로 안쪽에 맞춘다.
+     (중앙정렬 + max-width/max-height 조합은 종횡비와 얽혀 사진이 오른쪽으로 밀렸다.
+      contain 은 요소 박스 = 스테이지로 고정되고, 실제로 그려진 사각형은 JS 가 계산한다) */
+  .stage { flex:1 1 0; min-height:0; position:relative; background:#000; overflow:hidden; }
+  .stage video, .stage img { position:absolute; inset:0; width:100%; height:100%;
+                             object-fit:contain; display:block; }
+  .stage canvas { position:absolute; left:0; top:0; pointer-events:none; }
+  /* .stage img/video 의 display:block 이 UA 의 [hidden]{display:none} 을 이겨서,
+     사진을 찍기 전에도 깨진 이미지 아이콘과 alt 글자가 보였다. */
+  [hidden] { display:none !important; }
+  .placeholder { color:var(--muted); font-size:14px; text-align:center; padding:24px; }
+
+  /* 판정: 화면 위에 크게 */
+  .verdict {
+    position:absolute; left:10px; top:10px; padding:7px 13px; border-radius:999px;
+    font-size:14px; font-weight:700; letter-spacing:-.01em; backdrop-filter:blur(4px);
+  }
+  .verdict.yes { background:rgba(34,197,94,.9); color:#04250f; }
+  .verdict.no  { background:rgba(245,158,11,.9); color:#3b2600; }
+  .verdict.err { background:rgba(248,113,113,.92); color:#3b0a0a; }
+  .fps { position:absolute; right:10px; top:10px; padding:6px 10px; border-radius:999px;
+         background:rgba(11,16,32,.72); color:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
+
+  /* 검출 유무에 따라 한 줄/두 줄로 높이가 바뀌어 버튼이 위아래로 움직였다 -> 한 줄 높이로 고정 */
+  .result { flex:none; height:40px; display:flex; align-items:center; overflow:hidden;
+            background:var(--panel); border-top:1px solid var(--line); padding:0 14px; }
+  .det { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); }
+  .det:last-child { border-bottom:0; }
+  .det .name { flex:1; font-weight:700; }
+  .det .conf { font-variant-numeric:tabular-nums; color:var(--accent-ink); font-weight:700; }
+  .det .box { font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .empty { color:var(--muted); font-size:13px; margin:0; }
+  .json { font-family:ui-monospace,Consolas,monospace; font-size:11px; color:var(--muted);
+          white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  .collect { grid-column:1 / -1; display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); }
+  .collect input { width:20px; height:20px; }
+  .collect b { color:var(--accent-ink); }
+  .actions { flex:none; display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 14px calc(10px + env(safe-area-inset-bottom));
+             background:var(--panel); border-top:1px solid var(--line); }
+  .btn { min-height:var(--tap); border-radius:12px; border:1px solid var(--line); background:#1e2745; color:var(--ink);
+         display:inline-flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
+         text-align:center; line-height:1.25; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn.stop { background:#7f1d1d; border-color:#991b1b; color:#fee2e2; }
+  .btn:disabled { opacity:.45; }
+  .btn small { display:block; font-size:10px; font-weight:500; opacity:.8; }
+  input[type=file] { display:none; }
+  .note { grid-column:1 / -1; font-size:11px; color:var(--muted); text-align:center; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>부품 인식 테스트</h1>
+  <div class="model" id="model">모델 확인 중...</div>
+</header>
+
+<div class="stage" id="stage">
+  <div class="placeholder" id="ph">아래 버튼으로 촬영하면<br />인식 결과가 여기에 표시됩니다</div>
+  <video id="vid" playsinline muted hidden></video>
+  <img id="shot" alt="촬영한 사진" hidden />
+  <canvas id="ov" hidden></canvas>
+  <span class="verdict" id="verdict" hidden></span>
+  <span class="fps" id="fps" hidden></span>
+</div>
+
+<div class="result" id="result">
+  <p class="empty">결과 없음</p>
+</div>
+
+<div class="actions">
+  <label class="btn primary" for="cap">사진 찍어 인식<small>기본 카메라 사용</small></label>
+  <input id="cap" type="file" accept="image/*" capture="environment" />
+  <button class="btn" id="live">라이브 인식<small>3fps 연속</small></button>
+  <!-- 임시: 배경(오검) 수집. 배경 학습 끝나면 이 label 과 collect 관련 JS 를 지운다 -->
+  <label class="collect"><input type="checkbox" id="collect" />
+    부품 없는 곳에서 켜기 — 검출되면 배경으로 저장 <b id="ccount"></b></label>
+  <p class="note" id="note"></p>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const stage = $('stage'), vid = $('vid'), shot = $('shot'), ov = $('ov');
+  const verdict = $('verdict'), fpsEl = $('fps'), result = $('result'), note = $('note');
+  const liveBtn = $('live');
+  const CAMERA_ID = 'PHONE_TEST';
+  const INTERVAL = 333;           // 3fps (요청 규격)
+  let stream = null, timer = null, busy = false, sent = 0, t0 = 0;
+
+  // ---- 현재 서비스 모델 표시 ----
+  fetch('/api/detect/health').then(r => r.json()).then(d => {
+    if (d && d.ok) {
+      const cls = Object.values(d.classes || {});
+      $('model').innerHTML = '<b>' + (d.model || 'model.pt') + '</b>' + cls.length + '종: '
+        + cls.slice(0, 3).join(', ') + (cls.length > 3 ? ' 외 ' + (cls.length - 3) + '개' : '');
+    } else {
+      $('model').innerHTML = '<b>추론서버 응답 없음</b>' + ((d && d.error) || '');
+    }
+  }).catch(() => { $('model').innerHTML = '<b>추론서버 확인 실패</b>'; });
+
+  // 카메라 실시간은 보안 컨텍스트(HTTPS/localhost)에서만 허용된다
+  if (!window.isSecureContext || !navigator.mediaDevices) {
+    liveBtn.disabled = true;
+    note.innerHTML = 'HTTP 접속이라 라이브(카메라 실시간)는 브라우저가 막습니다(HTTPS/localhost 에서만 허용). '
+      + '사진 찍기는 그대로 됩니다.<br>크롬에서 켜려면: <b>chrome://flags/#unsafely-treat-insecure-origin-as-secure</b> '
+      + '에 <b>' + location.origin + '</b> 를 넣고 Enabled -> 재시작.';
+  }
+
+  function setVerdict(kind, text) {
+    verdict.hidden = false;
+    verdict.className = 'verdict ' + kind;
+    verdict.textContent = text;
+  }
+
+  function fitOverlay(el) {
+    // object-fit:contain 이므로 요소 박스(=스테이지) 안에서 사진은 여백을 두고 그려진다.
+    // 그 '그려진 사각형'을 원본 비율로 계산해 캔버스를 정확히 겹친다.
+    const natW = el.naturalWidth || el.videoWidth, natH = el.naturalHeight || el.videoHeight;
+    const r = el.getBoundingClientRect(), s = stage.getBoundingClientRect();
+    if (!natW || !natH) return;
+    const k = Math.min(r.width / natW, r.height / natH);
+    const w = natW * k, h = natH * k;
+    ov.style.left = (r.left - s.left + (r.width - w) / 2) + 'px';
+    ov.style.top = (r.top - s.top + (r.height - h) / 2) + 'px';
+    ov.style.width = w + 'px';
+    ov.style.height = h + 'px';
+  }
+
+  function drawBoxes(dets, w, h, el) {
+    // 그리기 좌표계 = 원본 이미지 픽셀. 화면 크기는 fitOverlay 가 맞춘다.
+    if (el) fitOverlay(el);
+    ov.width = w; ov.height = h; ov.hidden = false;
+    const g = ov.getContext('2d');
+    g.clearRect(0, 0, w, h);
+    g.lineWidth = Math.max(2, Math.round(w / 240));
+    g.font = '700 ' + Math.max(13, Math.round(w / 32)) + 'px sans-serif';
+    g.textBaseline = 'top';
+    dets.forEach(d => {
+      const b = d.bbox;
+      g.strokeStyle = '#22c55e';
+      g.strokeRect(b.x, b.y, b.w, b.h);
+      const label = d.detection_class + ' ' + Math.round(d.confidence * 100) + '%';
+      const tw = g.measureText(label).width + 10;
+      const th = Math.max(18, Math.round(w / 26));
+      g.fillStyle = 'rgba(34,197,94,.92)';
+      g.fillRect(b.x, Math.max(0, b.y - th), tw, th);
+      g.fillStyle = '#04250f';
+      g.fillText(label, b.x + 5, Math.max(0, b.y - th) + 2);
+    });
+  }
+
+  function render(d, ms, imgW, imgH, el) {
+    if (d.error) {
+      setVerdict('err', '오류: ' + d.error);
+      result.innerHTML = '<p class="empty">' + (d.detail || d.error) + '</p>';
+      return;
+    }
+    // 덜 학습된 모델은 한 장에 300개까지 뱉는다. 전부 그리면 사진이 안 보이고 폰이 느려진다.
+    const all = d.detections || [];
+    const dets = all.slice().sort((a, b) => b.confidence - a.confidence).slice(0, 12);
+    setVerdict(all.length ? 'yes' : 'no', all.length ? '있다 (' + all.length + ')' : '없다');
+    if (dets.length) {
+      // 부품 이름·신뢰도는 사진 위 박스에 그린다. 아래 목록은 같은 정보 반복이라 뺐다.
+      result.innerHTML = '<div class="json">응답 ' + ms + 'ms · 검출 ' + all.length + '개'
+        + (all.length > dets.length ? ' (상위 ' + dets.length + '개 표시)' : '') + '</div>';
+      drawBoxes(dets, imgW, imgH, el);
+    } else {
+      result.innerHTML = '<p class="empty">검출 없음 · 응답 ' + ms + 'ms</p>';
+      ov.hidden = true;
+    }
+  }
+
+  async function send(blob, imgW, imgH, el) {
+    const fd = new FormData();
+    fd.append('image', blob, 'frame.jpg');
+    fd.append('camera_id', CAMERA_ID);
+    if ($('collect').checked) fd.append('collect', '1');   // 임시: 배경 수집
+    const t = performance.now();
+    try {
+      const r = await fetch('/api/detect', { method: 'POST', body: fd });
+      const d = await r.json();
+      if (d.collected != null) $('ccount').textContent = '· 저장 ' + d.collected + '장';   // 임시
+      render(d, Math.round(performance.now() - t), imgW, imgH, el);
+    } catch (e) {
+      setVerdict('err', '전송 실패');
+      result.innerHTML = '<p class="empty">' + e + '</p>';
+    }
+  }
+
+  // ---- 1) 사진 찍어 인식 ----
+  $('cap').addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    stopLive();
+    const url = URL.createObjectURL(f);
+    shot.hidden = false; vid.hidden = true; $('ph').hidden = true;
+    shot.onload = () => {
+      send(f, shot.naturalWidth, shot.naturalHeight, shot);
+      URL.revokeObjectURL(url);
+    };
+    shot.src = url;
+    e.target.value = '';        // 같은 사진을 다시 찍어도 change 가 오게
+  });
+
+  // ---- 2) 라이브 인식(3fps) ----
+  const work = document.createElement('canvas');
+  async function tick() {
+    if (busy || !stream) return;
+    const w = vid.videoWidth, h = vid.videoHeight;
+    if (!w || !h) return;
+    busy = true;
+    work.width = w; work.height = h;
+    work.getContext('2d').drawImage(vid, 0, 0, w, h);
+    const blob = await new Promise(res => work.toBlob(res, 'image/jpeg', 0.8));
+    await send(blob, w, h, vid);
+    sent += 1;
+    fpsEl.hidden = false;
+    fpsEl.textContent = sent + '장 · ' + (sent / Math.max(1, (performance.now() - t0) / 1000)).toFixed(1) + ' fps';
+    busy = false;
+  }
+  async function startLive() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }, audio: false });
+    } catch (e) {
+      note.textContent = '카메라를 열지 못했습니다: ' + e.name;
+      return;
+    }
+    shot.hidden = true; $('ph').hidden = true; vid.hidden = false;
+    vid.srcObject = stream; await vid.play();
+    sent = 0; t0 = performance.now();
+    timer = setInterval(tick, INTERVAL);
+    liveBtn.className = 'btn stop';
+    liveBtn.innerHTML = '라이브 정지<small>전송 중</small>';
+  }
+  function stopLive() {
+    if (timer) { clearInterval(timer); timer = null; }
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    vid.hidden = true; fpsEl.hidden = true;
+    liveBtn.className = 'btn';
+    liveBtn.innerHTML = '라이브 인식<small>3fps 연속</small>';
+  }
+  liveBtn.addEventListener('click', () => (stream ? stopLive() : startLive()));
+  window.addEventListener('pagehide', stopLive);
+  window.addEventListener('resize', () => {
+    const el = !vid.hidden ? vid : (!shot.hidden ? shot : null);
+    if (el && !ov.hidden) fitOverlay(el);
+  });
+})();
+</script>
+</body>
+</html>

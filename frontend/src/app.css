@@ -125,9 +125,11 @@ th {
 td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 
 /* ===== 라벨링 화면 ===== */
+/* 탭 점: 박스 폭의 비율로 잡는다(px 고정이면 화면 크기·영상 비율에 따라 커/작아 보였다).
+   백엔드 오버레이도 긴 변 기준 비례(_ov_sizes)라 두 화면의 점 크기가 서로 맞는다. */
 .al-dot {
-  position: absolute; width: var(--sp-4); height: var(--sp-4); border-radius: 50%;
-  transform: translate(-50%, -50%); border: 1.5px solid #fff;
+  position: absolute; width: 2.4%; aspect-ratio: 1; min-width: 7px; max-width: 16px;
+  border-radius: 50%; transform: translate(-50%, -50%); border: 1.5px solid #fff;
   box-shadow: 0 0 0 1px rgba(0,0,0,0.45); pointer-events: none;
 }
 .al-dot.pos { background: var(--dot-pos); }
@@ -135,6 +137,12 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .al-controls { display: flex; gap: var(--sp-4); align-items: center; flex-wrap: wrap; margin: var(--sp-6) 0; }
 .al-slider { flex: 1; min-width: 160px; accent-color: var(--accent); }
 .al-hint { font-size: var(--fs-sm); color: var(--muted); }
+/* 라벨 생성 진행 표시(스피너 + 개수). 전파는 프레임 수만큼 돌아 시간이 걸리므로
+   숫자를 보여줘야 멈춘 게 아니라는 걸 알 수 있다. */
+.al-prog { display: inline-flex; align-items: center; gap: var(--sp-4); font-size: var(--fs-sm);
+  font-weight: 600; color: var(--accent-ink); background: var(--accent-bg);
+  border: 1px solid var(--accent-line); border-radius: var(--r-pill);
+  padding: var(--sp-2) var(--sp-6); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* 참조샷: 제목 라벨 + 태그(칩) 리스트 카드 */
 .al-shots {
@@ -145,6 +153,14 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .ref-shots-label {
   flex-shrink: 0; font-size: var(--fs-sm); font-weight: 600; color: var(--ink);
   padding-right: var(--sp-6); margin-right: var(--sp-1); border-right: 1px solid var(--line);
+}
+/* 참조샷 0개(글자만) -> 1개(칩)로 바뀔 때 줄 높이가 달라져 화면이 들썩였다.
+   글자 요소에 칩과 같은 세로 여백·테두리(투명)·줄간격을 줘서 높이를 맞춘다. */
+.ref-shots-label, .al-shots .al-hint {
+  display: inline-flex; align-items: center; line-height: 1.2;
+  padding-top: var(--sp-2); padding-bottom: var(--sp-2);
+  border-top: 1px solid transparent; border-bottom: 1px solid transparent;
+  min-height: 28px;   /* 칩 실측 총높이(삭제 버튼 18 + 세로 여백 8 + 테두리 2). border-box 라 총높이로 적는다 */
 }
 /* 칩: 번호 라벨 + 내장 닫기 버튼 */
 .al-shot {
@@ -268,14 +284,6 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
   line-height: 0; cursor: crosshair; user-select: none; }
 .tap-box img { display: block; width: 100%; height: 100%; }
 
-/* 라벨 마스크 상태 배너 */
-.mask-alert {
-  display: flex; align-items: center; gap: var(--sp-4);
-  font-size: var(--fs-sm); font-weight: 600; border-radius: var(--r); padding: var(--sp-4) var(--sp-6);
-}
-.mask-alert svg { width: var(--ic-md); height: var(--ic-md); flex-shrink: 0; }
-.mask-alert.warn { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-line); }
-.mask-alert.ok { background: var(--success-bg-soft); color: var(--success-ink); border: 1px solid var(--success-line); }
 
 /* ===== 액션 버튼 패밀리: 동일 지오메트리, 색만 역할별 ===== */
 .act-btn {
@@ -344,10 +352,38 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 }
 .page-head-l { display: flex; align-items: center; gap: var(--sp-5); min-width: 0; }
 .page-head-r { display: flex; align-items: center; gap: var(--sp-5); }
+/* 다음 화면으로 가는 버튼. 예전에는 세 화면 모두 같은 > 아이콘만 있어서 어디로 가는지 알 수 없었다
+   (라벨->학습, 학습->모델관리, 학습완료->모델 평가). 목적지를 글자로 함께 보여준다. */
+.ph-next { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 32px;
+  padding: 0 var(--sp-3) 0 var(--sp-6); border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--ink); cursor: pointer;
+  font-family: inherit; font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; }
+.ph-next:hover { border-color: var(--accent-line); color: var(--accent-ink); background: var(--accent-bg); }
+.ph-next svg { width: var(--ic-sm); height: var(--ic-sm); }
+/* 진행 중 칩을 눌러서 그 화면으로 갈 수 있게(버튼으로도 쓰인다) */
+button.prep-chip { cursor: pointer; font-family: inherit; }
+button.prep-chip:hover { border-color: var(--accent); }
+/* 배경 작업(영상 -> 프레임 미리 컷) 진행 표시. 색상 범례 줄에 끼워 넣었더니 범례처럼 보여서
+   앱 헤더(탭 줄) 오른쪽으로 옮겼다. 어느 탭에 있어도 보이고, 끝나면 사라진다. */
+.prep-chip {
+  display: inline-flex; align-items: center; gap: var(--sp-4); flex-shrink: 0;
+  padding: var(--sp-4) var(--sp-8); border-radius: var(--r-pill);
+  background: var(--accent-bg); border: 1px solid var(--accent-line); color: var(--accent-ink);
+  font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.prep-spin {
+  width: 13px; height: 13px; flex-shrink: 0; border-radius: 50%;
+  border: 2px solid var(--accent-line); border-top-color: var(--accent);
+  animation: prepSpin .8s linear infinite;
+}
+@keyframes prepSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .prep-spin { animation: none; } }
 .page-title { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -.01em; line-height: 1.2; color: var(--ink-strong); }
 
 /* ===== 앱 상단 3탭 (부품 등록 / 부품 목록 / 부품 학습) ===== */
-.apptabs { max-width: 1280px; margin: 0 auto var(--sp-8); }
+/* 왼쪽 탭 3개 · 오른쪽 배경작업 표시(진행 중에만 나타난다) */
+.apptabs { max-width: 1280px; margin: 0 auto var(--sp-8); display: flex; align-items: center;
+  justify-content: space-between; gap: var(--sp-6); }
 .apptabs .seg { display: inline-flex; gap: var(--sp-2); padding: var(--sp-2); background: var(--surface-2);
   border: 1px solid var(--line); border-radius: var(--r-lg); }
 .apptab { display: inline-flex; align-items: center; gap: var(--sp-4); min-height: var(--ctl-md);
@@ -608,11 +644,16 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .cl i { width: var(--sp-5); height: var(--sp-5); border-radius: var(--r-xs); display: inline-block; }
 
 /* 터미널 스타일 로그 창 */
+/* 로그창. flex-shrink:0 이 없으면 형제(결과 요약·곡선)가 자리를 요구할 때 납작하게 눌려
+   글자가 잘렸다(실제로 완료 화면에서 한 줄 높이로 찌그러짐). 높이는 항상 지킨다. */
 .term {
-  background: var(--term-bg); border-radius: var(--r-md); padding: var(--pad-cell); height: 200px; overflow-y: auto;
+  background: var(--term-bg); border-radius: var(--r-md); padding: var(--pad-cell);
+  height: 200px; min-height: 200px; flex: 0 0 auto; overflow-y: auto;
   font-family: var(--font-mono);
   font-size: var(--fs-sm); line-height: 1.55; white-space: pre-wrap; word-break: break-word;
 }
+/* 학습 중에는 진행률·차트에 자리를 주려고 로그를 줄인다(JSX 의 compact 플래그) */
+.term.compact { height: 120px; min-height: 120px; }
 .term-line { color: var(--line-strong); }
 .term-line.ok { color: var(--success-strong); }
 .term-line.err { color: var(--term-err); }
@@ -677,7 +718,10 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .verdict.apply .verdict-badge { color: var(--success-ink); }
 .verdict.rollback .verdict-badge { color: var(--danger-ink); }
 .verdict.review .verdict-badge { color: var(--warn); }
-.verdict-msg { margin: 0; font-size: var(--fs-base); line-height: 1.55; color: var(--ink); }
+/* 판정 문구는 백엔드가 
+ 으로 줄을 나눠 보낸다(한 줄로 길게 흐르면 읽기 어렵다) */
+.verdict-msg { margin: 0; font-size: var(--fs-base); line-height: 1.55; color: var(--ink);
+  white-space: pre-line; }
 
 /* 스코어보드: 판정 근거 인식률 2종(기존 / 신규) — GA 카드 스타일 */
 .scoreboard { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-6); }
@@ -803,7 +847,28 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .ba-nav.next { right: var(--sp-4); }
 .ba-nav:hover { border-color: var(--accent-line); color: var(--accent-ink); background: #fff; }
 .ba-nav svg { width: var(--ic-lg); height: var(--ic-lg); }
-.ba-legend { display: flex; justify-content: center; gap: var(--sp-10); margin: var(--sp-4) 0 var(--sp-2); flex-shrink: 0; }
+/* 사진 + 박스 오버레이. 박스를 사진에 굽지 않으므로 굵기가 사진 크기와 무관하게 일정하고
+   버튼으로 끌 수 있다. .ba-shot 이 예전 img 자리(flex 아이템)를 그대로 받는다. */
+.ba-pair.big .ba-shot { flex: 1 1 0; min-height: 0; }
+.ba-shot { position: relative; display: block; min-height: 0; }
+.ba-ov { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.ba-ov rect { fill: none; stroke-width: 2; }
+.ba-ov g.ok rect { stroke: var(--mark-hit); }
+.ba-ov g.ng rect { stroke: var(--mark-miss); }
+.ba-ov text { font-weight: 700; paint-order: stroke; stroke: rgba(0, 0, 0, .6); stroke-width: 3; }
+.ba-ov g.ok text { fill: var(--mark-hit); }
+.ba-ov g.ng text { fill: var(--mark-miss); }
+/* 검출 개수: 박스가 많아 화면이 덮이는 이유를 알 수 있게 사진 우하단에 표시 */
+.ba-cnt { position: absolute; right: var(--sp-3); bottom: var(--sp-3); padding: 1px var(--sp-4);
+  font-size: var(--fs-2xs); color: #fff; background: rgba(0, 0, 0, .55); border-radius: var(--r-xs);
+  font-variant-numeric: tabular-nums; }
+
+.ba-legend { display: flex; justify-content: center; align-items: center; gap: var(--sp-10); margin: var(--sp-4) 0 var(--sp-2); flex-shrink: 0; }
+.lg-toggle { font-size: var(--fs-xs); color: var(--muted); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: var(--r-pill); padding: var(--sp-2) var(--sp-6);
+  cursor: pointer; font-family: inherit; }
+.lg-toggle:hover { color: var(--ink); background: var(--surface-3); }
+.lg-toggle[aria-pressed="false"] { color: var(--accent-ink); background: var(--accent-bg); border-color: var(--accent-line); }
 .lg-item { display: inline-flex; align-items: center; gap: var(--sp-3); font-size: var(--fs-xs); color: var(--muted); }
 .lg-sw { width: var(--sp-6); height: var(--sp-6); border-radius: var(--r-xs); flex: 0 0 auto; }
 .lg-sw.green { background: var(--mark-hit); }
@@ -853,11 +918,14 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .cfm-act .act-btn { min-width: 84px; }
 
 /* 라벨 검수 그리드 */
+/* 격자는 한눈에 많이 보이는 4:3 cover 로 되돌림(2026-08-19: contain·3:4 로 바꿨더니
+   검은 여백이 커지고 한 화면에 적게 보여 검수가 더 불편했다).
+   잘려서 안 보이는 프레임은 클릭해서 전체를 확대해 확인한다. */
 .review-grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: var(--sp-5); padding: var(--sp-6); }
 .review-cell { position: relative; margin: 0; }
 .review-cell img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--r); border: 1px solid var(--line);
-  display: block; background: var(--surface-3); }
+  display: block; background: var(--surface-3); cursor: zoom-in; }
 .review-cell figcaption { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--sp-1);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .review-del { position: absolute; top: var(--sp-3); right: var(--sp-3); width: var(--ib-sm); height: var(--ib-sm);
@@ -865,6 +933,12 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
   display: flex; align-items: center; justify-content: center; padding: 0; z-index: 2; }
 .review-del svg { width: var(--ic-sm); height: var(--ic-sm); }
 .review-del:hover { background: var(--danger); }
+/* 검수 확대 보기: 클릭한 프레임을 화면 크기로 */
+.review-zoom { position: fixed; inset: 0; z-index: 120; background: rgba(11, 16, 32, .92);
+  display: flex; align-items: center; justify-content: center; padding: var(--sp-8); cursor: zoom-out; }
+.review-zoom img { max-width: 100%; max-height: 100%; border-radius: var(--r); }
+.review-zoom .rz-name { position: absolute; left: 0; right: 0; bottom: var(--sp-6); text-align: center;
+  color: #e2e8f0; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 
 /* 학습 영상 선택 카드(모달 내 썸네일 그리드) */
 .vpick-card { position: relative; display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4);
@@ -890,4 +964,97 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 }
 @media (max-width: 520px) {
   .result-cards, .scoreboard { grid-template-columns: 1fr; }
+}
+
+/* ===== 폰(<=560px, 갤럭시 S25 기준 360px) =====
+   화면을 새로 만들지 않고 데스크톱 레이아웃이 좁은 폭에서 깨지는 지점만 고친다.
+   1) 셸: 100vh -> 100dvh (주소창에 가려 잘림), 카드 높이 고정 해제하고 탭 안에서 스크롤
+   2) 상단 탭 3개가 한 줄에 들어가게(글자가 두 줄로 접혔다)
+   3) 부품 목록 표: 폰에서 안 보이던 관리(수정·삭제) 열이 보이게 부수 열을 숨김
+   4) 좌우 2열(작업영역+부품패널, 원본+마스크)을 세로로 쌓기
+   5) 터치 타깃 최소 40px, 입력 글자 16px */
+@media (max-width: 560px) {
+  /* --- 1) 셸 --- */
+  main.solo { padding: var(--sp-5) var(--sp-4) var(--sp-4); }
+  .card {
+    height: calc(100dvh - 92px); min-height: 0;
+    padding: var(--sp-8) var(--sp-6); border-radius: var(--r-md);
+  }
+  /* 데스크톱은 각 패널이 알아서 스크롤하지만 폰은 폭이 좁아 세로로 길어진다 -> 탭 본문이 스크롤 */
+  .tab-pane { overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+
+  /* --- 2) 상단 탭 --- */
+  /* 탭 3개가 폭을 다 쓰므로, 진행 표시는 아래 줄로 내린다(같은 줄에 두면 탭 글자가 접힌다) */
+  .apptabs { margin-bottom: var(--sp-5); flex-wrap: wrap; gap: var(--sp-4); }
+  .apptabs .seg { display: flex; width: 100%; gap: var(--sp-1); }
+  .apptabs .prep-chip { margin: 0 auto 0 0; }
+  .apptab {
+    flex: 1 1 0; min-width: 0; justify-content: center; gap: var(--sp-3);
+    padding: 0 var(--sp-3); min-height: 44px; font-size: var(--fs-sm); white-space: nowrap;
+  }
+
+  /* --- 3) 부품 목록 표: 이름 + 관리만 남긴다(카테고리·설명·3D모델 숨김) --- */
+  .part-table { table-layout: auto; }
+  .part-table th:nth-child(2), .part-table td:nth-child(2),
+  .part-table th:nth-child(3), .part-table td:nth-child(3),
+  .part-table th:nth-child(4), .part-table td:nth-child(4) { display: none; }
+  .pt-w-name, .pt-w-manage2 { width: auto; }
+  .pt-scroll { overflow-x: auto; }
+  th, td { padding: var(--sp-4) var(--sp-3); }
+  .pt-actions .act-btn.sm { min-height: 40px; min-width: 40px; padding: 0 var(--sp-5); }
+  .pt-actions .btn-txt { display: none; }        /* 수정·삭제는 아이콘만(글자까지 넣으면 잘렸다) */
+  .pt-preview { display: none !important; }      /* 호버 미리보기는 터치에서 의미 없음 */
+
+  /* --- 4) 좌우 2열 -> 세로 --- */
+  /* 데스크톱은 '남는 높이를 나눠 갖는' 구조(flex:1 1 0)라 세로로 쌓으면 이미지가 0 높이로 접힌다.
+     JSX 인라인 flex 를 이기려면 !important 가 필요하고, 이미지 칸은 높이를 직접 준다. */
+  /* 스크롤 컨테이너는 .tab-pane 하나로 통일한다. 안쪽에도 스크롤이 있으면 폰에서 손가락이
+     어느 영역을 미는지 애매해지고, overflow:hidden 이면 부품 목록이 잘려 아예 안 보였다. */
+  .al-view, .al-row { overflow: visible !important; }
+  .al-row { flex-direction: column; }
+  .al-work, .al-work > div { flex: 0 0 auto !important; }
+  /* 부품 목록을 프레임 위로 올린다. 아래에 두면 스크롤해야 보여서 '리스트가 없다'로 보였다. */
+  .part-panel { order: -1; }
+
+  /* --- 학습 화면: 목록이 높이를 다 먹고 진행률·로그·시작 버튼이 눌려 있었다 --- */
+  .train-config { flex: 0 0 auto !important; max-height: 34dvh; }   /* 목록은 화면 1/3, 안에서 스크롤 */
+  .train-monitor { flex: 1 1 auto; overflow: visible; }             /* 스크롤은 .tab-pane 하나 */
+  .train-split.running .train-monitor { order: -1; }                /* 학습 중엔 진행률·로그를 위로 */
+  .train-setup-bar .act-btn.train { flex: 1 1 auto; min-height: 46px; font-size: var(--fs-md); }
+  .prog-head { flex-wrap: wrap; gap: var(--sp-5); }
+  .prog-head .act-btn.stop { margin-left: 0 !important; flex: 1 1 100%; min-height: 44px; }
+  .term { height: 170px; min-height: 170px; font-size: var(--fs-xs); }
+  .term.compact { height: 120px; min-height: 120px; }
+  .al-panes { flex-direction: column; flex: 0 0 auto !important; }
+  .img-pane { flex: 0 0 auto !important; height: 40dvh; }
+  .al-shots { max-height: 104px; overflow-y: auto; }   /* 참조샷 칩이 많으면 화면을 다 먹는다 */
+  .al-controls { gap: var(--sp-3); margin: var(--sp-5) 0; }
+  .part-panel { width: 100%; height: auto; max-height: 210px; flex: 0 0 auto; }
+  .tab-head { flex-wrap: wrap; }
+  .ev2-head-actions .act-btn, .ev2-head-actions .rbmenu { min-width: 0; }
+  .reg-grid { grid-template-rows: auto; }        /* 1fr 고정행 해제 -> 내용 높이대로 */
+  .reg-col { min-height: auto; }
+  /* 데스크톱은 폼이 카드 높이를 채우고 버튼이 맨 아래 고정(margin-top:auto)이지만,
+     폰은 내용이 길어 그러면 버튼이 영상 카드 위에 겹친다 -> 흐름 맨 끝으로 */
+  .reg-form { flex: 0 0 auto; }
+  .reg-actions { margin-top: var(--sp-10); }
+  .reg-desc-field .reg-textarea { min-height: 96px; }
+  .grow { overflow: visible; }
+  .rbmenu-pop { width: min(320px, calc(100vw - 40px)); }
+  .cfm { width: calc(100% - var(--sp-16)); }
+
+  /* --- 5) 터치·글자 --- */
+  .act-btn { min-height: 40px; }
+  .act-btn.big { min-height: 46px; }
+  .reg-input, .reg-textarea, .csel-btn { font-size: 16px; }   /* 16px 미만이면 브라우저가 확대 */
+  .al-shot { padding: var(--sp-3) var(--sp-4) var(--sp-3) var(--sp-6); min-height: 44px; }
+  /* 참조샷 칩(=프레임 이동)·프레임 이동 버튼이 22~28px 이라 폰에서 겨냥이 어려웠다(QA 2026-08-20).
+     권장 44px 로 올린다. 안의 삭제(x)만 30px 로 두는데, 잘못 눌리면 탭이 지워지기 때문이다. */
+  .al-shots .ref-shots-label, .al-shots .al-hint { min-height: 44px; }   /* 칩과 같은 높이 = 들썩임 방지 */
+  .al-shots { max-height: 132px; }                                       /* 칩이 커진 만큼 두 줄 보이게 */
+  .al-shot-close { width: 30px; height: 30px; }
+  .al-shot-close svg { width: 14px; height: 14px; }
+  .pb-btn { min-height: 44px; }
+  .pb-btn.ico { min-width: 44px; }
+  .frame-jump input, .ep-in { min-height: 44px; font-size: 16px; }       /* 16px 미만이면 브라우저가 확대 */
 }
