@@ -116,6 +116,7 @@ def _part_payload(s, p: Part) -> dict:
             "category": p.category.name if p.category else None,
             "description": p.description or "",
             "has_model3d": bool(p.model_3d_path),
+            "model3d_name": Path(p.model_3d_path).name if p.model_3d_path else None,
             "videos": [{"stem": v.stem, "role": v.role, "frames": v.n_frames or 0} for v in vids],
             "n_videos": len(vids), "frames": frames,
             "created_at": p.created_at.isoformat() if p.created_at else None}

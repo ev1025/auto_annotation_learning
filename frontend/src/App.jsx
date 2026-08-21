@@ -1894,14 +1894,24 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
               <span className="reg-label">3D 모델</span>
               <input ref={m3dInput} type="file" accept=".glb,.gltf,.obj,.stl,.ply,.fbx" style={{ display: 'none' }}
                      onChange={e => setM3dFile(e.target.files?.[0] || null)} />
-              <button type="button" className="reg-drop" onClick={() => m3dInput.current?.click()}>
-                <IcCube />
-                <div className="reg-drop-txt">
-                  <b>{m3dFile ? m3dFile.name : (editing && editPart.has_model3d ? '3D 모델 등록됨 (교체하려면 클릭)' : '3D 모델 불러오기')}</b>
-                  <p>{m3dFile ? `${(m3dFile.size / 1048576).toFixed(1)} MB · 저장 시 반영`
-                              : '클릭하여 .glb · .obj · .stl · .ply 파일 선택'}</p>
-                </div>
-              </button>
+              {/* 등록된 3D 는 칸 아래에 작게 띄운다. glb 는 이미지가 아니라 3D 라 뷰어가 필요하다 */}
+              <div className="reg-3d-wrap">
+                <button type="button" className="reg-drop" onClick={() => m3dInput.current?.click()}>
+                  <IcCube />
+                  <div className="reg-drop-txt">
+                    <b>{m3dFile ? m3dFile.name : (editing && editPart.has_model3d ? '3D 모델 등록됨' : '3D 모델 불러오기')}</b>
+                    <p>{m3dFile ? `${(m3dFile.size / 1048576).toFixed(1)} MB · 저장 시 반영`
+                                : '클릭하여 .glb · .obj · .stl · .ply 파일 선택'}</p>
+                  </div>
+                </button>
+              </div>
+
+              {/* 등록된 3D 를 칸 아래에 그림만 띄운다. glb 는 이미지가 아니라 3D 라 뷰어가 필요하다 */}
+              {editing && editPart.has_model3d && !m3dFile && (
+                <model-viewer class="reg-3d-view" camera-controls auto-rotate
+                              alt={`${editPart.name} 3D 모델`}
+                              src={`/api/xr/parts/${encodeURIComponent(editPart.name)}/model3d`} />
+              )}
             </div>
 
             <div className="reg-field reg-vid-field">
@@ -2043,7 +2053,6 @@ function PartList({ onEdit, onDeleted, active, flash, onFlashDone }) {
   const [loaded, setLoaded] = useState(false)
   const [msg, setMsg] = useState(null)
   const [confirmDel, setConfirmDel] = useState(null)
-  const [hov, setHov] = useState(null)                       // 호버한 행에서만 3D 뷰어를 붙인다
 
   const load = useCallback(() => {
     fetch('/api/parts').then(r => r.json())
@@ -2094,18 +2103,12 @@ function PartList({ onEdit, onDeleted, active, flash, onFlashDone }) {
           </thead>
           <tbody>
             {rows.map(p => (
-              <tr key={p.id} data-part={p.name} className={flash === p.name ? 'pt-flash' : undefined}
-                  onMouseEnter={() => setHov(p.name)} onMouseLeave={() => setHov(null)}>
+              <tr key={p.id} data-part={p.name} className={flash === p.name ? 'pt-flash' : undefined}>
                 <td className="pt-name">
                   <span className="pt-name-txt">{p.name}</span>
                   {/* 호버 미리보기: 미리 추출해둔 첫 프레임 */}
                   <div className="pt-preview">
-                    {p.has_model3d && hov === p.name ? (
-                      /* glb 는 이미지가 아니라 3D 라 뷰어가 필요하다. 호버할 때만 붙여 내려받기를 미룬다 */
-                      <model-viewer class="pt-preview-3d" camera-controls auto-rotate disable-zoom
-                                    ar-status="not-presenting" alt={`${p.name} 3D 모델`}
-                                    src={`/api/xr/parts/${encodeURIComponent(p.name)}/model3d`} />
-                    ) : p.videos?.[0]?.frames ? (
+                    {p.videos?.[0]?.frames ? (
                       <img className="pt-preview-img" loading="lazy" alt={p.name}
                            src={`/api/autolabel/frame?src=${encodeURIComponent(`bell412/${p.name}/videos/${p.videos[0].stem}`)}&idx=0&w=240`} />
                     ) : (
