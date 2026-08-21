@@ -192,6 +192,10 @@ def update_part(pid: int, name=None, category_id="keep", description=None) -> di
                 shutil.move(str(old_dir), str(new_dir))
             if old_lbl.exists():                     # 라벨·프레임 저장소도 같이 이동
                 shutil.move(str(old_lbl), str(autolabel.AUTOLABELS / new))
+            try:
+                _fileserver_rename(p.name, new, p.model_3d_path)
+            except Exception as e:               # 파일 서버 문제로 이름 변경이 막히면 안 된다
+                print(f"[파일서버] {p.name} -> {new} 3D 이름변경 실패: {type(e).__name__}: {e}", flush=True)
             p.name, p.folder = new, rel(new_dir)
         if category_id != "keep":
             cid = int(category_id) if category_id not in (None, "", "null") else None
@@ -213,8 +217,12 @@ def delete_part(pid: int) -> dict:
         p = s.get(Part, pid)
         if not p:
             return _err("없는 부품입니다.")
-        name = p.name
+        name, stored = p.name, p.model_3d_path
         s.delete(p); s.commit()            # part_videos·part_frames·sam2_annotations 는 CASCADE
+    try:
+        _fileserver_delete(name, stored)
+    except Exception as e:
+        print(f"[파일서버] {name} 3D 삭제 실패: {type(e).__name__}: {e}", flush=True)
     for d in (PARTS_ROOT / name, autolabel.AUTOLABELS / name):
         shutil.rmtree(d, ignore_errors=True)
     autolabel._videos(force=True)
@@ -245,6 +253,38 @@ def _copy_to_fileserver(part_name: str, src: Path) -> str | None:
     shutil.copyfile(src, tmp)
     tmp.replace(files_dir / name)          # 원자적 교체
     return name
+
+
+def _fileserver_path(part_name: str, stored: str | None) -> Path | None:
+    """파일 서버에 있는 그 부품의 3D 파일 경로. 우리가 복사해 둔 것만 대상으로 한다.
+
+    stored(=parts.model_3d_path) 가 비어 있으면 우리가 올린 적이 없다는 뜻이므로
+    같은 이름의 파일이 있어도 건드리지 않는다(남이 수동으로 넣은 파일 보호).
+    """
+    files_dir = METAWORKS_DIR / "files"
+    if not stored or not files_dir.is_dir():
+        return None
+    fp = files_dir / f"{part_name}{Path(stored).suffix.lower()}"
+    return fp if fp.exists() else None
+
+
+def _fileserver_rename(old_name: str, new_name: str, stored: str | None) -> str | None:
+    """부품 이름이 바뀌면 파일 서버의 3D 파일명도 따라간다. XR 이 이름으로 찾기 때문."""
+    fp = _fileserver_path(old_name, stored)
+    if not fp:
+        return None
+    dst = fp.with_name(f"{new_name}{fp.suffix}")
+    fp.replace(dst)
+    return dst.name
+
+
+def _fileserver_delete(part_name: str, stored: str | None) -> str | None:
+    """부품이 삭제되면 파일 서버의 3D 파일도 지운다. 남으면 없는 부품의 파일이 계속 보인다."""
+    fp = _fileserver_path(part_name, stored)
+    if not fp:
+        return None
+    fp.unlink()
+    return fp.name
 
 
 def upload_model3d(pid: int, filename: str, data: bytes) -> dict:
