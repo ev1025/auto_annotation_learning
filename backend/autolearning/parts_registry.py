@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import sys
@@ -221,6 +222,31 @@ def delete_part(pid: int) -> dict:
 
 
 # ---------- 파일 업로드 ----------
+# MetaWorks 파일 서버(:3001)의 저장소 루트. 그쪽 .env 의 STORAGE_DIR 과 같은 값이어야 한다.
+# 토르에서는 compose 가 호스트의 /var/lib/metaworks-files 를 붙여 준다. 폴더가 없으면(운영 PC)
+# 복사를 건너뛴다.
+METAWORKS_DIR = Path(os.environ.get("METAWORKS_DIR", "/var/lib/metaworks-files"))
+
+
+def _copy_to_fileserver(part_name: str, src: Path) -> str | None:
+    """3D 모델을 파일 서버 저장 폴더에 <부품명><확장자> 로 복사한다.
+
+    XR 은 이름으로 파일을 찾으므로 원본 파일명이 아니라 부품명으로 저장한다.
+    files/ 로 직접 쓰면 복사 중인 파일이 목록에 뜨고 잘린 파일이 내려간다(파일 서버 설계 4장).
+    그래서 tmp/ 에 다 쓴 뒤 같은 파일시스템 안에서 이름만 바꾼다.
+    """
+    files_dir = METAWORKS_DIR / "files"
+    if not files_dir.is_dir():
+        return None
+    tmp_dir = METAWORKS_DIR / "tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    name = f"{part_name}{src.suffix.lower()}"
+    tmp = tmp_dir / f"{name}.{uuid.uuid4().hex[:8]}"
+    shutil.copyfile(src, tmp)
+    tmp.replace(files_dir / name)          # 원자적 교체
+    return name
+
+
 def upload_model3d(pid: int, filename: str, data: bytes) -> dict:
     with SessionLocal() as s:
         p = s.get(Part, pid)
@@ -234,7 +260,13 @@ def upload_model3d(pid: int, filename: str, data: bytes) -> dict:
         fp = d / fn
         fp.write_bytes(data)
         p.model_3d_path = rel(fp); s.commit()
-        return {"ok": True, "path": p.model_3d_path, "bytes": len(data)}
+        try:
+            served = _copy_to_fileserver(p.name, fp)
+        except Exception as e:                       # 파일 서버 문제로 부품 등록이 실패하면 안 된다
+            print(f"[파일서버] {p.name} 3D 복사 실패: {type(e).__name__}: {e}", flush=True)
+            served = None
+        return {"ok": True, "path": p.model_3d_path, "bytes": len(data),
+                "fileserver": served}
 
 
 def upload_video(pid: int, filename: str, data: bytes) -> dict:

@@ -41,6 +41,7 @@ services:
       XR_DB_PASSWORD: ${XR_DB_PASSWORD}
       XR_DB_READS: "1"
       YOLO_SERVER_URL: http://infer:9412   # '신규 모델 적용' 시 /reload 를 호출할 대상
+      METAWORKS_DIR: /fileserver           # 3D 모델을 부품명으로 복사해 둘 파일 서버 저장소
     ports:
       - "7862:7862"
     volumes:
@@ -54,6 +55,9 @@ services:
       - ../frontend/dist:/app/frontend/dist:ro
       - ../backend:/app/backend:ro
       - ../scripts:/app/scripts:ro
+      # MetaWorks 파일 서버(:3001)의 저장소. 부품 3D 를 <부품명>.glb 로 복사해 XR 이 받아가게 한다.
+      # 호스트 경로는 그쪽 .env 의 STORAGE_DIR 과 같아야 한다.
+      - /var/lib/metaworks-files:/fileserver
     runtime: nvidia                    # Jetson 은 nvidia-container-runtime
     shm_size: "2gb"                    # YOLO DataLoader 워커용(기본 64MB 로는 부족)
 
