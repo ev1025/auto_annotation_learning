@@ -1,0 +1,191 @@
+<!doctype html><html lang="ko"><meta charset="utf-8">
+<title>검출 비교 - GT vs 예측</title>
+<style>
+ :root{--bg:#0f1420;--panel:#161d2e;--line:#26304a;--ink:#e8ecf5;--muted:#8e9ab5;
+       --gt:#22c55e;--ok:#f59e0b;--ng:#ef4444}
+ *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);
+   font:14px/1.55 -apple-system,"Malgun Gothic",sans-serif}
+ header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line);
+   padding:12px 16px;display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}
+ select{background:#1e2740;color:var(--ink);border:1px solid var(--line);border-radius:8px;
+   padding:7px 10px;font:inherit}
+ select#exp{min-width:260px} select#model{min-width:130px}
+ label{font:inherit;color:var(--muted);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+ .row{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;width:100%}
+ h2.sec{margin:26px 14px 10px;font-size:20px;font-weight:700;color:var(--ink)}
+ h2.sec:first-child{margin-top:16px}
+ .meta{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+ .legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+ .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;padding:14px}
+ figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+ .wrap{position:relative;background:#000;cursor:zoom-in}
+ .wrap img{display:block;width:100%;height:auto}
+ svg{position:absolute;inset:0;width:100%;height:100%}
+ rect.box{fill:none;stroke-width:2.5}
+ rect.chip{stroke:none}
+ text{font-weight:700;font-family:sans-serif}
+ figcaption{display:flex;justify-content:space-between;gap:8px;padding:7px 10px;font-size:12px;
+   color:var(--muted);font-variant-numeric:tabular-nums}
+ .iou{font-weight:700} .bad{color:var(--ng)} .mid{color:var(--ok)} .good{color:var(--gt)}
+ dialog{border:0;padding:0;background:transparent;max-width:96vw;max-height:96vh}
+ dialog::backdrop{background:rgba(0,0,0,.86)}
+ dialog .wrap{cursor:zoom-out} dialog img{max-height:92vh;width:auto}
+ table.sum{border-collapse:collapse;margin:8px 14px 10px;font-size:12px;font-variant-numeric:tabular-nums}
+ table.sum th,table.sum td{border:1px solid var(--line);padding:5px 9px;text-align:right}
+ table.sum th{background:var(--panel);color:var(--muted);vertical-align:bottom;font-weight:600;line-height:1.35}
+ table.sum td:first-child,table.sum th:first-child{text-align:left}
+ table.sum td.on{outline:2px solid var(--ok);outline-offset:-2px}
+ table.sum td.best{background:#14361f;color:#c8f7d4;font-weight:700}
+ table.sum td.na{color:#3d4762}
+ table.sum .sub{color:var(--muted);font-weight:400}
+</style>
+<h2 class="sec">실험 결과 표</h2>
+<table class="sum" id="sum"></table>
+<h2 class="sec">실제 예측 박스</h2>
+<header>
+ <select id="exp"></select>
+ <select id="model"></select>
+ <select id="part"></select>
+ <label>conf <input type="range" id="conf" min="0.25" max="0.95" step="0.05" value="0.25"> <b id="cv">0.25</b></label>
+ <span class="meta" id="stat"></span>
+ <div class="row meta legend">
+  <span><i style="background:#22c55e"></i>GT</span>
+  <span><i style="background:#f59e0b"></i>예측</span>
+  <span><i style="background:#ef4444"></i>오검</span></div>
+</header>
+<div class="grid" id="grid"></div>
+<dialog id="dlg"><div class="wrap" id="dwrap"></div></dialog>
+<script src="scripts/gt_preds.js"></script>
+<script>
+const $ = i => document.getElementById(i);
+$('exp').innerHTML = D.exps.map((e, i) => `<option value="${i}">${e.label}</option>`).join('');
+// 부품 목록은 데이터에서 만든다(GT 가 늘어나면 자동으로 늘어난다)
+const parts = [...new Set(D.images.map(im => im.part))].sort();
+$('part').innerHTML = `<option value="">부품 전체(${D.images.length})</option>`
+  + parts.map(p => `<option value="${p}">${p} (${D.images.filter(im => im.part === p).length})</option>`).join('');
+
+function curExp() { return D.exps[+$('exp').value]; }
+function fillModels() {
+  const keep = $('model').value;
+  const ms = Object.keys(curExp().models);
+  $('model').innerHTML = ms.map(m => `<option>${m}</option>`).join('');
+  if (ms.includes(keep)) $('model').value = keep;
+}
+function iou(a, b) {
+  const x1 = Math.max(a[0], b[0]), y1 = Math.max(a[1], b[1]);
+  const x2 = Math.min(a[2], b[2]), y2 = Math.min(a[3], b[3]);
+  if (x2 <= x1 || y2 <= y1) return 0;
+  const i = (x2 - x1) * (y2 - y1);
+  return i / ((a[2]-a[0])*(a[3]-a[1]) + (b[2]-b[0])*(b[3]-b[1]) - i);
+}
+function boxesFor(im, exp, model, conf) {
+  const r = (exp.models[model] || {})[im.file] || {p: []};
+  const p = r.p.filter(b => b[4] >= conf);
+  let best = 0;                              // conf 를 올리면 IoU 도 다시 계산해야 맞다
+  for (const b of p) if (b[5] === im.part) for (const g of im.gt) best = Math.max(best, iou(b, g));
+  return {p, iou: best};
+}
+function svgFor(im, r) {
+  const fz = Math.max(im.w, im.h) / 45;
+  let s = `<svg viewBox="0 0 ${im.w} ${im.h}" preserveAspectRatio="xMidYMid meet">`;
+  const chip = (x, y1, y2, txt, col) => {
+    const ch = fz * 1.35;
+    const cw = txt.length * fz * 0.58 + fz * 0.6;           // 어림(fitChips 가 실측으로 교체)
+    const cx = Math.max(0, Math.min(x, im.w - cw));
+    const cy = (y1 - ch >= 0) ? y1 - ch : y2;               // 위가 잘리면 박스 아래(박스 밖)
+    return `<rect class="chip" data-x="${cx}" data-y1="${y1}" data-y2="${y2}"`
+         + ` x="${cx}" y="${cy}" width="${cw}" height="${ch}" fill="${col}"/>`
+         + `<text x="${cx + fz * 0.3}" y="${cy + ch * 0.75}" font-size="${fz}" fill="#fff" class="lbl">${txt}</text>`;
+  };
+  for (const g of im.gt)     // GT 는 테두리만(라벨 달면 예측 칩과 겹친다)
+    s += `<rect class="box" x="${g[0]}" y="${g[1]}" width="${g[2]-g[0]}" height="${g[3]-g[1]}" stroke="#22c55e" vector-effect="non-scaling-stroke"/>`;
+  for (const b of r.p) {
+    const col = b[5] === im.part ? '#f59e0b' : '#ef4444';
+    s += `<rect class="box" x="${b[0]}" y="${b[1]}" width="${b[2]-b[0]}" height="${b[3]-b[1]}" stroke="${col}" vector-effect="non-scaling-stroke"/>`
+       + chip(b[0], b[1], b[3], `${b[5]} ${b[4].toFixed(2)}`, col);
+  }
+  return s + '</svg>';
+}
+// 그린 뒤 (1) 칩 폭을 실제 글자폭으로 (2) 겹치면 박스 위 -> 박스 아래(바깥) -> 더 아래로 피한다.
+// 박스 안쪽에는 넣지 않는다(부품을 가린다).
+function fitChips(root) {
+  for (const sv of root.querySelectorAll('svg')) {
+    const [, , vbW, vbH] = sv.getAttribute('viewBox').split(' ').map(Number);
+    const placed = [];
+    for (const t of sv.querySelectorAll('text.lbl')) {
+      const rc = t.previousElementSibling;
+      if (!rc || rc.tagName !== 'rect') continue;
+      const fz = parseFloat(t.getAttribute('font-size'));
+      const h = parseFloat(rc.getAttribute('height'));
+      const w = t.getBBox().width + fz * 0.6;
+      const x = Math.max(0, Math.min(parseFloat(rc.dataset.x), vbW - w));
+      const y1 = parseFloat(rc.dataset.y1), y2 = parseFloat(rc.dataset.y2);
+      const hits = y => placed.some(q => x < q.x + q.w && x + w > q.x && y < q.y + q.h && y + h > q.y);
+      const cands = [];
+      if (y1 - h >= 0) cands.push(y1 - h);
+      for (let k = 0; k < 6 && y2 + h * (k + 1) <= vbH; k++) cands.push(y2 + h * k);
+      for (let k = 1; k < 6 && y1 - h * (k + 1) >= 0; k++) cands.push(y1 - h * (k + 1));
+      const y = cands.find(c => !hits(c)) ?? (cands[0] ?? Math.max(0, y1 - h));
+      rc.setAttribute('x', x); rc.setAttribute('y', y); rc.setAttribute('width', w);
+      t.setAttribute('x', x + fz * 0.3); t.setAttribute('y', y + h * 0.75);
+      placed.push({x, y, w, h});
+    }
+  }
+}
+function score(exp, model, part, conf) {
+  const rows = D.images.filter(im => !part || im.part === part)
+                       .map(im => boxesFor(im, exp, model, conf));
+  const hit = rows.filter(r => r.iou >= 0.5).length;
+  const zero = rows.filter(r => r.iou === 0).length;
+  const avg = rows.reduce((s, r) => s + r.iou, 0) / (rows.length || 1);
+  return {n: rows.length, hit, zero, avg};
+}
+function render() {
+  const exp = curExp(), model = $('model').value, part = $('part').value;
+  const conf = parseFloat($('conf').value);
+  $('cv').textContent = conf.toFixed(2);
+  const rows = D.images.filter(im => !part || im.part === part)
+                       .map(im => ({im, r: boxesFor(im, exp, model, conf)}))
+                       .sort((a, b) => a.im.file.localeCompare(b.im.file));   // 이름순
+  const s = score(exp, model, part, conf);
+  $('stat').innerHTML = `<b>${s.n}장 · IoU≥0.5 ${s.hit}장 · 미검출 ${s.zero}장 · 평균 IoU ${s.avg.toFixed(3)}</b>`;
+  $('grid').innerHTML = rows.map(({im, r}) => {
+    const cls = r.iou >= 0.7 ? 'good' : r.iou >= 0.5 ? 'mid' : 'bad';
+    return `<figure><div class="wrap" data-file="${im.file}">`
+         + `<img src="${im.src}" alt="${im.file}" loading="lazy">${svgFor(im, r)}</div>`
+         + `<figcaption><span>${im.file.replace('__', ' / ').replace('.jpg', '')}</span>`
+         + `<span class="iou ${cls}">IoU ${r.iou.toFixed(2)}</span></figcaption></figure>`;
+  }).join('');
+  fitChips($('grid'));
+
+  // 표: 모델(행) x 실험(열). 칸 = 평균 IoU, 괄호 = 미검출 장수, 열 최고값 강조
+  const allModels = [...new Set(D.exps.flatMap(e => Object.keys(e.models)))];
+  let h = `<tr><th>모델</th>${D.exps.map(e => `<th>${e.label.replace(/ · /g, '<br>')}</th>`).join('')}</tr>`;
+  const colBest = D.exps.map(e => Math.max(...allModels.filter(m => e.models[m])
+      .map(m => score(e, m, part, conf).avg)));
+  for (const m of allModels) {
+    h += `<tr><td>${m}</td>`;
+    D.exps.forEach((e, i) => {
+      if (!e.models[m]) { h += `<td class="na">-</td>`; return; }
+      const v = score(e, m, part, conf);
+      const cls = [v.avg === colBest[i] ? 'best' : '', (e.id === exp.id && m === model) ? 'on' : ''].join(' ').trim();
+      h += `<td class="${cls}">${v.avg.toFixed(3)} <span class="sub">(${v.zero})</span></td>`;
+    });
+    h += `</tr>`;
+  }
+  $('sum').innerHTML = h;
+}
+$('grid').addEventListener('click', ev => {
+  const w = ev.target.closest('.wrap'); if (!w) return;
+  const im = D.images.find(x => x.file === w.dataset.file);
+  const r = boxesFor(im, curExp(), $('model').value, parseFloat($('conf').value));
+  $('dwrap').innerHTML = `<img src="${im.src}">` + svgFor(im, r);
+  fitChips($('dwrap'));
+  $('dlg').showModal();
+});
+$('dlg').addEventListener('click', () => $('dlg').close());
+$('exp').addEventListener('input', () => { fillModels(); render(); });
+for (const id of ['model', 'part', 'conf']) $(id).addEventListener('input', render);
+fillModels(); render();
+</script>
+</html>
