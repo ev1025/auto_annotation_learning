@@ -48,6 +48,12 @@ services:
       - ../data:/app/data
       - ../results:/app/results
       - ../models:/app/models
+      # 프론트·백엔드는 이미지에 COPY 되지만, 코드만 고쳤을 때 이미지 전체(torch 포함)를 다시
+      # 빌드하지 않도록 저장소를 덮어 마운트한다. 파일 복사 후 컨테이너 재시작만으로 반영된다.
+      # (docker cp 는 컨테이너를 재생성하면 사라져서 실제로 되돌아간 사고가 있었다)
+      - ../frontend/dist:/app/frontend/dist:ro
+      - ../backend:/app/backend:ro
+      - ../scripts:/app/scripts:ro
     runtime: nvidia                    # Jetson 은 nvidia-container-runtime
     shm_size: "2gb"                    # YOLO DataLoader 워커용(기본 64MB 로는 부족)
 
@@ -65,6 +71,10 @@ services:
       - "9412:9412"
     volumes:
       - ../models:/app/models
+      # 전역 부품 코드표(읽기 전용). 없으면 추론서버가 part_code 를 null 로 내보낸다.
+      - ../data/bell412/parts:/app/data/bell412/parts:ro
+      - ../backend:/app/backend:ro
+      - ../scripts:/app/scripts:ro
     runtime: nvidia
 
 volumes:

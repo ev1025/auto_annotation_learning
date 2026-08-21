@@ -74,9 +74,7 @@ xr_autolearning/
 ├─ scripts/
 │  ├─ config.py                  # 공용 경로·학습 기본값
 │  ├─ eval_gt.py                 # GT 라벨로 실제 mAP 측정
-│  ├─ experiments/               # 벤치마크·ablation (재현용 실험 기록)
-│  ├─ labeling/pseudo_utils.py   # 박스 선택(추론·TTA·conf 필터) 단일 구현
-│  └─ data_import/               # 외부 데이터셋 반입
+│  └─ experiments/               # 서버 학습·모델 비교·추론 벤치(목록은 그 폴더 README)
 ├─ deploy/docker-compose.dev.yml # Postgres 16 (127.0.0.1 바인딩)
 ├─ data/                         # 원본(git 제외)
 │  ├─ bell412/<부품>/videos/     #   등록 영상
