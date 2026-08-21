@@ -2043,6 +2043,7 @@ function PartList({ onEdit, onDeleted, active, flash, onFlashDone }) {
   const [loaded, setLoaded] = useState(false)
   const [msg, setMsg] = useState(null)
   const [confirmDel, setConfirmDel] = useState(null)
+  const [hov, setHov] = useState(null)                       // 호버한 행에서만 3D 뷰어를 붙인다
 
   const load = useCallback(() => {
     fetch('/api/parts').then(r => r.json())
@@ -2093,12 +2094,18 @@ function PartList({ onEdit, onDeleted, active, flash, onFlashDone }) {
           </thead>
           <tbody>
             {rows.map(p => (
-              <tr key={p.id} data-part={p.name} className={flash === p.name ? 'pt-flash' : undefined}>
+              <tr key={p.id} data-part={p.name} className={flash === p.name ? 'pt-flash' : undefined}
+                  onMouseEnter={() => setHov(p.name)} onMouseLeave={() => setHov(null)}>
                 <td className="pt-name">
                   <span className="pt-name-txt">{p.name}</span>
                   {/* 호버 미리보기: 미리 추출해둔 첫 프레임 */}
                   <div className="pt-preview">
-                    {p.videos?.[0]?.frames ? (
+                    {p.has_model3d && hov === p.name ? (
+                      /* glb 는 이미지가 아니라 3D 라 뷰어가 필요하다. 호버할 때만 붙여 내려받기를 미룬다 */
+                      <model-viewer class="pt-preview-3d" camera-controls auto-rotate disable-zoom
+                                    ar-status="not-presenting" alt={`${p.name} 3D 모델`}
+                                    src={`/api/xr/parts/${encodeURIComponent(p.name)}/model3d`} />
+                    ) : p.videos?.[0]?.frames ? (
                       <img className="pt-preview-img" loading="lazy" alt={p.name}
                            src={`/api/autolabel/frame?src=${encodeURIComponent(`bell412/${p.name}/videos/${p.videos[0].stem}`)}&idx=0&w=240`} />
                     ) : (

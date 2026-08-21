@@ -570,6 +570,9 @@ button.prep-chip:hover { border-color: var(--accent); }
 .pt-preview-thumb { width: 100%; aspect-ratio: 16 / 9; border-radius: var(--r-sm); background: var(--surface-3);
   display: flex; align-items: center; justify-content: center; color: var(--faint); margin-bottom: var(--sp-4); }
 .pt-preview-thumb svg { width: var(--ic-xl); height: var(--ic-xl); }
+/* 3D 미리보기: 사진 자리와 같은 크기로 두어 호버 시 패널이 흔들리지 않게 한다 */
+.pt-preview-3d { width: 100%; aspect-ratio: 16 / 9; border-radius: var(--r-sm);
+                 background: var(--surface-3); --poster-color: transparent; display: block; }
 .pt-preview b { display: block; font-size: var(--fs-sm); font-weight: 700; color: var(--ink-strong); margin-bottom: var(--sp-1); }
 .pt-preview p { margin: 0; font-size: var(--fs-xs); color: var(--muted); line-height: 1.45; font-weight: 400; }
 .pt-preview p.pt-preview-meta { margin-top: var(--sp-2); color: var(--faint); }   /* 둘째 줄: 영상·프레임 수 */

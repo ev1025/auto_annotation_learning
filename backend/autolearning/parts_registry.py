@@ -196,6 +196,13 @@ def update_part(pid: int, name=None, category_id="keep", description=None) -> di
                 _fileserver_rename(p.name, new, p.model_3d_path)
             except Exception as e:               # 파일 서버 문제로 이름 변경이 막히면 안 된다
                 print(f"[파일서버] {p.name} -> {new} 3D 이름변경 실패: {type(e).__name__}: {e}", flush=True)
+            if p.model_3d_path:                  # <부품>/3d/<부품명>.glb 도 새 이름으로
+                ext = Path(p.model_3d_path).suffix.lower()
+                old3d = new_dir / "3d" / f"{p.name}{ext}"      # 폴더는 이미 새 이름으로 옮겨졌다
+                new3d = new_dir / "3d" / f"{new}{ext}"
+                if old3d.exists():
+                    old3d.replace(new3d)
+                p.model_3d_path = rel(new3d)
             p.name, p.folder = new, rel(new_dir)
         if category_id != "keep":
             cid = int(category_id) if category_id not in (None, "", "null") else None
@@ -245,7 +252,7 @@ def _copy_to_fileserver(part_name: str, src: Path) -> str | None:
     """
     files_dir = METAWORKS_DIR / "files"
     if not files_dir.is_dir():
-        return None
+        return None            # 파일 서버가 없는 환경(운영 PC). 이미 <부품>/3d 에 부품명으로 있다.
     tmp_dir = METAWORKS_DIR / "tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     name = f"{part_name}{src.suffix.lower()}"
@@ -261,21 +268,32 @@ def _fileserver_path(part_name: str, stored: str | None) -> Path | None:
     stored(=parts.model_3d_path) 가 비어 있으면 우리가 올린 적이 없다는 뜻이므로
     같은 이름의 파일이 있어도 건드리지 않는다(남이 수동으로 넣은 파일 보호).
     """
-    files_dir = METAWORKS_DIR / "files"
-    if not stored or not files_dir.is_dir():
+    if not stored:
         return None
-    fp = files_dir / f"{part_name}{Path(stored).suffix.lower()}"
+    files_dir = METAWORKS_DIR / "files"
+    base = files_dir if files_dir.is_dir() else PARTS_ROOT / part_name / "3d"
+    fp = base / f"{part_name}{Path(stored).suffix.lower()}"
     return fp if fp.exists() else None
 
 
 def _fileserver_rename(old_name: str, new_name: str, stored: str | None) -> str | None:
-    """부품 이름이 바뀌면 파일 서버의 3D 파일명도 따라간다. XR 이 이름으로 찾기 때문."""
-    fp = _fileserver_path(old_name, stored)
-    if not fp:
+    """부품 이름이 바뀌면 3D 파일명도 따라간다. XR 이 이름으로 찾기 때문."""
+    if not stored:
         return None
-    dst = fp.with_name(f"{new_name}{fp.suffix}")
-    fp.replace(dst)
-    return dst.name
+    ext = Path(stored).suffix.lower()
+    files_dir = METAWORKS_DIR / "files"
+    if files_dir.is_dir():
+        cands = [files_dir / f"{old_name}{ext}"]
+    else:
+        # 운영 PC. 이 함수가 불릴 때 부품 폴더는 이미 새 이름으로 옮겨져 있다.
+        cands = [PARTS_ROOT / new_name / "3d" / f"{old_name}{ext}",
+                 PARTS_ROOT / old_name / "3d" / f"{old_name}{ext}"]
+    for fp in cands:
+        if fp.exists():
+            dst = fp.with_name(f"{new_name}{ext}")
+            fp.replace(dst)
+            return dst.name
+    return None
 
 
 def _fileserver_delete(part_name: str, stored: str | None) -> str | None:
@@ -295,9 +313,10 @@ def upload_model3d(pid: int, filename: str, data: bytes) -> dict:
         fn = _safe_filename(filename)
         if Path(fn).suffix.lower() not in MODEL3D_EXT:
             return _err(f"3D 모델 확장자만 됩니다: {', '.join(sorted(MODEL3D_EXT))}")
-        d = PARTS_ROOT / p.name / "model3d"
+        # XR 은 부품 이름으로 3D 를 찾는다. 원본 파일명은 버리고 <부품>/3d/<부품명>.glb 한 벌만 둔다.
+        d = PARTS_ROOT / p.name / "3d"
         d.mkdir(parents=True, exist_ok=True)
-        fp = d / fn
+        fp = d / f"{p.name}{Path(fn).suffix.lower()}"
         fp.write_bytes(data)
         p.model_3d_path = rel(fp); s.commit()
         try:

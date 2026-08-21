@@ -36,6 +36,14 @@ EXPS = [
      "classes": 36, "synth": 390, "bg": 417, "train": 8447,
      "base": "results/bench/260821_091951_aug/{m}/weights/best.pt",
      "models": ["yolo11n", "yolo11s", "yolo11m", "yolo26s"]},
+    {"id": "c36_bg984", "label": "36클래스 · 합성 390 · 배경 984(격납고·조종실 포함)",
+     "classes": 36, "synth": 390, "bg": 984, "train": 9014,
+     "base": "results/bench/260821_093658_hangar/{m}/weights/best.pt",
+     "models": ["yolo11n", "yolo11s", "yolo11m", "yolo26s"]},
+    {"id": "c36_syn2121", "label": "36클래스 · 합성 2121(부품당 59) · 배경 417",
+     "classes": 36, "synth": 2121, "bg": 417, "train": 10178,
+     "base": "results/bench/260821_101947_synth2160/{m}/weights/best.pt",
+     "models": ["yolo11n", "yolo11s", "yolo11m", "yolo26s"]},
     {"id": "c2_syn", "label": "2클래스 · 합성 462 · 배경 없음",
      "classes": 2, "synth": 462, "bg": 0, "train": 934,
      "base": "results/ablation_synth/gearbox_atest/20260810_093338/runs/model_{m}/weights/best.pt",
@@ -63,7 +71,8 @@ def gt_images():
     import cv2
     out = []
     for part in sorted(d.name for d in GT_ROOT.iterdir()
-                       if (d / "gt" / "images").is_dir() and (d / "gt" / "labels").is_dir()):
+                       if not d.name.startswith("_")          # _사본·_negatives 같은 보조 폴더는 건너뛴다
+                       and (d / "gt" / "images").is_dir() and (d / "gt" / "labels").is_dir()):
         for ip in sorted((GT_ROOT / part / "gt" / "images").glob("*.jpg")):
             lp = GT_ROOT / part / "gt" / "labels" / f"{ip.stem}.txt"
             if not lp.exists():
