@@ -194,6 +194,7 @@ def _b64(img, w=None, q=80):
 
 def frame_jpeg(src, idx, w=960):
     """프레임 한 장을 JPEG 바이트로 (뷰어 표시용, 다운스케일)."""
+    w = max(64, min(int(w or 960), 4096))   # 음수면 cv2.resize 가 예외 -> 500. 범위를 여기서 못 박는다
     fs = _frames(src)
     if not fs or idx < 0 or idx >= len(fs):
         return None

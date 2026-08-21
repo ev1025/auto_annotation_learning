@@ -84,6 +84,9 @@ RESULTS = config.BASE_DIR / "results"
 CUTS_DIR = config.BASE_DIR / "results" / "autolabels" / "_cuts"   # 누끼 캐시(라벨이 그대로면 재사용)
 CUT_PER_CLASS = 60          # 부품당 누끼 상한. 인접 프레임은 사실상 같은 그림이라 더 뽑아도 다양성이 안 늘어난다
 VAL_CONF = 0.4
+# 비교 화면에서 한 프레임에 표시할 박스 상한(신뢰도 상위). 덜 학습된 모델이
+# 300개까지 뱉어 사진이 박스로 덮이는 것을 막는다. 전체 개수는 따로 표시한다.
+BOX_CAP = 12
 EPOCHS = 100
 
 _IMG = {}          # SAM2 이미지 예측기 캐시(마스크 확인용)
@@ -103,6 +106,22 @@ def _b64(img, w=640, q=80):
 def _overlay(im, mask, color=(0, 200, 0), alpha=0.45):
     ov = im.copy(); ov[mask] = color
     return cv2.addWeighted(ov, alpha, im, 1 - alpha, 0)
+
+def _ov_sizes(w, h):
+    """오버레이(점·박스) 크기. 이미지의 긴 변에 비례시킨다.
+
+    예전에는 세 군데가 서로 다른 기준을 썼다.
+      - 마스크 미리보기: 가로 폭 기준(w/82, w/95)
+      - 라벨 확인 이미지(boxs): 3px·반지름 10px 고정
+      - 화면 탭 점(CSS): 8px 고정
+    그래서 세로영상(1080x1920)과 가로영상(1920x1080), 미리보기와 확인 이미지에서
+    점·박스 굵기가 제각각으로 보였다. 긴 변 기준 한 가지로 통일한다.
+    """
+    L = max(w, h)
+    return (max(5, round(L / 110)),     # 점 반지름
+            max(3, round(L / 220)),     # 박스 두께
+            max(2, round(L / 550)))     # 점 흰 테두리
+
 
 def _bbox(mask):
     ys, xs = np.where(mask)
@@ -125,6 +144,8 @@ def mask_preview(src, frame_idx, points):
         return {"error": "프레임 범위 밖"}
     if not points:
         return {"error": "점이 없습니다"}
+    # 화면 좌표는 0~1 비율이다. 범위를 벗어난 값이 그대로 SAM2 로 가면 이미지 밖을 가리킨다.
+    points = [[min(max(float(x), 0.0), 1.0), min(max(float(y), 0.0), 1.0), int(l)] for x, y, l in points]
     im = _rd(fs[frame_idx]); h, w = im.shape[:2]
     pred = _img_predictor()
     with torch.inference_mode(), torch.autocast(DEV, dtype=torch.bfloat16):
@@ -136,9 +157,7 @@ def mask_preview(src, frame_idx, points):
     bb = _bbox(m)
     # 한 이미지에 전부: 마스크(초록 오버레이) + 박스(주황) + 포인트(초록=부품/빨강=제외)
     # 점·박스는 원본 해상도라 화면 표시크기에 맞춰 이미지 폭에 비례(왼쪽 CSS 점 8px 과 통일감)
-    r = max(6, round(w / 82))            # 점 반지름
-    bt = max(3, round(w / 95))           # 박스 두께(더 굵게)
-    ew = max(2, round(w / 400))          # 점 흰 테두리
+    r, bt, ew = _ov_sizes(w, h)          # 점·박스·테두리 크기(긴 변 기준 공용 규칙)
     vis = _overlay(im, m)
     if bb:
         cv2.rectangle(vis, (bb[0], bb[1]), (bb[2], bb[3]), (0, 165, 255), bt)
@@ -165,11 +184,14 @@ def free_sam2():
 
 # ==================== (3) 학습 ====================
 
-def _propagate_into(video, shots, labels_dir, boxs_dir):
+def _propagate_into(video, shots, labels_dir, boxs_dir, progress=None):
     """영상 하나를 SAM2 전파 → labels_dir 에 <stem>_<frame>.txt(YOLO 라벨),
     boxs_dir 에 탭점+박스 확인 이미지. 프레임 이미지는 이미 autolabels/images/<stem>/ 캐시에 있으므로
     복사하지 않는다(_frame_cache 폐지·중복 제거). 라벨수·전체프레임수 반환.
-    파일명 접두어는 항상 stem(슬래시 방지). 라벨 <stem>_<frame> ↔ 이미지 images/<stem>/<frame>.jpg 로 짝."""
+    파일명 접두어는 항상 stem(슬래시 방지). 라벨 <stem>_<frame> ↔ 이미지 images/<stem>/<frame>.jpg 로 짝.
+
+    progress(단계, 진행, 전체) 를 주면 진행 상황을 알려준다(화면의 tqdm 식 표시용).
+    전파는 프레임 수만큼 돌기 때문에, 그동안 아무 숫자도 안 보이면 멈춘 것처럼 보였다."""
     from sam2.build_sam import build_sam2_video_predictor
     vp = autolabel.resolve_video(video)
     if not vp:
@@ -189,10 +211,14 @@ def _propagate_into(video, shots, labels_dir, boxs_dir):
         masks = {}
         for fidx, _ids, logits in predictor.propagate_in_video(state):
             m = logits[0].cpu().numpy(); masks[fidx] = (m[0] if m.ndim == 3 else m) > 0.0
+            if progress:
+                progress("propagate", len(masks), len(fs))     # 전파: 프레임 단위 진행
     del predictor, state; free_sam2()
 
     n = 0
     for i, p in enumerate(fs):
+        if progress and (i % 10 == 0 or i == len(fs) - 1):
+            progress("write", i + 1, len(fs))                  # 라벨 쓰기: 10장마다 갱신(과도한 갱신 방지)
         mk = masks.get(i)
         if mk is not None and mk.shape != (h, w):
             mk = cv2.resize(mk.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool)
@@ -203,8 +229,10 @@ def _propagate_into(video, shots, labels_dir, boxs_dir):
             bw, bh = (bb[2] - bb[0]) / w, (bb[3] - bb[1]) / h
             (labels_dir / f"{nm}.txt").write_text(f"0 {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}\n", encoding="utf-8")
             boxed = _rd(p).copy()                       # 박스 확인 이미지(라벨된 전 프레임)
-            cv2.rectangle(boxed, (bb[0], bb[1]), (bb[2], bb[3]), (0, 165, 255), 3)
-            cv2.putText(boxed, "part", (bb[0], max(bb[1] - 6, 16)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
+            _r, _bt, _ew = _ov_sizes(w, h)
+            cv2.rectangle(boxed, (bb[0], bb[1]), (bb[2], bb[3]), (0, 165, 255), _bt)
+            cv2.putText(boxed, "part", (bb[0], max(bb[1] - 6, 16)), cv2.FONT_HERSHEY_SIMPLEX,
+                        max(0.6, w / 1600), (0, 165, 255), _ew + 1)
             cv2.imwrite(str(boxs_dir / f"{nm}.jpg"), boxed)
             n += 1
 
@@ -212,11 +240,12 @@ def _propagate_into(video, shots, labels_dir, boxs_dir):
         mk = masks.get(int(fi)); base = _rd(fs[int(fi)]); has = mk is not None and mk.shape == (h, w)
         vis = _overlay(base, mk) if has else base
         bb = _bbox(mk) if has else None
+        _r, _bt, _ew = _ov_sizes(w, h)
         if bb:
-            cv2.rectangle(vis, (bb[0], bb[1]), (bb[2], bb[3]), (0, 165, 255), 3)
+            cv2.rectangle(vis, (bb[0], bb[1]), (bb[2], bb[3]), (0, 165, 255), _bt)
         for rx, ry, lab in pts:
-            cv2.circle(vis, (int(rx * w), int(ry * h)), 10, (255, 60, 0) if lab else (0, 0, 255), -1)
-            cv2.circle(vis, (int(rx * w), int(ry * h)), 10, (255, 255, 255), 2)
+            cv2.circle(vis, (int(rx * w), int(ry * h)), _r, (255, 60, 0) if lab else (0, 0, 255), -1)
+            cv2.circle(vis, (int(rx * w), int(ry * h)), _r, (255, 255, 255), _ew)
         cv2.imwrite(str(boxs_dir / f"{stem}_{Path(fs[int(fi)]).stem}.jpg"), vis)
     return n, len(fs)
 
@@ -401,9 +430,13 @@ def _run_parts_label(job_id, session, video, shots):
         pl, boxs = store["labels"], store["boxs"]
         for d in (pl, boxs, store["images"]):
             d.mkdir(parents=True, exist_ok=True)
-        j.update(stage="propagate", note=f"{stem} 라벨 생성 중")
+        j.update(stage="propagate", note=f"{stem} 라벨 생성 중", prog_done=0, prog_total=0, prog_step="propagate")
+
+        def _prog(step, done, total):   # 화면에 tqdm 처럼 개수를 보여준다
+            j.update(prog_step=step, prog_done=done, prog_total=total)
+
         _clear_video(store, stem)                  # 재탭이면 이 영상분(stem_*)만 새로(라벨·boxs)
-        n, tot = _propagate_into(video, shots, pl, boxs)
+        n, tot = _propagate_into(video, shots, pl, boxs, progress=_prog)
         _save_shots(video, shots)                  # 참조샷(탭 포인트) 영속 저장 → 재접속·타 브라우저 복원
         _db_sync_part(video)                       # 파일에 쓴 직후 DB 색인 최신화(조회가 DB 라서 필수)
         taps = [_b64(_rd(p), w=520) for p in sorted(boxs.glob(f"{stem}_*.jpg"))][:6]
@@ -448,9 +481,14 @@ def _run_parts_label_batch(job_id, session, items):
             pl, boxs = store["labels"], store["boxs"]
             for d in (pl, boxs, store["images"]):
                 d.mkdir(parents=True, exist_ok=True)
-            j.update(stage="propagate", note=f"{k}/{total} · {stem}", done=k - 1, total=total)
+            j.update(stage="propagate", note=f"{k}/{total} · {stem}", done=k - 1, total=total,
+                     prog_step="propagate", prog_done=0, prog_total=0)
+
+            def _prog(step, done, tot_, _stem=stem, _k=k):
+                j.update(prog_step=step, prog_done=done, prog_total=tot_, note=f"{_k}/{total} · {_stem}")
+
             _clear_video(store, stem)
-            n, tot = _propagate_into(video, shots, pl, boxs)
+            n, tot = _propagate_into(video, shots, pl, boxs, progress=_prog)
             _save_shots(video, shots)              # 참조샷 영속 저장(부품별 shots.json)
             _db_sync_part(video)                   # 부품마다 DB 색인 최신화
             results.append({"video": stem, "labels": n, "frames": tot})
@@ -617,19 +655,88 @@ def eval_videos(part):
     return sorted(f for f in d.glob("*") if f.suffix.lower() in autolabel.VIDEO_EXT) if d.is_dir() else []
 
 
+def _csv_epochs(runs_dir):
+    """가장 최근 results.csv 를 [{epoch,box,cls,dfl,map50,map5095}, ...] 로 읽는다."""
+    files = sorted(Path(runs_dir).glob("*/results.csv"), key=lambda f: f.stat().st_mtime)
+    if not files:
+        return []
+    txt = files[-1].read_text(encoding="utf-8", errors="replace").strip().splitlines()
+    if len(txt) < 2:
+        return []
+    head = [h.strip() for h in txt[0].split(",")]
+
+    def pick(row, *names):
+        for n in names:
+            if n in head:
+                v = row[head.index(n)].strip()
+                if v:
+                    try:
+                        return round(float(v), 4)
+                    except ValueError:
+                        return None
+        return None
+
+    rows = []
+    for ln in txt[1:]:
+        row = ln.split(",")
+        if len(row) < len(head):
+            continue
+        ep = pick(row, "epoch")
+        if ep is None:
+            continue
+        rows.append({"epoch": int(ep),
+                     "box": pick(row, "train/box_loss"), "cls": pick(row, "train/cls_loss"),
+                     "dfl": pick(row, "train/dfl_loss"),
+                     "map50": pick(row, "metrics/mAP50(B)", "metrics/mAP50"),
+                     "map5095": pick(row, "metrics/mAP50-95(B)", "metrics/mAP50-95"),
+                     # 화면 곡선은 mAP 대신 이 둘을 쓴다.
+                     #   r(재현율)  = 있는 부품을 실제로 인지한 비율 = "인지했다"
+                     #   p(정밀도)  = 인지했다고 한 것 중 맞은 비율 = "헛인지 안 했다"
+                     # mAP 는 이 학습이 train 과 val 에 같은 폴더를 쓰므로 0.99 로 포화돼 판단에 못 쓴다.
+                     "p": pick(row, "metrics/precision(B)", "metrics/precision"),
+                     "r": pick(row, "metrics/recall(B)", "metrics/recall")})
+        # 탐지에는 '정확도(accuracy)' 라는 지표가 없다(맞힌 칸/전체 칸을 셀 수 없어서).
+        # 대신 Precision·Recall 을 하나로 합친 F1 을 함께 그린다. F1 = 2PR/(P+R)
+        _p, _r = rows[-1]["p"], rows[-1]["r"]
+        rows[-1]["f1"] = round(2 * _p * _r / (_p + _r), 4) if (_p and _r) else None
+    return rows
+
+
+class _Cancelled(Exception):
+    """중단 요청. ultralytics 의 trainer.stop 은 에폭 경계에서만 확인되므로(100 에폭이면 몇 분씩
+    안 멈춘다) 배치 콜백에서 이 예외를 올려 학습 루프를 즉시 빠져나온다."""
+
+
 def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
     """세션에 누적된 per-part 라벨(class 0) → 영상명→부품→클래스 remap → YOLO 학습 → 검출 평가.
     only_classes 지정 시 그 클래스만 학습. augment=True면 학습 전 배경 합성 증강 추가."""
     j = JOBS[job_id]
 
-    def logln(msg, level="info"):   # 학습 로그 한 줄 누적(프론트 터미널 뷰어가 폴링으로 읽음) + 개발자 로그 파일 미러
+    # 로그는 세 곳으로 나간다.
+    #   1) job["log"]                  프론트 터미널(폴링)
+    #   2) results/_logs/pipeline.log  모든 작업이 섞이는 회전 로그(개발자용, 최근 것만)
+    #   3) results/<시각>/train.log    이 학습만의 기록(모델·meta.json 과 같은 폴더에 남는다)
+    # 3번이 없으면 학습이 끝난 뒤 "그때 무슨 일이 있었나"를 run 폴더만 보고는 알 수 없다.
+    _runlog = {"path": None}
+
+    def logln(msg, level="info"):
         j.setdefault("log", []).append({"level": level, "msg": msg})
         logger.log(logging.ERROR if level == "err" else logging.INFO, f"[multiclass:{job_id}] {msg}")
+        p = _runlog["path"]
+        if p:
+            try:
+                with open(p, "a", encoding="utf-8") as f:
+                    f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} [{level}] {msg}\n")
+            except Exception:   # noqa: BLE001 - 로그 기록 실패가 학습을 멈추면 안 된다
+                pass
 
     try:
         runid = datetime.now().strftime("%y%m%d_%H%M%S")   # 이 학습 run = results/<시각>/
         session = runid
         sess = RESULTS / runid
+        sess.mkdir(parents=True, exist_ok=True)
+        _runlog["path"] = sess / "train.log"
+        logln(f"학습 run {runid} 시작 (job {job_id})")
         sys.path.insert(0, str(config.BASE_DIR / "scripts" / "experiments"))
         import build_multiclass as bm
         names, name2idx = bm.load_classes()
@@ -674,18 +781,20 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
         n_total = len(lbls)
         j.update(ingest_total=n_total, ingest_done=0)         # 산입 진행바(선택 부품 기준)
         # 1차 스캔: 부품별 라벨 수집. 부품 판정 = 라벨이 놓인 부품 폴더명(파일명 아님 → 안 꼬임).
-        # classes.txt 전역을 그대로 쓰면 미학습 부품 뉴런이 남아 오검출 → 실제 학습 부품만 0..N-1 재색인.
+        # 전역 목록(part_codes.json)을 그대로 쓰면 미학습 부품 뉴런이 남아 오검출 → 실제 학습 부품만 0..N-1 재색인.
         staged = []          # [(이미지경로, stem, 부품클래스, [박스4값,...]), ...]
         for k, lp in enumerate(lbls, 1):
             if k % 20 == 0 or k == n_total:
                 j.update(ingest_done=k)                       # 산입 진행 실시간 갱신
+                if j.get("cancel"):                           # 학습 전(라벨 산입) 단계에서도 중단이 먹게
+                    raise _Cancelled
             part = _part_of_label(lp)
             cls = re.sub(r"\s+", "_", part.lower())
             if sel is not None and cls not in sel:
                 continue
             input_cnt += 1
             if cls not in name2idx:
-                miss[cls] = miss.get(cls, 0) + 1; continue   # classes.txt 미등록 → 산입 실패
+                miss[cls] = miss.get(cls, 0) + 1; continue   # 코드표 미등록 부품 → 산입 실패
             ip = _img_of_label(lp)
             if not ip.exists():
                 drop_noimg += 1; continue                    # 대응 프레임 이미지 없음 → 산입 실패
@@ -697,11 +806,24 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
         # 압축 클래스공간: 실제 학습되는 부품만 정렬해 0..N-1 로 재색인(모델 nc = 학습 부품 수)
         train_names = sorted(per.keys())
         cidx = {c: i for i, c in enumerate(train_names)}
-        for ip, stem, cls, boxes in staged:                   # 2차: 재색인 인덱스로 이미지·라벨 기록(<stem>=<video>_<frame>)
+        for _k, (ip, stem, cls, boxes) in enumerate(staged):   # 2차: 재색인 인덱스로 이미지·라벨 기록(<stem>=<video>_<frame>)
+            if _k % 200 == 0 and j.get("cancel"):
+                raise _Cancelled
             shutil.copy(ip, oi / f"{stem}.jpg")
             (ol / f"{stem}.txt").write_text(
                 "\n".join(f"{cidx[cls]} {b[0]} {b[1]} {b[2]} {b[3]}" for b in boxes) + "\n",
                 encoding="utf-8")
+        # 배경(네거티브) 산입: 부품이 없는 사진 = 라벨 파일 없이 이미지만 넣는다.
+        # YOLO 는 라벨 없는 이미지를 '여기엔 아무 것도 없다'로 배운다(background). 클래스는 만들지 않는다.
+        # 없으면 모델이 처음 보는 장면에서 36개 중 가장 비슷한 걸 골라 버린다(사무실 시리얼 사진을
+        # gearbox 0.85 로 잡던 사고). 권장 비율은 학습셋의 10% 안쪽.
+        n_bg = 0
+        for bp in sorted((config.DATA_DIR / "bell412" / "_negatives" / "images").glob("*.jpg")):
+            shutil.copy(bp, oi / f"bg_{bp.stem}.jpg")         # 라벨 파일을 쓰지 않는다 = 배경
+            n_bg += 1
+        if n_bg:
+            logln(f"배경 사진 {n_bg}장 산입(라벨 없음 = 부품 없음 학습)", "info")
+
         names = train_names        # 이하 클래스 표기·인덱스는 모두 압축공간 기준(model.names·검출평가와 일치)
         n_img = sum(per.values())
         if replay:
@@ -742,55 +864,64 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
             _bcount["n"] += 1
             j.update(train_frac=min(1.0, _bcount["n"] / total_batches))
             if j.get("cancel"):
-                trainer.stop = True
+                trainer.stop = True      # 정상 종료 경로(에폭 경계)
+                raise _Cancelled         # 그 전에 지금 멈춘다
 
-        def _on_epoch(trainer):   # 에폭 끝: 진행·손실·mAP + 학습곡선 데이터 축적
-            try:
-                ep = int(getattr(trainer, "epoch", 0)) + 1
-                tot = int(getattr(trainer, "epochs", epochs) or epochs)
-                if ep > tot:   # 학습 종료 후 최종 검증이 한 번 더 콜백 → 유령 에폭 방지
-                    return
-                m = getattr(trainer, "metrics", {}) or {}
-                mp50 = m.get("metrics/mAP50(B)")
-                mp5095 = m.get("metrics/mAP50-95(B)")
-                tl = getattr(trainer, "tloss", None)
-                box = cls = dfl = loss = None
-                if tl is not None:
-                    try:
-                        arr = tl.tolist() if hasattr(tl, "tolist") else list(tl)
-                    except Exception:
-                        arr = None
-                    if arr and len(arr) >= 3:
-                        box, cls, dfl = round(float(arr[0]), 4), round(float(arr[1]), 4), round(float(arr[2]), 4)
-                        loss = round(box + cls + dfl, 4)
-                    else:
-                        try:
-                            loss = round(float(tl.sum()), 4)
-                        except Exception:
-                            loss = None
-                j.update(epoch=ep, total_epochs=tot, cur_loss=loss,
-                         cur_map=round(mp50, 4) if mp50 is not None else None,
-                         cur_map5095=round(mp5095, 4) if mp5095 is not None else None)
-                j.setdefault("curve", []).append({
-                    "epoch": ep, "box": box, "cls": cls, "dfl": dfl,
-                    "map50": round(mp50, 4) if mp50 is not None else None,
-                    "map5095": round(mp5095, 4) if mp5095 is not None else None})
-                seg = [f"Epoch {ep}/{tot}"]
-                if loss is not None:
-                    seg.append(f"loss {loss:.3f}")
-                if mp50 is not None:
-                    seg.append(f"mAP50 {mp50:.3f}")
-                if mp5095 is not None:
-                    seg.append(f"mAP50-95 {mp5095:.3f}")
-                logln("  ".join(seg), "ok" if (mp50 or 0) > 0 else "info")
-            except Exception:
-                pass
+        # 에폭 진행은 콜백(on_fit_epoch_end) 대신 results.csv 를 읽어 만든다.
+        # 이유: ultralytics 8.4.121 에서 이 콜백이 호출되지 않아 화면이 계속 Epoch 0 이었다
+        # (배치 콜백은 정상). 같은 호출에서 name="model" 도 무시돼 run 폴더가 모델명으로 생겼다.
+        # 버전이 또 바뀌어도 results.csv 는 항상 쓰이므로 파일을 진실로 삼는다.
+        def _watch_csv(runs_dir, stop_evt):
+            """학습 중 3초마다 results.csv 를 읽어 job(에폭·곡선·로그)을 갱신한다."""
+            seen = 0
+            while not stop_evt.wait(3):
+                try:
+                    rows = _csv_epochs(runs_dir)
+                except Exception:   # noqa: BLE001 - 표시용이라 실패해도 학습은 계속
+                    continue
+                if len(rows) <= seen:
+                    continue
+                for r in rows[seen:]:
+                    loss = None
+                    if None not in (r["box"], r["cls"], r["dfl"]):
+                        loss = round(r["box"] + r["cls"] + r["dfl"], 4)
+                    j.update(epoch=r["epoch"], total_epochs=epochs, cur_loss=loss,
+                             cur_map=r["map50"], cur_map5095=r["map5095"])
+                    j.setdefault("curve", []).append(r)
+                    seg = [f"Epoch {r['epoch']}/{epochs}"]
+                    if loss is not None:
+                        seg.append(f"loss {loss:.3f}")
+                    if r["r"] is not None:
+                        seg.append(f"Recall {r['r'] * 100:.1f}%")
+                    if r["p"] is not None:
+                        seg.append(f"Precision {r['p'] * 100:.1f}%")
+                    if r.get("f1") is not None:
+                        seg.append(f"F1 {r['f1'] * 100:.1f}%")
+                    logln("  ".join(seg), "ok" if (r["r"] or 0) > 0 else "info")
+                seen = len(rows)
 
         model.add_callback("on_train_batch_end", _on_batch)
-        model.add_callback("on_fit_epoch_end", _on_epoch)
-        model.train(data=str(yml), epochs=epochs, imgsz=640, batch=8, device=0, workers=0,
-                    project=str(model_dir / "runs"), name="model", exist_ok=True, verbose=False,
-                    plots=False, degrees=15.0)   # workers=0: 윈도우 멀티프로세싱 spawn 크래시(pickle truncated) 회피
+        runs_dir = model_dir / "runs"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        _stop = threading.Event()
+        _watcher = threading.Thread(target=_watch_csv, args=(runs_dir, _stop), daemon=True)
+        _watcher.start()
+        try:
+            model.train(data=str(yml), epochs=epochs, imgsz=640, batch=8, device=0, workers=0,
+                        project=str(runs_dir), name="model", exist_ok=True, verbose=False,
+                        plots=False, degrees=15.0)   # workers=0: 윈도우 spawn 크래시(pickle truncated) 회피
+        except _Cancelled:
+            pass                 # 아래 cancel 분기에서 정리한다
+        finally:
+            _stop.set()
+            _watcher.join(timeout=5)
+            try:   # 마지막 에폭이 감시 주기 사이에 끝났을 수 있어 한 번 더 읽는다
+                _rows = _csv_epochs(runs_dir)
+                if _rows and _rows[-1]["epoch"] > (j.get("epoch") or 0):
+                    j.update(epoch=_rows[-1]["epoch"], total_epochs=epochs,
+                             cur_map=_rows[-1]["map50"], cur_map5095=_rows[-1]["map5095"])
+            except Exception:   # noqa: BLE001
+                pass
         if j.get("cancel"):
             logln("학습을 중단했습니다.", "err")
             j.update(stage="cancelled", running=False)
@@ -832,9 +963,11 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
                             nm = names[int(cl)] if int(cl) < len(names) else str(int(cl))
                             cls_cnt[nm] = cls_cnt.get(nm, 0) + 1
                             x1, y1, x2, y2 = map(int, b)
-                            cv2.rectangle(im, (x1, y1), (x2, y2), (0, 150, 255), 3)
+                            _r, _bt, _ew = _ov_sizes(im.shape[1], im.shape[0])
+                            cv2.rectangle(im, (x1, y1), (x2, y2), (0, 150, 255), _bt)
                             cv2.putText(im, f"{nm} {float(c):.2f}", (x1, max(y1 - 6, 16)),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 150, 255), 2)
+                                        cv2.FONT_HERSHEY_SIMPLEX, max(0.6, im.shape[1] / 1600),
+                                        (0, 150, 255), _ew + 1)
                     cv2.imwrite(str(outd / f"{p.stem}.jpg"), im)
                     done_frames += 1
                     if done_frames % 15 == 0:
@@ -880,6 +1013,9 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
         j.update(stage="done", running=False, session=runid, model_id=model_id, label=label,
                  weights=str(reg_pt), onnx=str(reg_onnx) if reg_onnx else None,
                  n_images=n_img, n_classes=len(per), per_class=per, eval=eval_res, miss=miss)
+    except _Cancelled:                # 중단은 오류가 아니다(라벨 산입·복사·학습 어느 단계든)
+        logln("학습을 중단했습니다.", "err")
+        j.update(stage="cancelled", running=False)
     except Exception as e:
         logln(f"오류: {type(e).__name__}: {e}", "err")
         logger.exception(f"[multiclass:{job_id}] 학습 실패 (session={session})")
@@ -1143,20 +1279,26 @@ def _run_compare(job_id, session, base_model_id=None):
         new_model = YOLO(new_w)
         base_model = YOLO(base["weights"]) if base else None
 
-        def _draw(model, img, cls):     # 한 프레임에 모델 검출 박스 그려 data URI 반환(정답=초록, 오검=파랑)
-            im = img.copy()
-            r = model.predict(source=im, conf=VAL_CONF, imgsz=640, verbose=False)[0]
+        def _dets(model, img, cls):
+            """검출 결과를 '사진에 굽지 않고' 좌표로 돌려준다(정답 여부 ok 포함).
+
+            사진에 직접 그리지 않는 이유
+              1) 화면에서 박스를 켜고 끌 수 있어야 한다(덜 학습된 모델은 한 프레임에
+                 수백 개를 뱉어 사진이 박스로 덮인다).
+              2) 기존/신규 두 모델이 같은 프레임을 쓰므로 사진은 한 장만 보내면 된다.
+            신뢰도 높은 순으로 BOX_CAP 개만 보내고, 실제 검출 개수(n)는 따로 알려준다.
+            """
+            r = model.predict(source=img, conf=VAL_CONF, imgsz=640, verbose=False)[0]
             names = model.names
-            if len(r.boxes):
-                for b, cf, cl in zip(r.boxes.xyxy.cpu().numpy(), r.boxes.conf.cpu().numpy(),
-                                     r.boxes.cls.cpu().numpy()):
-                    nm = names[int(cl)] if int(cl) in names else str(int(cl))
-                    x1, y1, x2, y2 = map(int, b)
-                    col = (0, 180, 0) if nm == cls else (0, 150, 255)
-                    cv2.rectangle(im, (x1, y1), (x2, y2), col, 3)
-                    cv2.putText(im, f"{nm} {float(cf):.2f}", (x1, max(y1 - 6, 16)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
-            return _b64(im, w=460)
+            out = []
+            for b, cf, cl in zip(r.boxes.xyxy.cpu().numpy(), r.boxes.conf.cpu().numpy(),
+                                 r.boxes.cls.cpu().numpy()):
+                nm = names[int(cl)] if int(cl) in names else str(int(cl))
+                x1, y1, x2, y2 = (int(v) for v in b)
+                out.append({"x": x1, "y": y1, "w": x2 - x1, "h": y2 - y1,
+                            "cls": nm, "conf": round(float(cf), 2), "ok": nm == cls})
+            out.sort(key=lambda d: -d["conf"])
+            return {"n": len(out), "box": out[:BOX_CAP]}
 
         def _rate(model, sub, cls):     # 프레임들 중 '정답 클래스'가 검출된 비율(인식률)
             names = model.names
@@ -1203,8 +1345,10 @@ def _run_compare(job_id, session, base_model_id=None):
                 for fp in _pick(sub, cap):
                     img = _rd(fp)
                     samples.append({"part": c, "kind": kind,
-                                    "before": _draw(base_model, img, c) if base_model else None,
-                                    "after": _draw(new_model, img, c)})
+                                    "img": _b64(img, w=460),                 # 사진 한 장을 두 모델이 공유
+                                    "iw": int(img.shape[1]), "ih": int(img.shape[0]),
+                                    "before": _dets(base_model, img, c) if base_model else None,
+                                    "after": _dets(new_model, img, c)})
             rows.append({"part": c, "kind": kind, "new_rate": new_r, "base_rate": base_r})
             j.update(compare_done=k, compare_frac=round(k / total, 3))
 
@@ -1219,16 +1363,20 @@ def _run_compare(job_id, session, base_model_id=None):
         newp_before = _mean([r["base_rate"] for r in new_rows])   # 신규 부품: 기존 모델(대개 ~0)
         gen_drop = round((gen_before - gen_after) * 100, 1) if (gen_before is not None and gen_after is not None) else 0.0
 
+        # 판정 문구는 두 줄로 보낸다(한 줄로 길게 흐르면 읽기 어렵다).
+        # 프론트가 .verdict-msg { white-space: pre-line } 으로 줄바꿈을 살려 그린다.
         if base_rows and gen_drop >= 10:
             reco = {"level": "rollback",
-                    "msg": f"신규 부품은 인식하지만 기존 부품들의 인식률이 {gen_drop:.0f}%p 하락했습니다. "
+                    "msg": f"신규 부품은 인식하지만 기존 부품들의 인식률이 {gen_drop:.0f}%p 하락했습니다.\n"
                            "라벨링 마스크 영역을 좁게 재조정하여 다시 학습하는 것을 권장합니다."}
         elif (newp_after or 0) >= 0.7 and (not base_rows or gen_drop < 5):
             reco = {"level": "apply",
-                    "msg": "새로운 부품이 성공적으로 학습되었으며, 기존 부품의 인식률도 안정적입니다."}
+                    "msg": "새로운 부품이 성공적으로 학습되었으며,\n"
+                           "기존 부품의 인식률도 안정적입니다."}
         else:
             reco = {"level": "review",
-                    "msg": "신규 부품 인식률 또는 기존 부품 유지가 애매합니다. 아래 샘플 이미지를 확인한 뒤 결정하세요."}
+                    "msg": "신규 부품 인식률과 기존 부품 유지 여부가 애매합니다.\n"
+                           "아래 샘플 이미지를 확인한 뒤 결정하세요."}
 
         if session:   # 신규 모델 run(results/<시각>)의 meta.json 에 인식률 스냅샷 저장(드롭다운 표시용)
             mjp = RESULTS / session / "meta.json"
@@ -1308,6 +1456,7 @@ def train_frame_jpeg(session, name, w=360, part=None):
     """학습 프레임에 YOLO 라벨 bbox(초록)를 그려 JPEG 바이트로. 검수에서 어떤 라벨이 생성됐는지 확인용.
     ※ 썸네일로 축소한 뒤 박스를 그린다(고해상도에 그린 뒤 축소하면 선이 1px 미만으로 뭉개져 안 보임).
     part 지정 시 그 부품 저장소를 직접 사용(같은 이름 영상 모호성 제거), 없으면 파일명으로 역추적."""
+    w = max(64, min(int(w or 360), 4096))   # 음수 w 로 cv2.resize 가 터지는 것 방지(frame_jpeg 와 동일)
     if not name or "/" in name or ".." in name:
         return None
     if part and "/" not in part and ".." not in part:
@@ -1331,9 +1480,10 @@ def train_frame_jpeg(session, name, w=360, part=None):
     if w and im.shape[1] > w:                       # 먼저 축소
         im = cv2.resize(im, (w, int(im.shape[0] * w / im.shape[1])))
     h, wid = im.shape[:2]
-    for cx, cy, bw, bh in boxes:                    # 축소된 표시 크기에 2px 박스(항상 또렷)
+    _r, _bt, _ew = _ov_sizes(wid, h)                # 축소된 표시 크기 기준(다른 화면과 같은 규칙)
+    for cx, cy, bw, bh in boxes:
         cv2.rectangle(im, (int((cx - bw / 2) * wid), int((cy - bh / 2) * h)),
-                      (int((cx + bw / 2) * wid), int((cy + bh / 2) * h)), (0, 180, 0), 2)
+                      (int((cx + bw / 2) * wid), int((cy + bh / 2) * h)), (0, 180, 0), _bt)
     ok, buf = cv2.imencode(".jpg", im, [cv2.IMWRITE_JPEG_QUALITY, 85])
     return buf.tobytes() if ok else None
 
