@@ -29,6 +29,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # backend (db 패
 import config
 import autolabel
 from db import migrate_from_files as dbsync
+from sqlalchemy import func
+
 from db.models import Category, Part, PartVideo
 from db.session import SessionLocal, rel
 
@@ -108,6 +110,7 @@ def _part_payload(s, p: Part) -> dict:
     vids = s.query(PartVideo).filter_by(part_id=p.id).all()
     frames = sum(v.n_frames or 0 for v in vids)
     return {"id": p.id, "name": p.name,
+            "code": p.code,          # 클라이언트가 부품을 판별하는 불변 번호(자동증가 id 와 별개)
             "category_id": p.category_id,
             "category": p.category.name if p.category else None,
             "description": p.description or "",
@@ -123,8 +126,17 @@ def list_parts() -> dict:
         return {"parts": [_part_payload(s, p) for p in rows]}
 
 
-def create_part(name: str, category_id=None, description: str = "") -> dict:
-    """부품 행 + 폴더(videos/) 생성. 영상은 이후 upload_video 로 붙인다."""
+def _next_code(s) -> int:
+    """다음 부품 번호. 지운 번호는 재사용하지 않는다(클라이언트 매핑이 어긋나지 않게)."""
+    cur = s.query(func.max(Part.code)).scalar()
+    return int(cur or 0) + 1
+
+
+def create_part(name: str, category_id=None, description: str = "", code=None) -> dict:
+    """부품 행 + 폴더(videos/) 생성. 영상은 이후 upload_video 로 붙인다.
+
+    code = 클라이언트가 부품을 판별하는 번호. 안 주면 다음 번호를 자동 부여한다.
+    자동증가 id 와 별개인 이유: id 는 행을 지워도 번호가 되돌아오지 않아 기기마다 값이 갈린다."""
     name = (name or "").strip()
     if not valid_name(name):
         return _err("부품 이름은 영문·숫자·_·- 만 쓸 수 있습니다(첫 글자는 영문/숫자).")
@@ -138,10 +150,25 @@ def create_part(name: str, category_id=None, description: str = "") -> dict:
         if cid is not None and not s.get(Category, cid):
             return _err("없는 카테고리입니다.")
         (pdir / "videos").mkdir(parents=True, exist_ok=True)
+        if code in (None, "", "null"):
+            code = _next_code(s)
+        else:
+            try:
+                code = int(code)
+            except (TypeError, ValueError):
+                return _err("부품 번호는 정수여야 합니다.")
+            if s.query(Part).filter_by(code=code).first():
+                return _err(f"이미 쓰는 부품 번호입니다: {code}")
         p = Part(name=name, category_id=cid, description=(description or "").strip() or None,
-                 folder=rel(pdir))
+                 folder=rel(pdir), code=code)
         s.add(p); s.commit()
-        return {"ok": True, "id": p.id, "name": p.name, "folder": p.folder}
+        # 추론서버용 사본 갱신(DB 가 원천, json 은 파생물)
+        try:
+            import part_codes                              # noqa: PLC0415
+            part_codes.export_from_db()
+        except Exception as e:                             # noqa: BLE001 - 등록 자체를 막지 않는다
+            print(f"[part_codes] json 내보내기 실패: {type(e).__name__}: {e}", flush=True)
+        return {"ok": True, "id": p.id, "name": p.name, "folder": p.folder, "part_code": p.code}
 
 
 def update_part(pid: int, name=None, category_id="keep", description=None) -> dict:

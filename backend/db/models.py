@@ -56,6 +56,12 @@ class Part(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)   # YOLO 클래스명과 동일
+    # 클라이언트(태블릿·ML2)가 부품을 판별하는 번호. id 와 다르다.
+    #   id   = 자동증가. 행을 지워도 번호가 되돌아오지 않아 기기마다 값이 갈린다
+    #          (실측: medicine 이 로컬 45, 토르 36. 로컬에서 임시부품 9개를 만들고 지운 탓)
+    #   code = 우리가 정해서 넣는 번호. 등록 시 부여하고 절대 바꾸지 않으며 기기 간 동일하게 맞춘다.
+    #          모델의 클래스 인덱스(detection_code)와도 무관하다(그건 학습마다 바뀜).
+    code: Mapped[int | None] = mapped_column(Integer, unique=True, index=True)
     # 카테고리 삭제 시 부품은 남기고 분류만 비운다(SET NULL)
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"))
     description: Mapped[str | None] = mapped_column(Text)
