@@ -23,6 +23,7 @@
 import io
 import os
 import sys
+import json
 import logging
 import threading
 from contextlib import asynccontextmanager
@@ -65,10 +66,9 @@ logging.basicConfig(level=logging.INFO,
 
 STATE = {}
 
-# ultralytics 모델은 동시 호출 시 내부 상태가 섞일 수 있어 추론 구간만 직렬화
-# (초당 3장 순차 전송 조건에서 병목 아님)
+# ultralytics 모델은 동시 호출 시 내부 상태가 섞일 수 있어 추론 구간만 직렬화한다.
+# (초당 3장 순차 전송 조건에서는 병목이 아니다. /reload 도 이 락 안에서 교체한다)
 INFER_LOCK = threading.Lock()
-
 
 # ── 응답 스키마 (Swagger /docs 자동 문서화용) ──
 
@@ -81,8 +81,10 @@ class BBox(BaseModel):
 
 
 class Detection(BaseModel):
-    detection_class: str = Field(description="클래스명 (테스트: person / cell phone)", examples=["person"])
-    detection_code: int = Field(description="클래스 번호 (person=0, cell phone=1)", examples=[0])
+    detection_class: str = Field(description="부품 이름. 부품 판별은 이 값으로 한다(가중치 안에 저장돼 있어 "
+                                             "모델이 바뀌어도 그대로다)", examples=["medicine"])
+    detection_code: int = Field(description="이 모델 안에서의 클래스 인덱스. 재학습하면 값이 바뀌므로 "
+                                            "판별에 쓰지 말 것(표는 /health 의 classes)", examples=[1])
     confidence: float = Field(description="신뢰도 0~1, 소수점 3자리. 0.7 미만 미포함", examples=[0.923])
     bbox: BBox = Field(description="[추가 제공] 요청서 2탄 규격 외 필드 — 무시 가능")
 
@@ -122,6 +124,7 @@ def health():
     return {
         "ok": model is not None,
         "model": MODEL_PATH.name,
+        # 클래스 인덱스 -> 부품 이름. 번호로 쓰려면 이 표를 받아두면 된다(판별 기준은 이름)
         "classes": {str(i): n for i, n in model.names.items()} if model else {},
     }
 
@@ -135,6 +138,32 @@ async def validation_handler(request, exc):
 
 
 # 일반 def: 동기 추론이 이벤트루프를 막지 않게 FastAPI 가 스레드풀에서 실행
+NEST_RATIO = 0.8       # 작은 박스의 이 비율 이상이 큰 박스 안에 들어가면 같은 물체로 본다
+
+
+def drop_nested(dets):
+    """같은 부품에 넓은 박스 + 좁은 박스가 같이 나오는 것을 정리한다.
+
+    YOLO 의 NMS 는 IoU 로만 지운다. 큰 박스 안에 작은 박스가 들어가면 IoU 가 (작은/큰) 면적비로
+    낮게 나와 둘 다 살아남는다 — 폰 라이브에서 한 물체에 박스가 2개로 보인 원인.
+    신뢰도 높은 것부터 남기고, 이미 남긴 같은 클래스 박스에 8할 이상 들어가는 박스는 버린다.
+    ponytail: 같은 클래스만 본다. 부품 위에 다른 부품이 놓이는 장면이 생기면 클래스 무관으로 넓혀야 한다.
+    """
+    def inside_ratio(small, big):
+        ix = max(0.0, min(small["x"] + small["w"], big["x"] + big["w"]) - max(small["x"], big["x"]))
+        iy = max(0.0, min(small["y"] + small["h"], big["y"] + big["h"]) - max(small["y"], big["y"]))
+        a = max(0.0, small["w"]) * max(0.0, small["h"])
+        return (ix * iy / a) if a > 0 else 0.0
+
+    kept = []
+    for d in sorted(dets, key=lambda x: -x["confidence"]):
+        if any(k["detection_class"] == d["detection_class"]
+               and inside_ratio(d["bbox"], k["bbox"]) >= NEST_RATIO for k in kept):
+            continue
+        kept.append(d)
+    return kept
+
+
 @app.post(
     "/detect",
     response_model=DetectResponse,
@@ -179,6 +208,7 @@ def detect(image: UploadFile = File(...), camera_id: str = Form("UNKNOWN")):
                         "h": round(float(y2 - y1), 2),
                     },
                 })
+            detections = drop_nested(detections)
     except Exception as e:
         logging.error(f"추론 실패: {e}")
         return JSONResponse(status_code=500, content={"error": "inference_failed"})
