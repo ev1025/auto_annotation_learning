@@ -9,6 +9,8 @@ verify_reads.py 로 두 구현의 결과를 기계적으로 비교해 동등성�
     sam2_autolabel.labeled_parts()<-> labeled_parts()
     sam2_autolabel.served_model() <-> served_model()
     sam2_autolabel.list_models()  <-> list_models()
+    sam2_autolabel.parts_sessions()   <-> parts_sessions()
+    sam2_autolabel.list_part_frames() <-> list_part_frames(part)
 
 주의
 - DB 에는 상대경로가 들어있지만, weights 처럼 호출측이 파일을 직접 여는 값은 절대경로 문자열로 되돌려 준다.
@@ -159,3 +161,85 @@ def counts() -> dict:
     with SessionLocal() as s:
         return {t.__tablename__: s.scalar(select(func.count()).select_from(t))
                 for t in (Part, PartVideo, PartFrame, Sam2Annotation, TrainRun)}
+
+def parts_sessions() -> list[dict]:
+    """sam2_autolabel.parts_sessions() 의 DB 구현.
+
+    영상별 (라벨 수, 프레임 수) 와 '이미 학습된 영상' 목록. 라벨 수는 label_path 가 있는
+    sam2_annotations 개수, 프레임 수는 part_frames 개수로 센다.
+    """
+    with SessionLocal() as s:
+        rows = s.execute(
+            select(PartVideo.stem,
+                   func.count(PartFrame.id),
+                   func.count(Sam2Annotation.label_path))
+            .join(PartFrame, PartFrame.video_id == PartVideo.id, isouter=True)
+            .join(Sam2Annotation, Sam2Annotation.frame_id == PartFrame.id, isouter=True)
+            .group_by(PartVideo.stem)
+            .order_by(PartVideo.stem)
+        ).all()
+    # 파일판은 labels·frames 에 같은 값(라벨 수)을 넣었다. 여기서는 실제 프레임 수를 준다.
+    # 프론트는 labels > 0 으로 학습 대상을 고르므로 동작은 같고, 표시되는 프레임 수만 정확해진다.
+    videos = {stem: {"labels": int(nlbl), "frames": int(nfr)} for stem, nfr, nlbl in rows}
+
+    trained = []                                  # 현재 서비스 모델이 가진 부품의 영상
+    sv = served_model()
+    if sv:
+        classes = set(sv.get("classes", []))
+        with SessionLocal() as s:
+            pairs = s.execute(
+                select(PartVideo.stem, Part.name).join(Part, Part.id == PartVideo.part_id)
+            ).all()
+        trained = [stem for stem, pname in pairs if pname in classes]
+    return [{"session": "autolabel", "videos": videos, "n_videos": len(videos),
+             "total_labels": sum(v["labels"] for v in videos.values()),
+             "trained": trained, "updated": ""}]
+
+
+def list_part_frames(part: str, limit: int = 400) -> dict:
+    """sam2_autolabel.list_part_frames() 의 DB 구현. 라벨이 만들어진 프레임 목록(검수용)."""
+    if not part:
+        return {"part": part, "count": 0, "frames": []}
+    with SessionLocal() as s:
+        names = s.scalars(
+            select(Sam2Annotation.label_path)
+            .join(PartFrame, PartFrame.id == Sam2Annotation.frame_id)
+            .join(PartVideo, PartVideo.id == PartFrame.video_id)
+            .join(Part, Part.id == PartVideo.part_id)
+            .where(Part.name == part, Sam2Annotation.label_path.is_not(None))
+            .order_by(Sam2Annotation.label_path)
+            .limit(limit + 1)
+        ).all()
+    out = [{"session": "autolabel", "name": Path(n).stem + ".jpg", "part": part} for n in names[:limit]]
+    res = {"part": part, "count": len(out), "frames": out}
+    if len(names) > limit:
+        res["truncated"] = True
+    return res
+
+def xr_parts() -> dict:
+    """외부 연동(XR)용 부품 목록. 이름·카테고리·3D 모델만 준다.
+
+    규격
+      name       부품 이름. 추론 응답의 detection_class 와 같은 값 -> 판별 키
+      category   Gearbox / Tools (없으면 null)
+      model3d    3D 모델 내려받기 URL (없으면 null)
+    DB 에는 파일 경로만 있고 바이트는 파일시스템에 있으므로, 경로 대신 URL 을 준다.
+    자동증가 id 는 기기마다 값이 달라 내보내지 않는다.
+    """
+    with SessionLocal() as s:
+        rows = [(p.name, (p.category.name if p.category else None), p.model_3d_path)
+                for p in s.query(Part).options(selectinload(Part.category)).order_by(Part.name).all()]
+    parts = [{"name": n, "category": c,
+              "model3d": (f"/api/xr/parts/{n}/model3d" if m3 else None)}
+             for n, c, m3 in rows]
+    return {"count": len(parts), "parts": parts}
+
+
+def xr_model3d_path(name: str):
+    """부품 이름 -> 3D 모델 파일의 절대경로(없으면 None). 파일 서빙용."""
+    with SessionLocal() as s:
+        p = s.query(Part).filter_by(name=name).first()
+        if not p or not p.model_3d_path:
+            return None
+    fp = abspath(p.model_3d_path)
+    return fp if fp.exists() else None

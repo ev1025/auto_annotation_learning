@@ -167,7 +167,13 @@ def sync_part_dir(s, pdir: Path, stats: dict) -> None:
                 box_prev = box_dir / f"{v.stem}_{no:05d}.jpg"
                 boxes = parse_label_txt(lbl) if lbl.exists() else None
                 if not taps and not boxes:
-                    continue                              # 라벨도 탭도 없는 프레임은 주석 행 만들지 않음
+                    # 라벨도 탭도 없다. 예전에 있었다가 지워진 경우 행이 남아 DB 가 디스크보다 많아진다
+                    # (재탭으로 라벨을 다시 만들면 파일만 지워지므로). 그래서 여기서 지운다.
+                    old_ann = s.query(Sam2Annotation).filter_by(frame_id=fr.id).first()
+                    if old_ann:
+                        s.delete(old_ann)
+                        stats["ann_gone"] = stats.get("ann_gone", 0) + 1
+                    continue
 
                 ann = s.query(Sam2Annotation).filter_by(frame_id=fr.id).first()
                 if not ann:
@@ -270,7 +276,7 @@ def migrate_runs(s, stats: dict) -> None:
 # 절대 예외를 밖으로 던지지 않는다 — DB 문제로 라벨 생성·학습이 실패하면 안 된다.
 # ─────────────────────────────────────────────────────────────────────
 _EMPTY_STATS = dict(parts=0, parts_new=0, videos=0, videos_new=0, videos_del=0, frames=0, frames_new=0,
-                    frames_del=0, ann=0, ann_new=0, ann_ref=0, runs=0, runs_new=0, active=None)
+                    frames_del=0, ann=0, ann_new=0, ann_gone=0, ann_ref=0, runs=0, runs_new=0, active=None)
 
 
 def sync_part(part_name: str) -> dict | None:

@@ -317,7 +317,76 @@ test_00146  GT [778,913,982,1232]   PRED [200,555,323,689]   conf 0.37  IoU 0.00
 
 ---
 
-## 6. 설치 및 실행 방법
+## 6. 외부 연동 규격
+
+외부 시스템과 붙는 지점은 두 개다. 둘 다 이름(`detection_class`) 하나로 맞춘다.
+
+```
+[오토러닝]  --(1) 학습된 model.pt -->  [XR 연동 YOLO 서버 :8001]  --> XR 클라이언트
+[부품 DB ]  --(2) GET /api/xr/parts -->  외부 시스템(부품 목록·번호)
+```
+
+### 6.1 부품 데이터 제공 (외부 -> 우리)
+
+읽기 전용 엔드포인트 하나만 공개한다. 등록·삭제·학습 API 는 열지 않는다.
+**정본은 Thor 다.** 운영 PC 와 Thor 는 DB 가 따로이고, 외부는 Thor 만 본다.
+
+```
+GET http://10.37.27.42:7862/api/xr/parts        # Thor (사내망)
+```
+
+```json
+{
+  "count": 36,
+  "parts": [
+    { "name": "gearbox", "category": "Gearbox", "model3d": "/api/xr/parts/gearbox/model3d" },
+    { "name": "borescope", "category": "Tools", "model3d": null }
+  ]
+}
+```
+
+| 필드 | 뜻 | 주의 |
+|------|-----|------|
+| `name` | 부품 이름 | **판별 키.** 추론 응답의 `detection_class` 와 문자열이 같다 |
+| `category` | `Gearbox` / `Tools` | 미분류는 `null`. 값이 늘 수 있으니 하드코딩하지 않는다 |
+| `model3d` | 3D 모델 내려받기 경로 | 없으면 `null` |
+
+3D 모델은 DB 에 경로만 있고 파일은 파일시스템에 있다. 그래서 경로를 그대로 주지 않고
+내려받기 URL 을 준다.
+
+```
+GET http://<서버IP>:7862/api/xr/parts/gearbox/model3d
+-> 200  Content-Disposition: attachment; filename="gearbox.glb"  (파일 바이트)
+-> 404  {"error": "3D 모델이 없습니다.", "part": "gearbox"}
+```
+
+지원 확장자: `.glb` `.gltf` `.obj` `.stl` `.ply` `.fbx`
+
+- 자동증가 `id` 는 내보내지 않는다. 기기마다 값이 달라 기준이 될 수 없다
+- 모델 응답의 `detection_code`(클래스 인덱스)는 재학습하면 바뀐다. 판별에 쓰면 안 된다
+- 응답 필드는 고정이다. 내부 `/api/parts` 가 바뀌어도 이 엔드포인트는 유지한다
+- 부품 번호(`code`)가 필요하면 `GET /api/part_codes` 로 별도 제공한다(이름 -> 번호 표)
+- 컨테이너 3개가 `restart: unless-stopped` 라 Thor 재부팅 후에도 자동으로 다시 뜬다
+- 부품을 운영 PC 에서 등록하면 Thor 에는 자동으로 넘어가지 않는다. 외부에 보일 부품은 Thor 화면에서 등록한다
+
+### 6.2 학습 모델 배포 (우리 -> XR 서버)
+
+`deploy/sync_xr_server.sh` 가 담당한다. 대시보드에서 '신규 모델 적용'을 하면 고정 경로
+(`models/model.pt`)가 갱신되고, 이 스크립트가 해시를 비교해 XR 서버 폴더로 복사한 뒤
+`POST /reload` 로 재시작 없이 반영한다.
+
+```bash
+bash deploy/sync_xr_server.sh            # 수동 1회
+bash deploy/sync_xr_server.sh --install  # 파일 감시(systemd path unit)로 자동화
+```
+
+- XR 서버 폴더는 다른 사람의 작업물이라 컨테이너에 쓰기 권한을 주지 않고 호스트 스크립트로 분리했다
+- 기본 비활성이다. 그쪽 모델 교체 시점을 합의한 뒤 켠다
+- `.engine`(TensorRT)으로 서빙 중이면 파일 복사만으로는 반영되지 않는다(재변환 필요)
+
+<br>
+
+## 7. 설치 및 실행 방법
 
 ```bash
 # 0) 환경
@@ -377,7 +446,7 @@ venv\Scripts\python.exe scripts/eval_gt.py --weights <best.pt>    # 특정 모�
 
 ---
 
-## 7. 한계점 및 추후 개선 과제
+## 8. 한계점 및 추후 개선 과제
 
 **한계점**
 

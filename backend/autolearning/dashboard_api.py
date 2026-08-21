@@ -23,6 +23,7 @@ import uvicorn
 from fastapi import Body, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import DBAPIError
 
 import config
 import autolabel
@@ -37,42 +38,43 @@ DIST = config.BASE_DIR / "frontend" / "dist"
 app = FastAPI(title="XR 오토러닝 대시보드 API")
 
 # ---- 조회(read) 소스 선택 ----
-# 조회는 DB 를 먼저 쓴다. XR_DB_READS=0 으로만 파일 조회를 강제한다.
-# 예전에는 XR_DB_READS=1 을 줘야 DB 를 썼는데, 재시작할 때 환경변수를 빼먹으면 경고도 없이
-# 파일 경로로 떨어져 화면과 DB 가 어긋났다(QA 2026-08-20). DB 가 없거나 실패하면 그대로 폴백한다.
-# 동등성은 backend/db/verify_reads.py 로 검증했다(파일판 vs DB판 결과 비교).
-_db_reads = None
-if os.environ.get("XR_DB_READS") == "0":
-    print("[DB] XR_DB_READS=0 -> 파일 조회", flush=True)
-else:
+# 조회는 전부 DB 로 한다. 파일 폴백은 없앴다.
+# 이유: 폴백이 있으면 DB 가 끊길 때 화면이 반쪽이 된다. 폴백을 가진 엔드포인트(영상 목록·참조샷 등)는
+# 파일에서 읽어 정상으로 보이는데, DB 전용인 부품 목록·카테고리는 비어 보였다(2026-08-21 확인).
+# 그래서 실패는 실패로 드러내고, 모든 화면이 같은 소스(DB)를 본다.
+# 사진·영상 바이트는 원래 파일시스템에서 서빙한다(DB 에 이미지를 넣지 않는다).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # backend (db 패키지)
+from db import reads as _db_reads   # noqa: E402
+
+
+# DB 가 끊기면 어느 엔드포인트든 같은 모양으로 503 을 준다.
+# 엔드포인트마다 try/except 를 두는 대신 핸들러 하나로 받는다(등록·수정 같은 쓰기까지 포함).
+@app.exception_handler(DBAPIError)
+async def _db_unavailable(request, exc):    # noqa: ARG001
+    return JSONResponse(status_code=503,
+                        content={"error": "db_unavailable", "detail": str(exc)[:200],
+                                 "at": request.url.path})
+
+
+def _read(fn_name, *args):
+    """DB 조회. 실패하면 그대로 오류를 돌려준다(조용한 폴백 금지)."""
     try:
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # backend (db 패키지)
-        from db import reads as _db_reads   # noqa: PLC0415
-        print(f"[DB] 조회 경로 = DB / 행 수 {_db_reads.counts()}", flush=True)
-    except Exception as e:   # noqa: BLE001  DB 문제로 서버가 못 뜨면 안 되므로 폴백
-        print(f"[DB] 초기화 실패 -> 파일 조회로 폴백: {type(e).__name__}: {e}", flush=True)
-        _db_reads = None
-
-
-def _read(fn_name, file_fn):
-    """DB 우선, 실패 시 파일 폴백. 조회 실패로 화면이 비지 않게 한다."""
-    if _db_reads is not None:
-        try:
-            return getattr(_db_reads, fn_name)()
-        except Exception as e:   # noqa: BLE001
-            print(f"[DB] {fn_name} 실패 -> 파일 폴백: {type(e).__name__}: {e}", flush=True)   # 조용한 폴백 방지(운영 중 즉시 보이게)
-    return file_fn()
+        return getattr(_db_reads, fn_name)(*args)
+    except Exception as e:   # noqa: BLE001 - 서버가 죽지 않게 하고 원인은 응답·로그로 보인다
+        msg = f"{type(e).__name__}: {e}"
+        print(f"[DB] {fn_name} 실패: {msg}", flush=True)
+        return JSONResponse(status_code=503,
+                            content={"error": "db_unavailable", "detail": msg[:200], "at": fn_name})
 
 
 @app.get("/api/db/status")
 def api_db_status():
-    """조회 소스와 DB 행 수(운영 확인용)."""
-    if _db_reads is None:
-        return {"source": "files", "db": False}
+    """DB 연결 상태와 행 수(운영 확인용). 화면 상단 배너가 이걸 본다."""
     try:
         return {"source": "db", "db": True, "counts": _db_reads.counts()}
     except Exception as e:   # noqa: BLE001
-        return {"source": "files(폴백)", "db": False, "error": f"{type(e).__name__}: {e}"}
+        return JSONResponse(status_code=503,
+                            content={"source": "db", "db": False, "error": f"{type(e).__name__}: {e}"[:200]})
 
 
 # ---- 부품 등록·목록(카테고리·부품·영상/3D 업로드) ----
@@ -210,6 +212,24 @@ def api_part_video_file(pid: int, stem: str, request: Request):
     })
 
 
+# ---- 외부 연동(XR) 전용 읽기 API ----
+# 외부에 여는 것은 이 하나뿐이다. 부품 목록·번호만 주고, 등록·삭제·학습은 열지 않는다.
+# 응답 필드를 고정해 두었으므로 내부 /api/parts 가 바뀌어도 상대는 깨지지 않는다.
+@app.get("/api/xr/parts")
+def api_xr_parts():
+    return _read("xr_parts")
+
+
+@app.get("/api/xr/parts/{name}/model3d")
+def api_xr_model3d(name: str):
+    """3D 모델 파일 다운로드. DB 에는 경로만 있고 바이트는 파일시스템에 있으므로 여기서 내려준다."""
+    fp = _db_reads.xr_model3d_path(name)
+    if not fp:
+        return JSONResponse({"error": "3D 모델이 없습니다.", "part": name}, status_code=404)
+    return FileResponse(fp, filename=fp.name, media_type="application/octet-stream",
+                        headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/part_codes")
 def api_part_codes():
     """전역 부품 코드표 {부품명: 코드}. 클라이언트·문서용 참조.
@@ -224,7 +244,7 @@ def api_part_codes():
 
 @app.get("/api/autolabel/folders")
 def api_autolabel_folders():
-    return _read("list_folders", autolabel.list_folders)
+    return _read("list_folders")
 
 
 @app.get("/api/autolabel/frame")
@@ -319,7 +339,7 @@ def api_sam2_mask(payload: dict = Body(...)):
 
 @app.get("/api/sam2/parts_sessions")
 def api_parts_sessions():
-    return sa.parts_sessions()
+    return _read("parts_sessions")
 
 
 @app.post("/api/sam2/delete_shot")
@@ -331,7 +351,7 @@ def api_sam2_delete_shot(payload: dict = Body(...)):
 @app.get("/api/sam2/shots")
 def api_sam2_shots():
     """부품별 참조샷 취합 → {"<영상>": {"<프레임>": [[rx,ry,lab],...]}}. 프론트 참조샷 복원."""
-    return _read("load_shots", sa.load_shots)
+    return _read("load_shots")
 
 
 @app.post("/api/sam2/parts_label")
@@ -377,12 +397,12 @@ def api_sam2_delete_model(payload: dict = Body(...)):
 
 @app.get("/api/sam2/part_frames")
 def api_sam2_part_frames(part: str):
-    return sa.list_part_frames(part)
+    return _read("list_part_frames", part)
 
 
 @app.get("/api/sam2/labeled_parts")
 def api_sam2_labeled_parts():
-    return _read("labeled_parts", sa.labeled_parts)
+    return _read("labeled_parts")
 
 
 @app.get("/api/sam2/train_frame")
@@ -415,7 +435,7 @@ def api_sam2_rollback(payload: dict = Body(...)):
 
 @app.get("/api/sam2/served")
 def api_sam2_served():
-    return _read("served_model", sa.served_model) or {"none": True}
+    return _read("served_model") or {"none": True}
 
 
 @app.get("/api/sam2/active")
@@ -425,7 +445,7 @@ def api_sam2_active():
 
 @app.get("/api/sam2/models")
 def api_sam2_models():
-    return _read("list_models", sa.list_models)
+    return _read("list_models")
 
 
 @app.post("/api/sam2/rollback_to")
