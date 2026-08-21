@@ -2,16 +2,25 @@
 """멀티클래스 부품 학습(포터블).
 대시보드 SAM2 오토라벨이 만든 per-part 라벨(파일명=<영상>_<프레임>, class 0)을
 영상명→부품→클래스로 remap 통합 → 34클래스 YOLO 학습.
-클래스 정의 = data/bell412/parts/classes.txt. 라벨 = results/parts/<시각>/train (기본 최신, --labels로 지정).
+클래스 정의 = data/bell412/parts/part_codes.json(전역 부품 코드표). 라벨 = results/parts/<시각>/train (기본 최신, --labels로 지정).
 사용: python scripts/experiments/build_multiclass.py [--labels <train>] [--epochs 100] [--build-only]"""
 import os, sys, glob, re, shutil, json, argparse
 from datetime import datetime
 BASE = os.environ.get("XR_BASE") or os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-CLASSES_TXT = BASE + "/data/bell412/parts/classes.txt"
+PART_CODES = BASE + "/data/bell412/parts/part_codes.json"
 
 
 def load_classes():
-    names = [l.strip() for l in open(CLASSES_TXT, encoding="utf-8") if l.strip()]
+    """등록된 부품 이름 목록 + 이름->순번. 원천은 전역 코드표(part_codes.json).
+
+    예전에는 손으로 관리하는 classes.txt 였는데, 실제 등록 부품과 어긋나서(a_test·medicine 누락)
+    코드표 하나로 합쳤다. 여기서 돌려주는 순번은 '목록 안의 위치'일 뿐이고,
+    학습 시에는 실제 학습 부품만 0..N-1 로 다시 매긴다(sam2_autolabel).
+    클라이언트가 쓰는 불변 번호는 part_codes.json 의 코드값이다."""
+    import json
+    with open(PART_CODES, encoding="utf-8") as f:
+        table = json.load(f)
+    names = [n for n, _ in sorted(table.items(), key=lambda kv: kv[1])]   # 코드 순
     return names, {n: i for i, n in enumerate(names)}
 
 
@@ -80,7 +89,7 @@ def main():
         open(ol + f"/{stem}.txt", "w", encoding="utf-8").write("\n".join(lines) + "\n")
         per[cls] = per.get(cls, 0) + 1
     if miss:
-        print("  ⚠️ classes.txt에 없는 부품(스킵):", {k: v for k, v in sorted(miss.items())})
+        print("  ⚠️ 코드표에 없는 부품(스킵):", {k: v for k, v in sorted(miss.items())})
     print(f"  통합 완료: {sum(per.values())}장 / {len(per)}클래스")
     for c, n in sorted(per.items()):
         print(f"    {c}: {n}")
