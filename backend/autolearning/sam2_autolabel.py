@@ -518,10 +518,14 @@ def _synth_augment(oi, ol, logln, n_syn=400):
     배경 과적합을 줄이는 opt-in 증강. 라벨의 원래 클래스 idx를 유지한다. (run_augtrain 로직을 멀티클래스로 일반화)"""
     import random
     random.seed(0)
-    bgdir = config.BASE_DIR / "data" / "bell412" / "backgrounds"
+    # 합성에 쓰는 자원은 한 폴더에 모아 둔다.
+    #   data/bell412/_synth/backgrounds/  누끼를 붙일 바닥(공장·격납고)
+    #   data/bell412/_synth/occluders/    부품을 부분적으로 가릴 누끼(금속판넬 등, 알파 PNG)
+    synth_dir = config.BASE_DIR / "data" / "bell412" / "_synth"
+    bgdir = synth_dir / "backgrounds"
     bgs = [str(p) for p in bgdir.rglob("*.jpg")] if bgdir.exists() else []
     if not bgs:
-        logln("배경 이미지 없음(data/bell412/backgrounds) → 배경 합성 증강 생략", "info"); return 0
+        logln("배경 이미지 없음(data/bell412/_synth/backgrounds) → 배경 합성 증강 생략", "info"); return 0
 
     def _prep_bg(path):
         bg = _rd(path); h, w = bg.shape[:2]

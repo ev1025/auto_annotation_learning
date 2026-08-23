@@ -90,7 +90,7 @@ def migrate_parts(s, stats: dict) -> None:
         print(f"  ! 부품 루트 없음: {PARTS_ROOT}")
         return
     for pdir in sorted(p for p in PARTS_ROOT.iterdir() if p.is_dir()):
-        if pdir.name == "backgrounds":          # 합성 증강용 배경 — 부품이 아님
+        if pdir.name in ("backgrounds", "_synth"):   # 합성 증강 자원(배경·가림) — 부품이 아님
             continue
         sync_part_dir(s, pdir, stats)
 
