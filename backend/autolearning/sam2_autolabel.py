@@ -513,6 +513,10 @@ def start_parts_label_batch(session, items):
     threading.Thread(target=_run_parts_label_batch, args=(jid, PERSIST, items), daemon=True).start()
     return {"job": jid, "session": PERSIST}
 
+OCCL_P = 0.5              # 합성 객체 중 절반은 판넬로 부분 가림(7/30 레시피)
+OCCL_FRAC = (0.35, 0.8)   # 가림 판넬 폭 = 부품 박스 폭의 35~80%
+
+
 def _synth_augment(oi, ol, logln, n_syn=400):
     """멀티클래스 학습셋(oi/ol)의 객체를 SAM2로 누끼 → 실배경에 copy-paste 합성 n_syn장 추가.
     배경 과적합을 줄이는 opt-in 증강. 라벨의 원래 클래스 idx를 유지한다. (run_augtrain 로직을 멀티클래스로 일반화)"""
@@ -524,6 +528,12 @@ def _synth_augment(oi, ol, logln, n_syn=400):
     synth_dir = config.BASE_DIR / "data" / "bell412" / "_synth"
     bgdir = synth_dir / "backgrounds"
     bgs = [str(p) for p in bgdir.rglob("*.jpg")] if bgdir.exists() else []
+    ocdir = synth_dir / "occluders"
+    occs = []
+    for op in sorted(ocdir.glob("*.png")) if ocdir.is_dir() else []:
+        oi_img = cv2.imread(str(op), cv2.IMREAD_UNCHANGED)
+        if oi_img is not None and oi_img.ndim == 3 and oi_img.shape[2] == 4:
+            occs.append(oi_img)
     if not bgs:
         logln("배경 이미지 없음(data/bell412/_synth/backgrounds) → 배경 합성 증강 생략", "info"); return 0
 
@@ -639,13 +649,27 @@ def _synth_augment(oi, ol, logln, n_syn=400):
             bb = _paste(bg, cut, random.randint(0, W - cw2), random.randint(0, H - ch2))
             if not bb:
                 continue
+            # 부분 가림: 기체에 장착된 부품은 배관·판넬에 일부가 가려져 보인다. 판넬 누끼를 부품 위에
+            # 얹고 라벨 박스는 그대로 둬서 "일부만 보이는 부품"을 배우게 한다(7/30 실험의 주 지렛대).
+            if occs and random.random() < OCCL_P:
+                oc = occs[random.randrange(len(occs))]
+                bw2, bh2 = bb[2] - bb[0], bb[3] - bb[1]
+                ow = max(8, int(bw2 * random.uniform(*OCCL_FRAC)))
+                osc = ow / oc.shape[1]
+                oc2 = cv2.resize(oc, (ow, max(8, int(oc.shape[0] * osc))))
+                if random.random() < 0.5:
+                    oc2 = cv2.flip(oc2, 1)
+                ox = bb[0] + random.randint(-ow // 3, max(0, bw2 - ow // 2))
+                oy = bb[1] + random.randint(-oc2.shape[0] // 3, max(0, bh2 - oc2.shape[0] // 2))
+                _paste(bg, oc2, ox, oy)      # 라벨은 갱신하지 않는다
             cx = (bb[0] + bb[2]) / 2 / W; cy = (bb[1] + bb[3]) / 2 / H
             labels.append(f"{ci} {cx:.6f} {cy:.6f} {(bb[2] - bb[0]) / W:.6f} {(bb[3] - bb[1]) / H:.6f}")
         if labels:
             cv2.imwrite(str(oi / f"syn_{k:05d}.jpg"), bg)
             (ol / f"syn_{k:05d}.txt").write_text("\n".join(labels) + "\n", encoding="utf-8")
             made += 1
-    logln(f"배경 합성 증강 완료 · {made}장 추가", "ok")
+    logln(f"배경 합성 증강 완료 · {made}장 추가"
+          + (f" (판넬 가림 {len(occs)}종 적용)" if occs else " (가림 누끼 없음)"), "ok")
     return made
 
 # ---- 내부 평가용 영상(제품 로직 밖) ----
