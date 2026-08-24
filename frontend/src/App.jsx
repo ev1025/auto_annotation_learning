@@ -691,59 +691,6 @@ function fmtId(s) {
 
 // 모델 버전 카드(기존/신규 나란히 비교). highlightNew=신규 부품 뱃지 강조
 // 표시 항목은 딱 4가지: ①모델 ID ②생성 일시 ③학습 부품 뱃지 ④인식률(있으면). 중복 캡션 없음
-function VerCard({ tag, cls, id, time, classes, map50, baseSet, highlightNew }) {
-  const list = classes || []
-  return (
-    <div className={`verc ${cls}`}>
-      <div className={`verc-tag ${cls}`}>{tag}</div>
-      <div className="verc-id">{id ? <>#{id}</> : <span className="verc-none">모델 없음</span>}</div>
-      <dl className="verc-meta">
-        <div><dt>생성 일시</dt><dd>{time || '—'}</dd></div>
-        {map50 != null && (
-          <div><dt>인식률<span className="verc-qual">(자동라벨)</span></dt><dd className="verc-map">{map50}</dd></div>
-        )}
-      </dl>
-      <div className="verc-parts">
-        <span className="verc-parts-lbl">학습 부품 <span className="verc-parts-n">{list.length}종</span></span>
-        <div className="verc-badges">
-          {list.length === 0 && <span className="al-hint">—</span>}
-          {list.slice(0, 14).map(c => (
-            <span key={c} className={`cbadge${highlightNew && baseSet && !baseSet.has(c) ? ' new' : ''}`}>{c}</span>
-          ))}
-          {list.length > 14 && <span className="cbadge more">+{list.length - 14}</span>}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// 스코어 타일(모던 SaaS 위젯): 상단 제목·종수(좌) + 증감 뱃지(우), 중앙 큰 숫자(무채색), 하단 이전값(옅게).
-// 하락 경고(≤-10%p)는 배경/숫자색이 아니라 카드 왼쪽 빨간 포인트선(inset)으로만 은은하게 표시.
-function ScoreTile({ label, n, nTotal, before, after, pctv, deltaEl, warnDown }) {
-  const d = (before != null && after != null) ? Math.round((after - before) * 100) : null
-  const bad = warnDown && d != null && d <= -10
-  return (
-    <div className={`score-tile${bad ? ' bad' : ''}`}>   {/* GA 카드: 헤더(이름·종) · 현재값+등락 */}
-      <div className="score-head">
-        <span className="score-title">{label}</span>
-        {n != null && (   /* 기존 부품은 시간을 아끼려 표본만 검사한다 -> 표본/전체를 함께 적는다 */
-          <span className="score-n">{nTotal && nTotal > n ? `표본 ${n}/${nTotal}종` : `${n}종`}</span>
-        )}
-      </div>
-      {after == null ? (                          /* 신규 모델 결과 자체가 없음 */
-        <div className="score-na">비교 대상 없음 · 첫 배포</div>
-      ) : (
-        <div className="score-row">                {/* 현재값 옆에 등락(빨강/파랑) */}
-          <span className="score-big">{pctv(after)}</span>
-          {d != null && deltaEl(before, after)}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// 하단 액션바 모델 액션. onApply(신규 적용) 있으면 주 CTA=분할버튼(적용 + ▾메뉴: 폐기·과거 롤백),
-// 없으면(관리 모드) [과거 모델로 롤백 ▾] 단일 드롭다운. 항목 클릭=롤백 · ×=삭제 · 바깥 클릭 시 닫힘
 function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, onApply, applied }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -909,7 +856,7 @@ function ServerThumb({ src, alt }) {
 
 function PartsApp({ onPrep, active }) {
   const [folders, setFolders] = useState([])
-  // F5 복구용: page·job·cmpJob·session을 세션스토리지에서 초기화(같은 탭 새로고침이면 있던 자리로 복원)
+  // F5 복구용: page·job·session을 세션스토리지에서 초기화(같은 탭 새로고침이면 있던 자리로 복원)
   const [session, setSession] = useState(() => sessionStorage.getItem('xr_session') || null)
   const [labeledMap, setLabeledMap] = useState({})   // {학습영상: {labels,frames}}
   const [trainedVideos, setTrainedVideos] = useState([])   // 기존 모델에 이미 학습된 영상
@@ -917,12 +864,13 @@ function PartsApp({ onPrep, active }) {
   const [epochs, setEpochs] = useState(100)
   const [job, setJob] = useState(() => sessionStorage.getItem('xr_job') || null)
   const [status, setStatus] = useState(null)
-  const [page, setPage] = useState(() => sessionStorage.getItem('xr_page') || 'label')   // 'label' | 'training' | 'evaluate'
+  const [page, setPage] = useState(() => {   // 'label' | 'training' (구 'evaluate' 는 학습 화면에 흡수)
+    const p = sessionStorage.getItem('xr_page')
+    return p === 'evaluate' ? 'training' : (p || 'label')
+  })
   // 이 탭에서 처음 여는가(복구할 화면이 없나). 첫 렌더에서만 읽는다 —
   // 아래 저장 effect 가 곧 xr_page 를 덮어써서 effect 안에서는 구분할 수 없다.
   const freshTab = useRef(!sessionStorage.getItem('xr_page'))
-  const [cmpJob, setCmpJob] = useState(() => sessionStorage.getItem('xr_cmpJob') || null)
-  const [cmp, setCmp] = useState(null)               // 신규↔기존 모델 비교(평가) 상태
   const [applied, setApplied] = useState(false)      // 신규 모델 서비스 적용 완료
   const [svcMsg, setSvcMsg] = useState(null)         // 모델 변경 결과(적용·유지·롤백 공통 한 줄)
   const svcTimer = useRef(null)
@@ -936,8 +884,6 @@ function PartsApp({ onPrep, active }) {
   const [servedLoaded, setServedLoaded] = useState(false)   // served fetch 완료 여부(기본선택 타이밍용)
   const didInitPick = useRef(false)                  // 학습됨 부품 기본선택을 최초 1회만 적용
   const [models, setModels] = useState([])           // 등록소 버전 목록(타임라인)
-  const [rolledTo, setRolledTo] = useState(null)     // 롤백 완료된 model_id
-  const [selVer, setSelVer] = useState(null)         // 타임라인에서 고른 비교 기준 버전(null=현재 서비스)
   const running = !!status?.running
 
   const loadTrain = useCallback(() => {   // 모달 열 때 폴더+라벨 현황 갱신
@@ -1002,7 +948,7 @@ function PartsApp({ onPrep, active }) {
       body: JSON.stringify({ session, epochs, classes, augment: true })   // 배경 합성 증강 항상 적용
     }).then(x => x.json())
     if (r.error) { setJob('err'); setStatus({ error: r.error, running: false, log: [] }); return }
-    setCmpJob(null); setCmp(null); setApplied(false)   // 새로 학습하면 이전 평가 결과는 무효(재비교 대상)
+    setApplied(false)                                  // 새로 학습하면 이전 적용 표시는 무효
     setJob(r.job); setStatus({ stage: 'start', running: true, log: [] })   // 학습 시작 → 로그 뷰어로 전환
   }
   useEffect(() => {
@@ -1023,25 +969,6 @@ function PartsApp({ onPrep, active }) {
     return () => clearInterval(t)
   }, [job, status?.running])
 
-  const runCompare = (baseId) => {   // 비교 실행/재실행. baseId=기준(기존) 버전, 없으면 현재 서비스 모델
-    setSelVer(baseId || null)
-    setCmpJob(null); setCmp({ stage: 'compare', running: true })
-    ;(async () => {
-      const r = await fetch('/api/sam2/compare', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session, base_model_id: baseId || null })
-      }).then(x => x.json()).catch(() => ({ error: 'compare 요청 실패' }))
-      if (r.error) { setCmpJob('err'); setCmp({ error: r.error, running: false }); return }
-      setCmpJob(r.job); setCmp({ stage: 'compare', running: true })
-    })()
-  }
-  const triggerCompare = () => { if (!cmpJob) runCompare(null) }
-  const goEvaluate = () => { setPage('evaluate'); triggerCompare() }
-  const goManage = () => {   // 학습/비교 없이 모델 관리(롤백·삭제) 페이지로 바로 이동
-    setPage('evaluate')
-    fetch('/api/sam2/served').then(r => r.json()).then(d => setServed(d && !d.none ? d : null)).catch(() => {})
-    fetch('/api/sam2/models').then(r => r.json()).then(d => setModels(d.models || [])).catch(() => {})
-  }
   const notify = (message) =>   // 인앱 알림(네이티브 alert 대체)
     ask({ title: '알림', message, confirmLabel: '확인', alertOnly: true, onOk: () => {} })
   const askDeleteModel = (mid) =>   // 타임라인/히스토리에서 버전 삭제(현재 서비스 모델은 백엔드가 거부)
@@ -1052,18 +979,8 @@ function PartsApp({ onPrep, active }) {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id: mid })
     }).then(x => x.json()).catch(() => ({ error: '삭제 실패' }))
     if (r.error) { notify(r.error); return }
-    if (selVer === mid) setSelVer(null)
     fetch('/api/sam2/models').then(x => x.json()).then(d => setModels(d.models || [])).catch(() => {})
   }
-
-  useEffect(() => {   // 비교 잡 폴링
-    if (!cmpJob || cmpJob === 'err' || !cmp?.running) return
-    const t = setInterval(async () => {
-      const d = await fetch(`/api/sam2/status?job=${cmpJob}`).then(r => r.json())
-      setCmp(d); if (!d.running) clearInterval(t)
-    }, 1500)
-    return () => clearInterval(t)
-  }, [cmpJob, cmp?.running])
 
   // 현재 위치·잡을 세션스토리지에 저장 → F5(같은 탭 새로고침) 때 있던 자리로 복원
   useEffect(() => { sessionStorage.setItem('xr_page', page) }, [page])
@@ -1071,27 +988,19 @@ function PartsApp({ onPrep, active }) {
     if (job && job !== 'err') sessionStorage.setItem('xr_job', job)
     else sessionStorage.removeItem('xr_job')
   }, [job])
-  useEffect(() => {   // cmpJob도 비워지면 같이 지운다 — 메모리와 스토리지가 갈리면 F5 결과가 인앱 이동과 달라짐
-    if (cmpJob && cmpJob !== 'err') sessionStorage.setItem('xr_cmpJob', cmpJob)
-    else sessionStorage.removeItem('xr_cmpJob')
-  }, [cmpJob])
   useEffect(() => { if (session) sessionStorage.setItem('xr_session', session) }, [session])
 
   // 마운트 시 복구: 세션스토리지로 되살린 page/job 에 실제 상태를 다시 붙인다(백엔드 JOBS 가 완료 잡도 보관).
   // 잡이 소실됐으면(백엔드 재시작 등) 처음(라벨)으로 안전 복귀. 세션 복구가 없으면 실행 중 잡만 재진입.
   useEffect(() => {
     const jb = sessionStorage.getItem('xr_job')
-    const cj = sessionStorage.getItem('xr_cmpJob')
     if (page === 'training') {
       loadTrain()                                    // 학습 설정/결과 어느 쪽이든 부품목록 재로딩
+      fetch('/api/sam2/served').then(r => r.json()).then(d => setServed(d && !d.none ? d : null)).catch(() => {})
+      fetch('/api/sam2/models').then(r => r.json()).then(d => setModels(d.models || [])).catch(() => {})
       if (jb) fetch(`/api/sam2/status?job=${jb}`).then(r => r.json())
         .then(d => { if (d && !d.error) setStatus(d); else { setJob(null) } })
         .catch(() => { setJob(null) })
-    } else if (page === 'evaluate') {
-      fetch('/api/sam2/served').then(r => r.json()).then(d => setServed(d && !d.none ? d : null)).catch(() => {})
-      fetch('/api/sam2/models').then(r => r.json()).then(d => setModels(d.models || [])).catch(() => {})
-      if (cj) fetch(`/api/sam2/status?job=${cj}`).then(r => r.json())
-        .then(d => { if (d && !d.error) setCmp(d) }).catch(() => {})
     } else {
       // 다른 곳(폰 등)에서 실행 중인 잡이 있으면 그 잡에 다시 붙는다.
       // 화면 이동은 '이 탭에서 처음 여는 경우'에만 한다. 예전에는 항상 옮겼는데,
@@ -1103,9 +1012,6 @@ function PartsApp({ onPrep, active }) {
         if (a.kind === 'multiclass') {
           setJob(a.job); setStatus(a); loadTrain()
           if (freshTab.current) setPage('training')
-        } else if (a.kind === 'compare') {
-          setCmpJob(a.job); setCmp(a)
-          if (freshTab.current) setPage('evaluate')
         }
       }).catch(() => {})
     }
@@ -1150,12 +1056,14 @@ function PartsApp({ onPrep, active }) {
     didInitPick.current = true
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [servedLoaded, items, folders])
-  // 평가 완료 시 버전 목록도 로드
+  // 학습 완료 시 버전 목록 갱신(방금 만든 모델이 과거 모델 조회에 바로 보이게)
+  const doneStage = status?.stage === 'done' && !status?.error   // trainDone 은 아래에서 선언되어 여기선 TDZ
   useEffect(() => {
-    if (cmp?.stage !== 'done') return
+    if (!doneStage) return
     loadServed()
     fetch('/api/sam2/models').then(r => r.json()).then(d => setModels(d.models || [])).catch(() => {})
-  }, [cmp?.stage, loadServed])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doneStage])
 
   // 모델 변경 3가지(신규 적용 · 기존 유지 · 과거 롤백)는 동작을 통일한다.
   //   화면 이동 없음 / 결과는 같은 자리 한 줄 / 버튼은 사라지지 않고 상태만 바뀐다.
@@ -1175,22 +1083,15 @@ function PartsApp({ onPrep, active }) {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id: mid })
     }).then(x => x.json()).catch(() => ({ error: '롤백 실패' }))
     if (r.error) { notify(r.error); return }
-    setRolledTo(mid); setApplied(false)
-    const s = await refreshServed()
-    flashSvc(`과거 버전으로 롤백했습니다 · 현재 서비스 모델 ${s?.label || mid}`)
-  }
-
-  const doRollback = async () => {   // 신규 폐기(기존 모델 유지) — 화면은 그대로 둔다
-    await fetch('/api/sam2/rollback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {})
     setApplied(false)
     const s = await refreshServed()
-    flashSvc(`기존 모델을 유지했습니다 · 현재 서비스 모델 ${s?.label || '없음'}`)
+    flashSvc(`과거 버전으로 롤백했습니다 · 현재 서비스 모델 ${s?.label || mid}`)
   }
 
   const doApply = async () => {   // 신규 모델을 서비스에 적용(추론 서버 배포는 백엔드가 함께 처리)
     // 화면에서 평가한 그 run 을 명시해서 보낸다. 안 보내면 백엔드가 '가장 최신 run' 을
     // 적용해서, 평가 중에 다른 학습이 끝나면 엉뚱한 모델이 서비스로 올라간다.
-    const target = status?.model_id || cmp?.session || status?.session || session
+    const target = status?.model_id || status?.session || session
     const r = await fetch('/api/sam2/apply_model', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session: target })
     }).then(x => x.json()).catch(() => ({ error: '적용 실패' }))
@@ -1231,30 +1132,10 @@ function PartsApp({ onPrep, active }) {
 
   // ── 학습 완료 후: 평가(compare) 단계 진행/표시 ──
   const trainDone = status?.stage === 'done' && !status?.error
-  // 학습이 끝나면 비교를 자동으로 시작한다(버튼을 누르지 않아도 되게).
-  // cmpJob 이 없을 때만 1회 — 재실행은 평가 화면의 다시 비교 버튼이 맡는다.
-  useEffect(() => {
-    if (trainDone && !cmpJob) runCompare(null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trainDone, cmpJob])
-  const cmpDone = cmp?.stage === 'done'
-  const cmpPct = cmpDone ? 100 : Math.round((cmp?.compare_frac || 0) * 100)
-  const cmpTitle = cmpDone ? '모델 평가 완료'
-    : (cmp?.error ? '평가 오류' : `모델 평가 중... (${cmp?.compare_done || 0}/${cmp?.compare_total || 0})`)
-  const pctv = (x) => x == null ? '—' : `${Math.round(x * 100)}%`
-  const deltaEl = (before, after) => {
-    if (before == null || after == null) return <span className="delta flat">—</span>
-    const d = Math.round((after - before) * 100)
-    if (d > 0) return <span className="delta up">+{d}%p</span>       // 상승 = 빨강
-    if (d < 0) return <span className="delta down">{d}%p</span>      // 하락 = 파랑(d 에 - 포함)
-    return <span className="delta flat">0%p</span>
-  }
-  // 평가 화면용 파생값
-  const baseModel = (selVer && models.find(m => m.model_id === selVer)) || served   // 비교 기준(선택 or 현재 서비스)
-  const baseSet = new Set(baseModel?.classes || [])
+  const baseSet = new Set(served?.classes || [])   // 현재 서비스 모델이 가진 부품(학습됨 배지 판정)
 
   return (
-    // 3개 하위 화면(라벨·학습·평가)이 카드 높이를 채우도록 flex 체인의 시작점
+    // 하위 화면(라벨·학습)이 카드 높이를 채우도록 flex 체인의 시작점
     <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0', minHeight: 0 }}>
       {page === 'label' ? (
         <>
@@ -1266,10 +1147,6 @@ function PartsApp({ onPrep, active }) {
                         <button className="prep-chip" onClick={openTrain} type="button">
                           <span className="prep-spin" aria-hidden="true" />학습 진행 중
                         </button>)}
-                      {!status?.running && cmp?.running && (
-                        <button className="prep-chip" onClick={() => setPage('evaluate')} type="button">
-                          <span className="prep-spin" aria-hidden="true" />모델 평가 중
-                        </button>)}
                       <button className="icon-back next" onClick={openTrain}
                               title="부품 학습" aria-label="부품 학습"><IcChevronRight /></button>
                     </>} />
@@ -1278,13 +1155,19 @@ function PartsApp({ onPrep, active }) {
       ) : page === 'training' ? (
         // ===== 2단계: 학습 (설정 → 진행 → 결과 요약) =====
         <div className="train-page">
+          {svcMsg && (   // 적용·롤백 결과가 항상 같은 자리에 나오고 2초 뒤 사라진다
+            <div className="svc-msg" role="status"><IcCheck /><span>{svcMsg}</span></div>
+          )}
           <PageHead
             title="부품 학습"
             back={onBackFromTrain}
-            right={<>
-              {!job && <button className="icon-back next" onClick={goManage} title="모델 관리" aria-label="모델 관리"><IcChevronRight /></button>}
-              {trainDone && <button className="icon-back next" onClick={goEvaluate} title="모델 평가 · 적용" aria-label="모델 평가·적용"><IcChevronRight /></button>}
-            </>}
+            right={
+              // 모델 평가 페이지를 없애고(정답이 없어 지표가 성립 안 함) 관리 기능만 여기로 흡수:
+              // 과거 버전 조회 · 롤백 · 삭제. 적용 버튼은 학습 완료 시 진행 헤더에 나온다.
+              <RollbackMenu models={models} servedId={served?.model_id}
+                            onRollbackTo={askRollbackTo} onDeleteModel={askDeleteModel}
+                            onKeep={null} onApply={null} applied={applied} />
+            }
           />
 
           {/* running 클래스: 폰에서 학습 중일 때 진행률·로그를 목록 위로 올리기 위한 표식(app.css) */}
@@ -1327,7 +1210,14 @@ function PartsApp({ onPrep, active }) {
                     {running && <span className="prog-sub"><span className="spinner" /> 진행 중...</span>}
                   </div>
                   {running && <button className="act-btn stop" onClick={doCancel} style={{ marginLeft: 'auto' }}>■ 학습 중단</button>}
-                  {(trainDone || status?.stage === 'cancelled') && <button className="act-btn ghost" onClick={newRun} style={{ marginLeft: 'auto' }}>↻ 새 학습</button>}
+                  {trainDone && (
+                    <button className="act-btn train" onClick={doApply} disabled={applied} style={{ marginLeft: 'auto' }}>
+                      {applied ? '✓ 서비스 적용됨' : '신규 모델 서비스 적용'}
+                    </button>
+                  )}
+                  {(trainDone || status?.stage === 'cancelled') &&
+                    <button className="act-btn ghost" onClick={newRun}
+                            style={trainDone ? undefined : { marginLeft: 'auto' }}>↻ 새 학습</button>}
                 </div>
               )}
               {(!job || !status) && (
@@ -1383,120 +1273,7 @@ function PartsApp({ onPrep, active }) {
             </section>
           </div>
         </div>
-      ) : (
-        // ===== 3단계: 모델 평가 · 적용 (버전 비교 → 서비스 적용 / 선택형 롤백) =====
-        <div className="ev2">
-          {svcMsg && (   // 세 액션의 결과가 항상 같은 자리·같은 모양으로 나오고 2초 뒤 사라진다
-            <div className="svc-msg" role="status"><IcCheck /><span>{svcMsg}</span></div>
-          )}
-          {/* 제목이 평가/평가 중/모델관리 세 가지로 바뀌어 같은 화면인지 알기 어려웠다.
-              비교를 하러 온 경우는 계속 '모델 평가', 학습 없이 관리만 하러 온 경우는 '모델관리' 로 고정한다. */}
-          <PageHead title={cmp ? '모델 평가' : '모델관리'} back={openTrain}
-                    right={(!cmp?.running && !cmp?.error) ? (
-                      <div className="ev2-head-actions">
-                        <RollbackMenu models={models} servedId={served?.model_id}
-                                      onRollbackTo={askRollbackTo} onDeleteModel={askDeleteModel}
-                                      onKeep={null} onApply={null} applied={applied} />
-                        {cmpDone && cmp.recommend && (   // 과거 조회 | 기존 유지 | 신규 적용 나란히(적용 후에도 남는다)
-                          <>
-                            <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'danger' : 'ghost'}`}
-                                    onClick={doRollback}>기존 모델 유지</button>
-                            <button className={`act-btn ${cmp.recommend.level === 'rollback' ? 'ghost' : 'train'}`}
-                                    onClick={doApply} disabled={applied}>
-                              {applied ? '✓ 적용됨' : '신규 모델 적용'}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    ) : null} />
-          {cmp?.running && (
-            <div className="ev2-progress">
-              <CircularProgress pct={cmpPct} done={false} />
-              <div className="prog-head-info">
-                <b className="prog-head-title">{cmpTitle}</b>
-                <span className="prog-sub"><span className="spinner" /> 신규 모델을 기존 모델과 비교 중...</span>
-              </div>
-            </div>
-          )}
-          {cmp?.error && <div className="ev2-body"><div className="reco-banner rollback"><IcWarn /><span>모델 평가 오류: {cmp.error}</span></div></div>}
-          {!cmp?.running && !cmp?.error && (
-            <>
-              <div className="ev2-body">
-                {cmpDone ? (
-                  <>
-                    {/* 1) 판정 + 근거 인식률을 한 줄에 — 세로로 쌓으면 아래 비교 뷰어가 눌려 이미지가 안 보인다 */}
-                    <div className="ev2-top">
-                      {cmp.recommend && (
-                        <section className={`verdict ${cmp.recommend.level}`}>
-                          <div className="verdict-badge">
-                            {cmp.recommend.level === 'apply' ? <IcCheck /> : <IcWarn />}
-                            <span>{cmp.recommend.level === 'apply' ? '신규 모델 적용 권장'
-                              : cmp.recommend.level === 'rollback' ? '기존 모델 유지 권장'
-                              : '검토 후 결정'}</span>
-                          </div>
-                          <p className="verdict-msg">{cmp.recommend.msg}</p>
-                        </section>
-                      )}
-                      <section className="scoreboard">
-                        <ScoreTile label="기존 부품 인식" n={cmp.gen?.n ?? 0} nTotal={cmp.gen?.n_total}
-                                   before={cmp.gen?.before} after={cmp.gen?.after} pctv={pctv} deltaEl={deltaEl} warnDown />
-                        <ScoreTile label="신규 부품 인식" n={cmp.newp?.n ?? 0}
-                                   before={cmp.newp?.before} after={cmp.newp?.after} pctv={pctv} deltaEl={deltaEl} />
-                      </section>
-                    </div>
-
-                  </>
-                ) : (
-                  <>
-                    {/* 관리 모드(학습 없이 진입): 현재 서비스 모델 카드 + 선택 버전 상세 */}
-                    <section className="served-card">
-                      <div className="served-top">
-                        <span className="served-lbl">현재 서비스 모델</span>
-                        {rolledTo && <span className="served-flash"><IcCheck /> 롤백 완료</span>}
-                      </div>
-                      {served ? (
-                        <div className="served-meta">
-                          {(served.n_classes ?? (served.classes || []).length)}종
-                          {served.gen_rate != null ? ` · 전체 인식률 ${Math.round(served.gen_rate * 100)}%` : ''}
-                          {served.newp_rate != null ? ` · 신규 인식률 ${Math.round(served.newp_rate * 100)}%` : ''}
-                        </div>
-                      ) : (
-                        <div className="served-none">서비스 중인 모델이 없습니다. 먼저 학습을 진행하세요.</div>
-                      )}
-                    </section>
-
-                    {selVer && (() => {
-                      const sel = models.find(m => m.model_id === selVer)
-                      if (!sel) return null
-                      return (
-                        <section className="ev2-card">
-                          <h4 className="ev2-h">선택 버전 상세 <span className="al-hint">(현재 서비스 모델과 비교)</span></h4>
-                          <div className="verc-grid">
-                            <VerCard tag="현재 서비스 모델" cls="base" id={served?.model_id}
-                                     time={served?.time || served?.applied}
-                                     classes={served?.classes || []} map50={served?.map50} baseSet={new Set()} />
-                            <div className="verc-vs" aria-hidden="true"><IcChevronRight /></div>
-                            <VerCard tag="선택한 버전" cls="new" id={sel.model_id}
-                                     time={sel.time || fmtId(sel.model_id)}
-                                     classes={sel.classes || []} map50={sel.map50}
-                                     baseSet={new Set(served?.classes || [])} highlightNew />
-                          </div>
-                          <div className="verdetail-act">
-                            {sel.is_active
-                              ? <span className="ok-flash"><IcCheck /> 현재 서비스 중인 버전입니다</span>
-                              : <button className="act-btn train" onClick={() => askRollbackTo(selVer)}>이 버전으로 롤백</button>}
-                          </div>
-                        </section>
-                      )
-                    })()}
-                  </>
-                )}
-              </div>
-            </>
-          )}
-
-        </div>
-      )}
+      ) : null}
       <ConfirmModal open={!!confirmState} {...(confirmState || {})}
                     onCancel={() => setConfirmState(null)}
                     onConfirm={() => { const ok = confirmState?.onOk; setConfirmState(null); if (ok) ok() }} />
