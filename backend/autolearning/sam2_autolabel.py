@@ -517,7 +517,7 @@ OCCL_P = 0.5              # 합성 객체 중 절반은 판넬로 부분 가림(
 OCCL_FRAC = (0.35, 0.8)   # 가림 판넬 폭 = 부품 박스 폭의 35~80%
 
 
-def _synth_augment(oi, ol, logln, n_syn=400, cancelled=None):
+def _synth_augment(oi, ol, logln, n_syn=400, cancelled=None, class_weights=None):
     """멀티클래스 학습셋(oi/ol)의 객체를 SAM2로 누끼 → 실배경에 copy-paste 합성 n_syn장 추가.
     배경 과적합을 줄이는 opt-in 증강. 라벨의 원래 클래스 idx를 유지한다. (run_augtrain 로직을 멀티클래스로 일반화)"""
     import random
@@ -638,7 +638,14 @@ def _synth_augment(oi, ol, logln, n_syn=400, cancelled=None):
             raise _Cancelled
         bg = _prep_bg(random.choice(bgs)); H, W = bg.shape[:2]; labels = []
         for _ in range(1 if random.random() > 0.25 else 2):
-            ci = random.choice(list(by_cls))          # 클래스 먼저 균등하게, 그 안에서 객체
+            # 클래스 추첨: 기본 균등. class_weights(부품별 실촬 장수)를 주면 비례 추첨 —
+            # 부품당 합성을 "실촬의 N배"로 맞출 때 쓴다(균등이면 라벨 많은 부품이 상대적으로 적게 받는다).
+            cls_list = list(by_cls)
+            if class_weights:
+                w = [max(1, class_weights.get(c, 1)) for c in cls_list]
+                ci = random.choices(cls_list, weights=w, k=1)[0]
+            else:
+                ci = random.choice(cls_list)
             rgba = random.choice(by_cls[ci])
             hh, ww = rgba.shape[:2]
             M = cv2.getRotationMatrix2D((ww / 2, hh / 2), random.uniform(-20, 20), 1.0)
