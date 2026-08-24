@@ -1383,16 +1383,9 @@ def _run_compare(job_id, session, base_model_id=None):
             sub = fs[::max(1, len(fs) // 15)][:15]
             new_r = _rate(new_model, sub, c)
             base_r = _rate(base_model, sub, c) if base_model else None
-            # 같은 프레임에 두 모델(기존=before / 신규=after) 검출을 각각 그린다. 한 부품을 여러 번 append.
-            cap = min(max(1, int(PART_CAP[kind] * scale)), TOTAL_CAP - len(samples))
-            if sub and cap > 0:
-                for fp in _pick(sub, cap):
-                    img = _rd(fp)
-                    samples.append({"part": c, "kind": kind,
-                                    "img": _b64(img, w=460),                 # 사진 한 장을 두 모델이 공유
-                                    "iw": int(img.shape[1]), "ih": int(img.shape[0]),
-                                    "before": _dets(base_model, img, c) if base_model else None,
-                                    "after": _dets(new_model, img, c)})
+            # 화면의 '모델 결과 비교'를 없애면서 샘플 이미지 생성도 멈췄다. 정답이 없어 판단 근거가
+            # 못 되는데 두 모델로 프레임을 다시 추론해 시간만 들었다. 판단은 인식률 하락 경고로 한다.
+            # ponytail: 샘플이 다시 필요하면 이 자리에서 _dets·_pick 로 되살리면 된다.
             rows.append({"part": c, "kind": kind, "new_rate": new_r, "base_rate": base_r})
             j.update(compare_done=k, compare_frac=round(k / total, 3))
 

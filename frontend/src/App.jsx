@@ -820,111 +820,6 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
 // 프레임 사진 위에 검출 박스를 SVG로 겹쳐 그린다(사진에는 굽지 않는다 -> 박스를 끌 수 있다).
 // SVG 의 viewBox + preserveAspectRatio 는 img 의 object-fit:contain 과 같은 방식으로 여백을 잡으므로
 // 사진 비율이 세로든 가로든 박스가 사진에 정확히 겹친다.
-function Shot({ f, before, after, show, alt }) {
-  // 구 백엔드(박스를 사진에 구워 보내던 버전)의 응답도 그대로 보여준다 — 서버 재시작 전 공백 방지
-  if (typeof after === 'string') return <div className="ba-shot"><img src={after} alt={alt} /></div>
-  const B = show ? (before?.box || []) : []     // 기존 모델: 회색 점선
-  const A = show ? (after?.box || []) : []      // 신규 모델: 초록(정답)·주황(오검)
-  const fz = Math.max(f.iw || 640, f.ih || 480) / 40      // 라벨 글자 크기(사진 원본 픽셀 기준)
-  return (
-    <div className="ba-shot">
-      <img src={f.img} alt={alt} />
-      {(B.length + A.length) > 0 && (
-        <svg className="ba-ov" viewBox={`0 0 ${f.iw} ${f.ih}`} aria-hidden="true">
-          {B.map((b, i) => (
-            <rect key={`b${i}`} className="prev" x={b.x} y={b.y} width={b.w} height={b.h}
-                  vectorEffect="non-scaling-stroke" />
-          ))}
-          {A.map((b, i) => (
-            <g key={`a${i}`} className={b.ok ? 'ok' : 'ng'}>
-              <rect x={b.x} y={b.y} width={b.w} height={b.h} vectorEffect="non-scaling-stroke" />
-              {i < 3 && (   // 라벨은 신뢰도 상위 3개만. 박스가 겹치면 글자도 겹치므로 한 줄씩 내려 쓴다
-                <text x={b.x} y={Math.max(b.y - fz * 0.3, fz) + i * fz * 1.15} fontSize={fz}>
-                  {b.cls} {b.conf.toFixed(2)}
-                </text>
-              )}
-            </g>
-          ))}
-        </svg>
-      )}
-    </div>
-  )
-}
-
-// 부품 하나의 여러 테스트 프레임을 좌우 화살표로 넘겨보는 Before/After 슬라이더
-// frames = [{ img, iw, ih, before: {n,box}|null, after: {n,box} }, ...] (같은 part의 여러 프레임)
-function BaGroup({ part, kind, frames }) {
-  const [idx, setIdx] = useState(0)          // 현재 보고 있는 프레임 인덱스
-  const [showBox, setShowBox] = useState(true)   // 박스 표시(끄면 원본 사진만 본다)
-  const n = frames.length
-  const i = Math.min(idx, n - 1)             // 프레임 수가 줄어도 인덱스 안전
-  const cur = frames[i] || {}
-  const go = (d) => setIdx(p => ((Math.min(p, n - 1) + d) % n + n) % n)   // 순환 이동(양끝 래핑)
-  return (
-    <div className="ba-group">
-      <div className="ba-stage">
-        {n > 1 && <button className="ba-nav prev" onClick={() => go(-1)} aria-label="이전 프레임"><IcChevronLeft /></button>}
-        <div className="ba-one">
-          {cur.after || cur.before
-            ? <Shot f={cur} before={cur.before} after={cur.after} show={showBox}
-                    alt={`${part} 기존·신규 모델 검출 비교`} />
-            : <div className="ba-none">검출 없음</div>}
-        </div>
-        {n > 1 && <button className="ba-nav next" onClick={() => go(1)} aria-label="다음 프레임"><IcChevronRight /></button>}
-      </div>
-      <div className="ba-legend">
-        <span className="lg-item"><i className="lg-sw gray" /> 기존 모델</span>
-        <span className="lg-item"><i className="lg-sw green" /> 신규 · 정답 부품</span>
-        <span className="lg-item"><i className="lg-sw orange" /> 신규 · 오검출</span>
-        <button type="button" className="lg-toggle" aria-pressed={showBox}
-                onClick={() => setShowBox(v => !v)}>
-          {showBox ? '박스 숨기기' : '박스 보기'}
-        </button>
-      </div>
-      {n > 1 && (
-        <div className="ba-dots">
-          {frames.map((_, k) => (
-            <button key={k} className={`ba-dot${k === i ? ' on' : ''}`} onClick={() => setIdx(k)}
-                    aria-label={`${k + 1}번째 프레임 보기`} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// 부품 선택 커스텀 드롭다운(네이티브 select 대신 앱 톤 통일)
-function PartSelect({ options, value, onChange }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-  useEffect(() => {
-    if (!open) return
-    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', onDoc); document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
-  }, [open])
-  return (
-    <div className="psel" ref={ref}>
-      <button className="psel-btn" onClick={() => setOpen(o => !o)} aria-haspopup="listbox" aria-expanded={open}>
-        <span>{options[value]}</span><IcChevronDown />
-      </button>
-      {open && (
-        <div className="psel-pop" role="listbox">
-          {options.map((o, i) => (
-            <button key={o + '_' + i} role="option" aria-selected={i === value}
-                    className={`psel-item${i === value ? ' on' : ''}`}
-                    onClick={() => { onChange(i); setOpen(false) }}>
-              <span>{o}</span>{i === value && <IcCheck />}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// 인앱 확인 모달(네이티브 confirm·alert 대체). danger=파괴적 액션(빨강), alertOnly=알림만(취소 없음)
 function ConfirmModal({ open, title, message, confirmLabel, danger, alertOnly, onConfirm, onCancel }) {
   useEffect(() => {
     if (!open) return
@@ -1041,7 +936,6 @@ function PartsApp({ onPrep, active }) {
   const [models, setModels] = useState([])           // 등록소 버전 목록(타임라인)
   const [rolledTo, setRolledTo] = useState(null)     // 롤백 완료된 model_id
   const [selVer, setSelVer] = useState(null)         // 타임라인에서 고른 비교 기준 버전(null=현재 서비스)
-  const [baSel, setBaSel] = useState(0)              // 인식 결과 비교: 한 번에 보는 부품 인덱스
   const running = !!status?.running
 
   const loadTrain = useCallback(() => {   // 모달 열 때 폴더+라벨 현황 갱신
@@ -1356,20 +1250,6 @@ function PartsApp({ onPrep, active }) {
   // 평가 화면용 파생값
   const baseModel = (selVer && models.find(m => m.model_id === selVer)) || served   // 비교 기준(선택 or 현재 서비스)
   const baseSet = new Set(baseModel?.classes || [])
-  // 검출 샘플: 백엔드가 부품(part)당 여러 프레임을 평평한 리스트로 줌 → part로 묶어 부품별 슬라이더 구성
-  const baGroups = (() => {
-    const raw = (cmp?.samples || []).filter(s => s && (s.after || s.before || s.img))
-    const byPart = new Map()
-    for (const s of raw) {
-      const key = s.part || '기타'
-      if (!byPart.has(key)) byPart.set(key, { part: key, kind: s.kind || 'base', frames: [] })
-      const g = byPart.get(key)
-      if (s.kind === 'new') g.kind = 'new'          // 한 프레임이라도 신규 부품이면 신규로 표기
-      g.frames.push({ img: s.img || null, iw: s.iw || 640, ih: s.ih || 480,
-                      before: s.before || null, after: s.after || null })
-    }
-    return [...byPart.values()]
-  })()
 
   return (
     // 3개 하위 화면(라벨·학습·평가)이 카드 높이를 채우도록 flex 체인의 시작점
@@ -1563,22 +1443,6 @@ function PartsApp({ onPrep, active }) {
                       </section>
                     </div>
 
-                    {/* 3) 눈으로 확인 — 실제 프레임 검출 비교(가장 신뢰되는 근거) */}
-                    {baGroups.length > 0 && (() => {
-                      const gi = baSel < baGroups.length ? baSel : 0
-                      const g = baGroups[gi]
-                      return (
-                        <section className="ev2-card ba-primary">
-                          <div className="ev2-h-row">
-                            <h4 className="ev2-h">모델 결과 비교</h4>
-                            {baGroups.length > 1 && (
-                              <PartSelect options={baGroups.map(x => x.part)} value={gi} onChange={setBaSel} />
-                            )}
-                          </div>
-                          <BaGroup key={g.part + '_' + gi} part={g.part} kind={g.kind} frames={g.frames} />
-                        </section>
-                      )
-                    })()}
                   </>
                 ) : (
                   <>
