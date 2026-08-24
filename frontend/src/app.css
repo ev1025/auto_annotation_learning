@@ -259,8 +259,10 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
   width: 100%; margin-top: var(--sp-5);
   background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--pad-cell);
 }
+/* 범례: 양쪽 여백을 두고 가운데 정렬, 항목 간격은 균등하게 */
 .mask-legend {
-  display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3) var(--sp-8);
+  display: flex; align-items: center; justify-content: space-evenly; flex-wrap: wrap;
+  gap: var(--sp-3) var(--sp-8); padding: 0 var(--sp-8);
   font-size: var(--fs-sm); color: var(--ink);
 }
 .mask-legend .lg-item { display: inline-flex; align-items: center; gap: var(--sp-3); }
