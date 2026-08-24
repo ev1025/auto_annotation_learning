@@ -1137,7 +1137,16 @@ function PartsApp({ onPrep, active }) {
   useEffect(() => {
     if (!job || job === 'err' || !status?.running) return
     const t = setInterval(async () => {
-      const d = await fetch(`/api/sam2/status?job=${job}`).then(r => r.json())
+      const d = await fetch(`/api/sam2/status?job=${job}`).then(r => r.json()).catch(() => null)
+      if (!d || d.error) {
+        // 서버가 재시작되면 잡 목록(메모리)이 비어 'unknown job' 이 온다. 오류로 보여주지 말고
+        // 지금 돌고 있는 잡이 있으면 그걸 이어 붙이고, 없으면 학습 화면을 초기 상태로 되돌린다.
+        clearInterval(t)
+        const a = await fetch('/api/sam2/active').then(r => r.json()).catch(() => null)
+        if (a && a.job && a.kind === 'multiclass') { setJob(a.job); setStatus(a) }
+        else { setJob(null); setStatus(null) }
+        return
+      }
       setStatus(d); if (!d.running) clearInterval(t)
     }, 1500)
     return () => clearInterval(t)

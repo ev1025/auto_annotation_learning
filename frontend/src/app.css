@@ -1083,9 +1083,13 @@ button.prep-chip:hover { border-color: var(--accent); }
 /* 휴지통이 겹치지 않게 버튼 오른쪽에 자리를 비워 둔다 */
 .reg-drop.has-del { padding-right: 44px; }
 
-/* 모델 비교: 한 사진에 기존(점선)·신규(실선)를 겹쳐 본다 */
+/* 모델 비교: 한 사진에 기존(점선)·신규(실선)를 겹쳐 본다.
+   사진과 박스(SVG)가 같은 사각형을 채워야 겹침이 맞는다. 예전 좌우 2장 배치에서
+   img 에 주던 크기 규칙(flex·object-fit)을 이 단일 배치에도 그대로 준다. */
 .ba-one { flex: 1; min-width: 0; min-height: 0; display: flex; }
-.ba-one .ba-shot { flex: 1; min-height: 0; }
+.ba-one .ba-shot { flex: 1 1 0; min-width: 0; min-height: 0; }
+.ba-one .ba-shot img { width: 100%; height: 100%; max-height: none; object-fit: contain;
+  display: block; border-radius: var(--r); border: 1px solid var(--line); background: var(--surface-2); }
 .ba-ov rect.prev { stroke: #9aa4ad; stroke-dasharray: 7 5; }
 .lg-sw.gray { background: #9aa4ad; }
 /* 헤더의 다음 단계 이동(>): 뒤로가기와 같은 아이콘 버튼 */
