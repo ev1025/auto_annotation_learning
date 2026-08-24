@@ -90,7 +90,6 @@ function AutoLabelView({ onPrep, active }) {
   const [showReview, setShowReview] = useState(false)   // 라벨 검수 모달
   const [reviewFrames, setReviewFrames] = useState([])
   const [zoomFrame, setZoomFrame] = useState(null)      // 검수에서 클릭해 확대한 프레임
-  const [selParts, setSelParts] = useState(() => new Set())   // 일괄 라벨 생성 대상 부품(체크박스 선택)
 
   const [session, setSession] = useState(() => localStorage.getItem('parts_session_v1') || null)
   const [labeledMap, setLabeledMap] = useState({})  // {영상: {labels,frames}} 현재 세션에 라벨된 테이크
@@ -226,13 +225,8 @@ function AutoLabelView({ onPrep, active }) {
     .map(n => ({ name: n, shots: buildShots(n) })).filter(x => x.shots.length > 0)
   const shotFrames = Object.keys(pts).map(Number).filter(i => (pts[i] || []).length).sort((a, b) => a - b)  // 이 영상에서 탭한 프레임들
   // 부품 선택(체크박스) → 선택한 부품 중 참조샷 있는 것들 일괄 라벨 생성 대상
-  const toggleSelPart = (folder) => setSelParts(s => { const n = new Set(s); n.has(folder) ? n.delete(folder) : n.add(folder); return n })
-  const allPartsSelected = partFolders.length > 0 && partFolders.every(pf => selParts.has(pf.folder))
-  const toggleAllParts = () => setSelParts(allPartsSelected ? new Set() : new Set(partFolders.map(pf => pf.folder)))
-  const selItems = partFolders.filter(pf => selParts.has(pf.folder))
     .map(pf => ({ pf, stem: pfTrain(pf)[0] })).filter(x => x.stem)
     .filter(x => buildShots(x.stem).length > 0).map(x => ({ video: `${x.pf.folder}/${x.stem}`, shots: buildShots(x.stem) }))
-  const batchMode = selParts.size > 0
   const goShot = (i) => { setIdx(i); setActiveShot(shotKey(src, i)) }   // 그 프레임으로 이동 + (캐시 있으면) 마스크 표시
   const deleteShotFrame = async (i) => {            // 그 프레임 탭 삭제(서버 shots.json 까지 즉시 반영)
     dropMask(src, i)
@@ -287,18 +281,6 @@ function AutoLabelView({ onPrep, active }) {
     if (r.error) { setLabelStatus({ error: r.error }); return }
     if (r.session) { setSession(r.session); localStorage.setItem('parts_session_v1', r.session) }
     setLabelJob(r.job); setLabelStatus({ stage: 'start', running: true, video: src })
-  }
-  // 선택한 부품들 한 번에 라벨 생성(배치)
-  const genLabelBatch = async (items) => {
-    const list = items && items.length ? items : selItems
-    if (!list.length) return
-    const r = await fetch('/api/sam2/parts_label_batch', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session, items: list })
-    }).then(x => x.json())
-    if (r.error) { setLabelStatus({ error: r.error }); return }
-    if (r.session) { setSession(r.session); localStorage.setItem('parts_session_v1', r.session) }
-    setLabelJob(r.job); setLabelStatus({ stage: 'start', running: true, batch: true })
   }
   useEffect(() => {
     if (!labelJob || !labelStatus?.running) return
@@ -361,17 +343,15 @@ function AutoLabelView({ onPrep, active }) {
             {folderVideos.length >= 1 && (
               <button className="act-btn neutral" onClick={() => setShowVideoPick(true)} disabled={running} title="학습 영상 선택·미리보기">영상 선택</button>
             )}
-            <button className="act-btn neutral" onClick={undo} disabled={running || !cur.length}>점 취소</button>
-            <button className="act-btn neutral" onClick={clearFrame} disabled={running || !cur.length}>지우기</button>
+            <button className="act-btn neutral" onClick={undo} disabled={running || !cur.length}
+                    title="마지막으로 찍은 점 하나 취소">되돌리기</button>
+            <button className="act-btn neutral" onClick={clearFrame} disabled={running || !cur.length}
+                    title="이 프레임에 찍은 점 모두 지우기">모두 지우기</button>
             <button className="act-btn primary" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
               {maskBusy ? '생성 중...' : '입력 마스크 확인'}
             </button>
-            <button className="act-btn primary"
-                    onClick={batchMode ? () => genLabelBatch() : genLabel}
-                    disabled={running || (batchMode ? selItems.length === 0 : curShots.length === 0)}
-                    title={batchMode ? '선택한 부품들의 참조샷으로 한 번에 라벨 생성' : ''}>
+            <button className="act-btn primary" onClick={genLabel} disabled={running || curShots.length === 0}>
               {labelStatus?.running ? '라벨 생성 중...'
-                : batchMode ? `선택 부품 라벨 생성 (${selItems.length})`
                 : ((isLabeled(src) || servedSet.has(partName)) ? '↻ 라벨 다시 생성' : '라벨 생성')}
             </button>
             <button className="act-btn neutral" onClick={openReview} disabled={running || !(isLabeled(src) || labeledAnywhere.has(partName))}
@@ -487,9 +467,6 @@ function AutoLabelView({ onPrep, active }) {
             {/* 오른쪽: 부품 패널 = 상단 고정 이전/다음 헤더 + 스크롤 리스트 */}
             <div className="part-panel">
               <div className="part-panel-head">
-                <input type="checkbox" className="part-sel" checked={allPartsSelected} disabled={running || partFolders.length === 0}
-                       ref={el => { if (el) el.indeterminate = selParts.size > 0 && !allPartsSelected }}
-                       onChange={toggleAllParts} title="전체 선택 / 해제" aria-label="부품 전체 선택" />
                 <span className="al-hint" style={{ fontWeight: 600 }}>부품 {nLabeled}/{partFolders.length}</span>
                 <span style={{ flex: 1 }} />
                 <button className="pb-btn ico" onClick={() => goPart(partIdx - 1)} disabled={running || partIdx === 0} title="이전 부품"><IcChevronLeft /></button>
@@ -502,8 +479,6 @@ function AutoLabelView({ onPrep, active }) {
                   return (
                     <div key={pf.folder} className={`part-item ${st} ${i === partIdx ? 'on' : ''}`}
                          onClick={() => !running && goPart(i)} title={st === 'done' ? `${part} (라벨됨)` : part}>
-                      <input type="checkbox" className="part-sel" checked={selParts.has(pf.folder)} disabled={running}
-                             onClick={(e) => e.stopPropagation()} onChange={() => toggleSelPart(pf.folder)} aria-label={`${part} 선택`} />
                       <span className="part-name">{part}</span>
                       {servedSet.has(part)
                         ? <span className="tchip-badge">학습됨</span>
@@ -1413,9 +1388,8 @@ function PartsApp({ onPrep, active }) {
                         <button className="prep-chip" onClick={() => setPage('evaluate')} type="button">
                           <span className="prep-spin" aria-hidden="true" />모델 평가 중
                         </button>)}
-                      <button className="ph-next" onClick={openTrain} title="학습 설정으로 이동" aria-label="학습 설정">
-                        부품 학습<IcChevronRight />
-                      </button>
+                      <button className="icon-back next" onClick={openTrain}
+                              title="부품 학습" aria-label="부품 학습"><IcChevronRight /></button>
                     </>} />
           <AutoLabelView onPrep={onPrep} active={active} />
         </>
