@@ -766,7 +766,8 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
         sess = RESULTS / runid
         sess.mkdir(parents=True, exist_ok=True)
         _runlog["path"] = sess / "train.log"
-        logln(f"학습 run {runid} 시작 (job {job_id})")
+        logln("학습 시작")
+        logger.info(f"[multiclass:{job_id}] run {runid} 시작")   # run·job 은 서버 로그에만
         sys.path.insert(0, str(config.BASE_DIR / "scripts" / "experiments"))
         import build_multiclass as bm
         names, name2idx = bm.load_classes()
@@ -803,8 +804,8 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
                 sel = sel | replay
                 logln(f"망각 방지: 기존 서비스 모델 부품 {len(replay)}종을 학습에 자동 포함", "info")
             elif gone:
-                logln(f"선택한 {len(sel)}종만 학습합니다. 서비스 모델의 나머지 {len(gone)}종은 "
-                      f"이 모델에서 빠집니다(적용 화면에서 비교 후 결정)", "info")
+                # 화면에는 적지 않는다(적용 화면의 비교가 같은 사실을 수치로 보여준다)
+                logger.info(f"[multiclass:{job_id}] 선택 {len(sel)}종만 학습 · 서비스 모델의 {len(gone)}종 제외")
         per, miss = {}, {}
         input_cnt = 0        # 선택한 클래스의 자동생성 라벨(입력 데이터) 총수
         drop_noimg = 0       # 대응 이미지 없음으로 산입 제외
@@ -858,7 +859,7 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
             shutil.copy(bp, oi / f"bg_{bp.stem}.jpg")         # 라벨 파일을 쓰지 않는다 = 배경
             n_bg += 1
         if n_bg:
-            logln(f"배경 사진 {n_bg}장 산입(라벨 없음 = 부품 없음 학습)", "info")
+            logln(f"배경 사진 {n_bg}장 산입", "info")
 
         names = train_names        # 이하 클래스 표기·인덱스는 모두 압축공간 기준(model.names·검출평가와 일치)
         n_img = sum(per.values())

@@ -845,20 +845,25 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
 // 프레임 사진 위에 검출 박스를 SVG로 겹쳐 그린다(사진에는 굽지 않는다 -> 박스를 끌 수 있다).
 // SVG 의 viewBox + preserveAspectRatio 는 img 의 object-fit:contain 과 같은 방식으로 여백을 잡으므로
 // 사진 비율이 세로든 가로든 박스가 사진에 정확히 겹친다.
-function Shot({ f, det, show, alt }) {
+function Shot({ f, before, after, show, alt }) {
   // 구 백엔드(박스를 사진에 구워 보내던 버전)의 응답도 그대로 보여준다 — 서버 재시작 전 공백 방지
-  if (typeof det === 'string') return <div className="ba-shot"><img src={det} alt={alt} /></div>
-  const bs = show ? (det.box || []) : []
+  if (typeof after === 'string') return <div className="ba-shot"><img src={after} alt={alt} /></div>
+  const B = show ? (before?.box || []) : []     // 기존 모델: 회색 점선
+  const A = show ? (after?.box || []) : []      // 신규 모델: 초록(정답)·주황(오검)
   const fz = Math.max(f.iw || 640, f.ih || 480) / 40      // 라벨 글자 크기(사진 원본 픽셀 기준)
   return (
     <div className="ba-shot">
       <img src={f.img} alt={alt} />
-      {bs.length > 0 && (
+      {(B.length + A.length) > 0 && (
         <svg className="ba-ov" viewBox={`0 0 ${f.iw} ${f.ih}`} aria-hidden="true">
-          {bs.map((b, i) => (
-            <g key={i} className={b.ok ? 'ok' : 'ng'}>
+          {B.map((b, i) => (
+            <rect key={`b${i}`} className="prev" x={b.x} y={b.y} width={b.w} height={b.h}
+                  vectorEffect="non-scaling-stroke" />
+          ))}
+          {A.map((b, i) => (
+            <g key={`a${i}`} className={b.ok ? 'ok' : 'ng'}>
               <rect x={b.x} y={b.y} width={b.w} height={b.h} vectorEffect="non-scaling-stroke" />
-              {i < 3 && (   // 라벨은 신뢰도 상위 3개만. 박스가 겹쳐 있으면 글자도 겹치므로 한 줄씩 내려 쓴다
+              {i < 3 && (   // 라벨은 신뢰도 상위 3개만. 박스가 겹치면 글자도 겹치므로 한 줄씩 내려 쓴다
                 <text x={b.x} y={Math.max(b.y - fz * 0.3, fz) + i * fz * 1.15} fontSize={fz}>
                   {b.cls} {b.conf.toFixed(2)}
                 </text>
@@ -867,9 +872,6 @@ function Shot({ f, det, show, alt }) {
           ))}
         </svg>
       )}
-      <span className="ba-cnt">
-        검출 {det.n}개{show && det.n > bs.length ? ` · 상위 ${bs.length}개 표시` : ''}
-      </span>
     </div>
   )
 }
@@ -887,26 +889,18 @@ function BaGroup({ part, kind, frames }) {
     <div className="ba-group">
       <div className="ba-stage">
         {n > 1 && <button className="ba-nav prev" onClick={() => go(-1)} aria-label="이전 프레임"><IcChevronLeft /></button>}
-        <div className="ba-pair big">
-          <figure className="ba-fig">
-            <figcaption>기존 모델</figcaption>
-            {cur.before
-              ? <Shot f={cur} det={cur.before} show={showBox} alt={`${part} 기존 모델 검출`} />
-              : <div className="ba-none">기존 모델 없음</div>}
-          </figure>
-          <div className="ba-arrow" aria-hidden="true"><IcChevronRight /></div>
-          <figure className="ba-fig after">
-            <figcaption>신규 모델</figcaption>
-            {cur.after
-              ? <Shot f={cur} det={cur.after} show={showBox} alt={`${part} 신규 모델 검출`} />
-              : <div className="ba-none">신규 모델 없음</div>}
-          </figure>
+        <div className="ba-one">
+          {cur.after || cur.before
+            ? <Shot f={cur} before={cur.before} after={cur.after} show={showBox}
+                    alt={`${part} 기존·신규 모델 검출 비교`} />
+            : <div className="ba-none">검출 없음</div>}
         </div>
         {n > 1 && <button className="ba-nav next" onClick={() => go(1)} aria-label="다음 프레임"><IcChevronRight /></button>}
       </div>
       <div className="ba-legend">
-        <span className="lg-item"><i className="lg-sw green" /> 정답 부품 검출</span>
-        <span className="lg-item"><i className="lg-sw orange" /> 다른 부품으로 오검출</span>
+        <span className="lg-item"><i className="lg-sw gray" /> 기존 모델</span>
+        <span className="lg-item"><i className="lg-sw green" /> 신규 · 정답 부품</span>
+        <span className="lg-item"><i className="lg-sw orange" /> 신규 · 오검출</span>
         <button type="button" className="lg-toggle" aria-pressed={showBox}
                 onClick={() => setShowBox(v => !v)}>
           {showBox ? '박스 숨기기' : '박스 보기'}
@@ -1423,8 +1417,8 @@ function PartsApp({ onPrep, active }) {
             title="부품 학습"
             back={onBackFromTrain}
             right={<>
-              {!job && <button className="ph-next" onClick={goManage} title="모델관리" aria-label="모델관리">모델관리<IcChevronRight /></button>}
-              {trainDone && <button className="ph-next" onClick={goEvaluate} title="모델 평가 · 적용" aria-label="다음 단계: 모델 평가·적용">모델 평가<IcChevronRight /></button>}
+              {!job && <button className="icon-back next" onClick={goManage} title="모델 관리" aria-label="모델 관리"><IcChevronRight /></button>}
+              {trainDone && <button className="icon-back next" onClick={goEvaluate} title="모델 평가 · 적용" aria-label="모델 평가·적용"><IcChevronRight /></button>}
             </>}
           />
 

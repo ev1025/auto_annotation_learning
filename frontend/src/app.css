@@ -1082,3 +1082,11 @@ button.prep-chip:hover { border-color: var(--accent); }
 .reg-3d-del { position: absolute; top: 50%; right: var(--sp-5); transform: translateY(-50%); }
 /* 휴지통이 겹치지 않게 버튼 오른쪽에 자리를 비워 둔다 */
 .reg-drop.has-del { padding-right: 44px; }
+
+/* 모델 비교: 한 사진에 기존(점선)·신규(실선)를 겹쳐 본다 */
+.ba-one { flex: 1; min-width: 0; min-height: 0; display: flex; }
+.ba-one .ba-shot { flex: 1; min-height: 0; }
+.ba-ov rect.prev { stroke: #9aa4ad; stroke-dasharray: 7 5; }
+.lg-sw.gray { background: #9aa4ad; }
+/* 헤더의 다음 단계 이동(>): 뒤로가기와 같은 아이콘 버튼 */
+.icon-back.next { margin-left: auto; }
