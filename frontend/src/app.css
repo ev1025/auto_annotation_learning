@@ -1067,3 +1067,7 @@ button.prep-chip:hover { border-color: var(--accent); }
 /* 등록·수정 화면: 3D 미리보기 + 영상 목록이 길어지면 화면 안에서 스크롤(항목이 잘리지 않게).
    카드 높이는 고정이라(상단 탭 유지) 스크롤 컨테이너는 이 본문 하나로 둔다. */
 .reg-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
+
+/* 등록 행 썸네일 자리의 추출 진행률(스피너 + %) */
+.vm-thumb-prog { flex-direction: column; gap: 4px; color: var(--muted); }
+.vm-thumb-prog b { font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--ink); }

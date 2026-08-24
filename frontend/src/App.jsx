@@ -979,34 +979,58 @@ function ConfirmModal({ open, title, message, confirmLabel, danger, alertOnly, o
 }
 
 
+// 등록 행의 썸네일 자리. 프레임 추출 중이면 진행률(%)을 돌리고, 그 외에는 로컬 썸네일을 보여준다.
+function VidThumb({ file, prog }) {
+  if (prog && prog.stage !== 'done') {
+    const pct = prog.total ? Math.min(99, Math.round(prog.count / prog.total * 100)) : null
+    return (
+      <div className="vm-thumb none vm-thumb-prog">
+        <span className="prep-spin" aria-hidden="true" />
+        <b>{pct == null ? '준비' : `${pct}%`}</b>
+      </div>
+    )
+  }
+  return <LocalThumb file={file} />
+}
+
 // 업로드 전 로컬 영상 파일의 썸네일. 서버에 아직 없으니 브라우저에서 한 프레임을 그려 쓴다.
+// preload='metadata' + loadeddata 조합은 브라우저에 따라 이벤트가 오지 않는다(썸네일이 안 뜨던 원인).
+// 메타데이터가 오면 곧바로 탐색하고, seeked·canplay 어느 쪽이 먼저 오든 캡처한다.
 function LocalThumb({ file }) {
   const [url, setUrl] = useState(null)
   useEffect(() => {
-    let dead = false, src = URL.createObjectURL(file)
+    let dead = false, done = false
+    const src = URL.createObjectURL(file)
     const v = document.createElement('video')
-    v.muted = true; v.preload = 'metadata'; v.src = src
+    v.muted = true
+    v.playsInline = true
+    v.preload = 'auto'
     const grab = () => {
+      if (done || dead || !v.videoWidth) return
+      done = true
       try {
         const c = document.createElement('canvas')
-        c.width = 200; c.height = Math.round(200 * (v.videoHeight || 9) / (v.videoWidth || 16))
+        c.width = 200
+        c.height = Math.max(1, Math.round(200 * v.videoHeight / v.videoWidth))
         c.getContext('2d').drawImage(v, 0, 0, c.width, c.height)
-        if (!dead) setUrl(c.toDataURL('image/jpeg', 0.7))
-      } catch { /* 코덱을 브라우저가 못 열면 아이콘으로 남는다 */ }
+        setUrl(c.toDataURL('image/jpeg', 0.7))
+      } catch { /* 브라우저가 못 여는 코덱이면 아이콘으로 남는다 */ }
       URL.revokeObjectURL(src)
     }
-    v.onloadeddata = () => { v.currentTime = Math.min(0.5, (v.duration || 1) / 3) }
-    v.onseeked = grab
-    v.onerror = () => URL.revokeObjectURL(src)
-    return () => { dead = true; v.removeAttribute('src'); URL.revokeObjectURL(src) }
+    v.addEventListener('loadedmetadata', () => {
+      const t0 = Math.min(0.4, (v.duration || 1) / 4)
+      try { v.currentTime = t0 } catch { grab() }
+    })
+    v.addEventListener('seeked', grab)
+    v.addEventListener('canplay', grab)          // 탐색 이벤트가 안 오는 브라우저 대비
+    v.addEventListener('error', () => URL.revokeObjectURL(src))
+    v.src = src
+    return () => { dead = true; v.removeAttribute('src'); if (!done) URL.revokeObjectURL(src) }
   }, [file])
   return url ? <img className="vm-thumb" src={url} alt="" />
              : <div className="vm-thumb none"><IcVideo /></div>
 }
 
-
-// 서버에 저장된 영상의 첫 프레임 썸네일. 등록 직후에는 추출이 진행 중이라 아직 없을 수 있어
-// 실패하면 아이콘으로 되돌리고, 몇 초 뒤 한 번 더 시도한다.
 function ServerThumb({ src, alt }) {
   const [fail, setFail] = useState(0)
   useEffect(() => {
@@ -1721,7 +1745,7 @@ function CategorySelect({ value, onChange }) {
 // 영상 여러 개를 순차 업로드하고, 각 영상의 프레임 사전 추출이 끝날 때까지 기다린다.
 // 순차인 이유: 프레임 추출이 CPU(OpenCV)를 쓰므로 동시에 돌리면 서로 느려지고 진행 표시도 뒤섞인다.
 // 반환: [{name, ok, count, error}]
-async function uploadVideos(pid, files, onProgress = () => {}) {
+async function uploadVideos(pid, files, onProgress = () => {}, onFile = () => {}) {
   const out = []
   for (let i = 0; i < files.length; i++) {
     const f = files[i]
@@ -1732,13 +1756,16 @@ async function uploadVideos(pid, files, onProgress = () => {}) {
       .then(x => x.json()).catch(() => ({ error: '업로드 실패' }))
     if (v.error) { out.push({ name: f.name, ok: false, error: v.error }); continue }
     onProgress(`프레임 추출 중${tag}: ${f.name}`)
+    onFile(f.name, { stage: 'extract', count: 0, total: 0 })
     let done = null
     for (let k = 0; k < 900; k++) {                       // 최대 15분(긴 영상 대비)
       const s = await fetch(`/api/parts/job?job=${v.job}`).then(x => x.json()).catch(() => null)
       if (!s || s.error) break
+      onFile(f.name, { stage: s.stage, count: s.count || 0, total: s.total || 0 })
       if (!s.running) { done = s; break }
-      await new Promise(res => setTimeout(res, 1000))
+      await new Promise(res => setTimeout(res, 700))
     }
+    onFile(f.name, { stage: 'done', count: done?.count || 0, total: done?.count || 0 })
     if (done && !done.error) out.push({ name: f.name, ok: true, count: done.count })
     else out.push({ name: f.name, ok: !done, count: 0, error: done?.error || '추출 진행 중(백그라운드 계속)' })
   }
@@ -1767,7 +1794,8 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
   const [busy, setBusy] = useState('')                 // 진행 문구(등록·업로드·프레임 추출)
   const [msg, setMsg] = useState(null)                 // {ok|err, text}
   const [confirmDel, setConfirmDel] = useState(null)   // 삭제할 영상
-  const [openVid, setOpenVid] = useState(null)         // 미리보기 펼친 영상 stem
+  const [openVid, setOpenVid] = useState(null)
+  const [vidProg, setVidProg] = useState({})       // 파일별 프레임 추출 진행률         // 미리보기 펼친 영상 stem
   const [confirmDelPart, setConfirmDelPart] = useState(false)   // 이 부품 자체를 삭제
   const vidRef = useRef(null)
   const vidInput = useRef(null)
@@ -1816,7 +1844,8 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
         if (m.error) { setMsg({ ok: false, text: `부품은 등록됐지만 3D 모델 실패: ${m.error}` }); return }
       }
       if (vidFiles.length) {
-        const res = await uploadVideos(pid, vidFiles, setBusy)
+        const res = await uploadVideos(pid, vidFiles, setBusy,
+          (name, p) => setVidProg(m => ({ ...m, [name]: p })))
         const okN = res.filter(x => x.ok).length
         const frames = res.reduce((a, x) => a + (x.count || 0), 0)
         const fails = res.filter(x => !x.ok)
@@ -1873,7 +1902,8 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
     e.target.value = ''
     if (!files.length) return
     setMsg(null)
-    const res = await uploadVideos(editPart.id, files, setBusy)
+    const res = await uploadVideos(editPart.id, files, setBusy,
+      (name, p) => setVidProg(m => ({ ...m, [name]: p })))
     setBusy('')
     const okN = res.filter(x => x.ok).length
     const frames = res.reduce((a, x) => a + (x.count || 0), 0)
@@ -2017,7 +2047,7 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
                       <div className="vm-row" role="button" tabIndex={0}
                            onClick={() => setOpenVid(open ? null : key)}
                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenVid(open ? null : key) } }}>
-                        <LocalThumb file={f} />
+                        <VidThumb file={f} prog={vidProg[f.name]} />
                         <div className="vm-meta">
                           <b>{f.name}</b>
                           <span>{(f.size / 1048576).toFixed(1)} MB · 등록 시 프레임 추출</span>

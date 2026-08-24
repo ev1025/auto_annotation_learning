@@ -361,8 +361,10 @@ def _extract_worker(job: str, part_name: str, vp: Path) -> None:
     """등록 시점 프레임 사전 추출 + DB 동기화. 학습 화면에서 기다리지 않게 하는 핵심."""
     j = JOBS[job]
     try:
-        frames = autolabel._extract(vp, autolabel.cache_dir_of(vp))   # 저장소 한 곳(images/<stem>)
-        j.update(count=len(frames), stage="sync")
+        # 진행률을 잡에 기록한다(등록 화면이 % 로 보여준다)
+        frames = autolabel._extract(vp, autolabel.cache_dir_of(vp),
+                                    on_progress=lambda n, g: j.update(count=n, total=g, stage="extract"))
+        j.update(count=len(frames), total=len(frames), stage="sync")
         dbsync.sync_part(part_name)        # part_videos.n_frames·part_frames 행 생성
         j.update(stage="done", running=False)
     except Exception as e:   # noqa: BLE001

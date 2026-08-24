@@ -130,8 +130,11 @@ def _estimate_count(vp):
     stride = max(1, total // TARGET_FRAMES)
     return (total + stride - 1) // stride
 
-def _extract(vp, dest):
-    """영상 -> 서브샘플 프레임 컷(부품별 캐시 dest 로). 이미 있으면 그대로 반환."""
+def _extract(vp, dest, on_progress=None):
+    """영상 -> 서브샘플 프레임 컷(부품별 캐시 dest 로). 이미 있으면 그대로 반환.
+
+    on_progress(뽑은수, 목표수): 등록 화면이 % 를 보여줄 수 있게 중간 보고(선택).
+    """
     if _cached_frames(dest):
         return _cached_frames(dest)
     with _CUT_LOCK:
@@ -142,6 +145,9 @@ def _extract(vp, dest):
         total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         stride = max(1, total // TARGET_FRAMES) if total else 1
         i = out = 0
+        goal = (total // stride) if total else 0        # 뽑을 장수(진행률 분모)
+        if on_progress:
+            on_progress(0, goal)
         while True:
             ok, fr = cap.read()
             if not ok:
@@ -149,8 +155,12 @@ def _extract(vp, dest):
             if i % stride == 0:
                 cv2.imwrite(str(dest / f"{out:05d}.jpg"), fr)
                 out += 1
+                if on_progress and out % 10 == 0:
+                    on_progress(out, goal)
             i += 1
         cap.release()
+        if on_progress:
+            on_progress(out, goal or out)
     return _cached_frames(dest)
 
 def _frames(src):
