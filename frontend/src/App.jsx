@@ -1357,6 +1357,12 @@ function PartsApp({ onPrep, active }) {
 
   // ── 학습 완료 후: 평가(compare) 단계 진행/표시 ──
   const trainDone = status?.stage === 'done' && !status?.error
+  // 학습이 끝나면 비교를 자동으로 시작한다(버튼을 누르지 않아도 되게).
+  // cmpJob 이 없을 때만 1회 — 재실행은 평가 화면의 다시 비교 버튼이 맡는다.
+  useEffect(() => {
+    if (trainDone && !cmpJob) runCompare(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trainDone, cmpJob])
   const cmpDone = cmp?.stage === 'done'
   const cmpPct = cmpDone ? 100 : Math.round((cmp?.compare_frac || 0) * 100)
   const cmpTitle = cmpDone ? '모델 평가 완료'

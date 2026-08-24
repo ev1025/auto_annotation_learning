@@ -737,7 +737,7 @@ class _Cancelled(Exception):
     안 멈춘다) 배치 콜백에서 이 예외를 올려 학습 루프를 즉시 빠져나온다."""
 
 
-def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
+def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, replay_served=False):
     """세션에 누적된 per-part 라벨(class 0) → 영상명→부품→클래스 remap → YOLO 학습 → 검출 평가.
     only_classes 지정 시 그 클래스만 학습. augment=True면 학습 전 배경 합성 증강 추가."""
     j = JOBS[job_id]
@@ -791,16 +791,20 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
         oi, ol = sess / "train" / "images", sess / "train" / "labels"
         oi.mkdir(parents=True, exist_ok=True); ol.mkdir(parents=True, exist_ok=True)
         sel = set(only_classes) if only_classes else None    # 선택한 클래스만 학습(없으면 전체)
-        # 망각 방지(리플레이): 부분 선택 시에도 현재 서비스 모델이 가진 기존 부품을 자동 포함.
-        # 매 학습이 from-scratch라, 신규만 고르면 기존을 잊는다.
+        # 고른 것만 학습한다. 화면에서 부품을 고르는 의미가 사라지면 안 된다(사용자 지시).
+        # 학습은 매번 from-scratch 라 고르지 않은 부품은 이 모델에서 사라진다. 그래서 경고만 남기고,
+        # 되넣기(리플레이)는 replay=True 로 요청할 때만 한다. 적용 전에 평가 화면이 비교로 잡는다.
         replay = set()
         if sel is not None:
             sv = served_model()
-            if sv:
-                replay = set(sv.get("classes", [])) - sel
-                if replay:
-                    sel = sel | replay
-                    logln(f"망각 방지: 기존 서비스 모델 부품 {len(replay)}종을 학습에 자동 포함", "info")
+            gone = (set(sv.get("classes", [])) - sel) if sv else set()
+            if gone and replay_served:
+                replay = gone
+                sel = sel | replay
+                logln(f"망각 방지: 기존 서비스 모델 부품 {len(replay)}종을 학습에 자동 포함", "info")
+            elif gone:
+                logln(f"선택한 {len(sel)}종만 학습합니다. 서비스 모델의 나머지 {len(gone)}종은 "
+                      f"이 모델에서 빠집니다(적용 화면에서 비교 후 결정)", "info")
         per, miss = {}, {}
         input_cnt = 0        # 선택한 클래스의 자동생성 라벨(입력 데이터) 총수
         drop_noimg = 0       # 대응 이미지 없음으로 산입 제외
@@ -1056,7 +1060,7 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
         _BUSY["on"] = False
         gc.collect(); torch.cuda.empty_cache()
 
-def start_multiclass(session, epochs, only_classes=None, augment=False):
+def start_multiclass(session, epochs, only_classes=None, augment=False, replay_served=False):
     with _LOCK:
         if _BUSY["on"]:
             return {"error": "이미 실행 중입니다."}
@@ -1066,7 +1070,7 @@ def start_multiclass(session, epochs, only_classes=None, augment=False):
     JOBS[jid] = {"stage": "start", "running": True, "error": None, "log": [], "curve": []}
     _ACTIVE.update(job=jid, kind="multiclass", session=session)
     threading.Thread(target=_run_multiclass,
-                     args=(jid, session, int(epochs or EPOCHS), only_classes or None, bool(augment)),
+                     args=(jid, session, int(epochs or EPOCHS), only_classes or None, bool(augment), bool(replay_served)),
                      daemon=True).start()
     return {"job": jid}
 
