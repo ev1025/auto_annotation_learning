@@ -1428,7 +1428,9 @@ def _run_compare(job_id, session, base_model_id=None):
         j.update(stage="done", running=False, session=session,
                  new_label=new_label, base_label=base_label,
                  baseline={"session": base["session"] if base else None, "n_classes": len(base_classes)},
-                 gen={"before": gen_before, "after": gen_after, "n": len(base_rows)},
+                 # n = 실제로 검사한 표본 종수, n_total = 기존 모델이 가진 전체 종수(표본만 재는 이유는 시간)
+                 gen={"before": gen_before, "after": gen_after, "n": len(base_rows),
+                      "n_total": len(base_classes)},
                  newp={"before": newp_before, "after": newp_after, "n": len(new_rows)},
                  rows=rows, samples=samples, recommend=reco)
     except Exception as e:

@@ -719,14 +719,16 @@ function VerCard({ tag, cls, id, time, classes, map50, baseSet, highlightNew }) 
 
 // 스코어 타일(모던 SaaS 위젯): 상단 제목·종수(좌) + 증감 뱃지(우), 중앙 큰 숫자(무채색), 하단 이전값(옅게).
 // 하락 경고(≤-10%p)는 배경/숫자색이 아니라 카드 왼쪽 빨간 포인트선(inset)으로만 은은하게 표시.
-function ScoreTile({ label, n, before, after, pctv, deltaEl, warnDown }) {
+function ScoreTile({ label, n, nTotal, before, after, pctv, deltaEl, warnDown }) {
   const d = (before != null && after != null) ? Math.round((after - before) * 100) : null
   const bad = warnDown && d != null && d <= -10
   return (
     <div className={`score-tile${bad ? ' bad' : ''}`}>   {/* GA 카드: 헤더(이름·종) · 현재값+등락 */}
       <div className="score-head">
         <span className="score-title">{label}</span>
-        {n != null && <span className="score-n">{n}종</span>}     {/* 종 개수는 헤더 우측 */}
+        {n != null && (   /* 기존 부품은 시간을 아끼려 표본만 검사한다 -> 표본/전체를 함께 적는다 */
+          <span className="score-n">{nTotal && nTotal > n ? `표본 ${n}/${nTotal}종` : `${n}종`}</span>
+        )}
       </div>
       {after == null ? (                          /* 신규 모델 결과 자체가 없음 */
         <div className="score-na">비교 대상 없음 · 첫 배포</div>
@@ -1436,7 +1438,7 @@ function PartsApp({ onPrep, active }) {
                         </section>
                       )}
                       <section className="scoreboard">
-                        <ScoreTile label="기존 부품 인식" n={cmp.gen?.n ?? 0}
+                        <ScoreTile label="기존 부품 인식" n={cmp.gen?.n ?? 0} nTotal={cmp.gen?.n_total}
                                    before={cmp.gen?.before} after={cmp.gen?.after} pctv={pctv} deltaEl={deltaEl} warnDown />
                         <ScoreTile label="신규 부품 인식" n={cmp.newp?.n ?? 0}
                                    before={cmp.newp?.before} after={cmp.newp?.after} pctv={pctv} deltaEl={deltaEl} />

@@ -34,6 +34,7 @@ services:
     depends_on:
       db: { condition: service_healthy }
     environment:
+      TZ: Asia/Seoul                   # 컨테이너 기본이 UTC 라 모델 버전 시각이 9시간 빨랐다
       XR_DB_HOST: db                   # 컨테이너 이름으로 접속(127.0.0.1 아님)
       XR_DB_PORT: 5432
       XR_DB_NAME: ${XR_DB_NAME:-xr_autolearning}
@@ -70,6 +71,7 @@ services:
     environment:
       # 컨테이너가 나뉘어 있으니 앱이 복사해 주는 backend/yolo_server/model.pt 를 볼 수 없다.
       # 대신 공유 볼륨의 고정 경로를 직접 읽는다(앱이 '적용' 시 여기에 써 넣고 /reload 를 호출).
+      TZ: Asia/Seoul                   # 컨테이너 기본이 UTC 라 모델 버전 시각이 9시간 빨랐다
       SERVE_MODEL_FILE: /app/models/model.pt
     ports:
       - "9412:9412"
