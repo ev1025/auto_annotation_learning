@@ -978,6 +978,47 @@ function ConfirmModal({ open, title, message, confirmLabel, danger, alertOnly, o
   )
 }
 
+
+// 업로드 전 로컬 영상 파일의 썸네일. 서버에 아직 없으니 브라우저에서 한 프레임을 그려 쓴다.
+function LocalThumb({ file }) {
+  const [url, setUrl] = useState(null)
+  useEffect(() => {
+    let dead = false, src = URL.createObjectURL(file)
+    const v = document.createElement('video')
+    v.muted = true; v.preload = 'metadata'; v.src = src
+    const grab = () => {
+      try {
+        const c = document.createElement('canvas')
+        c.width = 200; c.height = Math.round(200 * (v.videoHeight || 9) / (v.videoWidth || 16))
+        c.getContext('2d').drawImage(v, 0, 0, c.width, c.height)
+        if (!dead) setUrl(c.toDataURL('image/jpeg', 0.7))
+      } catch { /* 코덱을 브라우저가 못 열면 아이콘으로 남는다 */ }
+      URL.revokeObjectURL(src)
+    }
+    v.onloadeddata = () => { v.currentTime = Math.min(0.5, (v.duration || 1) / 3) }
+    v.onseeked = grab
+    v.onerror = () => URL.revokeObjectURL(src)
+    return () => { dead = true; v.removeAttribute('src'); URL.revokeObjectURL(src) }
+  }, [file])
+  return url ? <img className="vm-thumb" src={url} alt="" />
+             : <div className="vm-thumb none"><IcVideo /></div>
+}
+
+
+// 서버에 저장된 영상의 첫 프레임 썸네일. 등록 직후에는 추출이 진행 중이라 아직 없을 수 있어
+// 실패하면 아이콘으로 되돌리고, 몇 초 뒤 한 번 더 시도한다.
+function ServerThumb({ src, alt }) {
+  const [fail, setFail] = useState(0)
+  useEffect(() => {
+    if (fail !== 1) return
+    const t = setTimeout(() => setFail(2), 4000)      // 추출 대기 후 재시도
+    return () => clearTimeout(t)
+  }, [fail])
+  if (fail === 1) return <div className="vm-thumb none"><IcVideo /></div>
+  return <img className="vm-thumb" loading="lazy" alt={alt} onError={() => setFail(1)}
+              src={`/api/autolabel/frame?src=${encodeURIComponent(src)}&idx=0&w=200&r=${fail}`} />
+}
+
 function PartsApp({ onPrep, active }) {
   const [folders, setFolders] = useState([])
   // F5 복구용: page·job·cmpJob·session을 세션스토리지에서 초기화(같은 탭 새로고침이면 있던 자리로 복원)
@@ -1880,7 +1921,8 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
       </div>
       <div className="reg-form">
         {/* 2열: 왼쪽 = 식별 정보(이름·카테고리·설명), 오른쪽 = 첨부(3D·동영상) */}
-        <div className="reg-grid">
+        <div className="reg-scroll">
+      <div className="reg-grid">
           {/* 왼쪽: 이름 / 카테고리 / 설명(남는 높이 전체) 세로 배열 */}
           <div className="reg-col">
             <div className="reg-field">
@@ -1975,7 +2017,7 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
                       <div className="vm-row" role="button" tabIndex={0}
                            onClick={() => setOpenVid(open ? null : key)}
                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenVid(open ? null : key) } }}>
-                        <div className="vm-thumb none"><IcVideo /></div>
+                        <LocalThumb file={f} />
                         <div className="vm-meta">
                           <b>{f.name}</b>
                           <span>{(f.size / 1048576).toFixed(1)} MB · 등록 시 프레임 추출</span>
@@ -2007,10 +2049,7 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
                           <div className="vm-row" role="button" tabIndex={0}
                                onClick={() => setOpenVid(open ? null : v.stem)}
                                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenVid(open ? null : v.stem) } }}>
-                            {v.frames
-                              ? <img className="vm-thumb" loading="lazy" alt={v.stem}
-                                     src={`/api/autolabel/frame?src=${encodeURIComponent(v.src)}&idx=0&w=200`} />
-                              : <div className="vm-thumb none"><IcVideo /></div>}
+                            <ServerThumb src={v.src} alt={v.stem} />
                             <div className="vm-meta">
                               <b>{v.stem}</b>
                               <span>프레임 {v.frames}장{v.size_mb != null ? ` · ${v.size_mb} MB` : ''}</span>
@@ -2035,7 +2074,8 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
         </div>
 
         {msg && <div className={`reg-msg ${msg.ok ? 'ok' : 'err'}`}>{msg.text}</div>}
-        <div className="reg-actions">
+        </div>
+      <div className="reg-actions">
           {busy && <span className="reg-busy"><span className="spinner" />{busy}</span>}
           <button className="act-btn train" type="button" disabled={!name.trim() || !!busy}
                   onClick={editing ? save : create}>

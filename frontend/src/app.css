@@ -432,18 +432,18 @@ button.prep-chip:hover { border-color: var(--accent); }
 /* 폼이 카드 높이를 채우고, 액션(저장·등록)은 맨 아래 우측으로 밀린다 */
 .reg-form { display: flex; flex-direction: column; gap: var(--sp-10); flex: 1; min-height: 0; }
 /* 2열: 왼쪽 식별정보(넓게) · 오른쪽 첨부. max-width 를 걸면 오른쪽이 텅 비어 보였다 */
-/* grid-template-rows: minmax(0,1fr) 이 없으면 행 높이가 콘텐츠(영상 미리보기) 만큼 늘어나
-   목록이 카드 밖·저장 버튼 위까지 밀려나온다. 자식 열에도 min-height:0 이 필요하다. */
+/* 행 높이를 1fr 로 고정했더니 영상 목록·3D 미리보기가 카드 높이에 눌려 아래쪽 항목이
+   잘려 보이지 않았다(사용자 지적). 내용 높이대로 늘리고 페이지가 스크롤되게 한다. */
 .reg-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr); gap: var(--sp-12);
-  align-items: stretch; flex: 1; min-height: 0; }
+  grid-template-rows: auto; gap: var(--sp-12);
+  align-items: start; flex: 1; min-height: 0; }
 .reg-col { display: flex; flex-direction: column; gap: var(--sp-10); min-width: 0; min-height: 0; }
 /* 설명이 왼쪽 열의 남는 높이를 전부 차지 */
 .reg-desc-field { flex: 1; min-height: 0; }
 .reg-desc-field .reg-textarea { flex: 1; min-height: 140px; resize: none; }
 /* 오른쪽 열: 영상 영역이 남는 높이를 채워 왼쪽 설명과 같은 지점에서 끝난다(아래가 비어 보이던 문제) */
 .reg-vid-field { flex: 1; min-height: 0; }
-.grow { flex: 1; min-height: 0; overflow-y: auto; }
+.grow { flex: 1; min-height: 0; }        /* 잘리지 않게: 안쪽 스크롤 대신 내용만큼 늘어난다 */
 .vm-empty.grow { display: flex; align-items: center; justify-content: center; }
 .reg-actions { margin-top: auto; }            /* 카드 맨 아래로 */
 @media (max-width: 1000px) { .reg-grid { grid-template-columns: 1fr; } }
@@ -1063,3 +1063,7 @@ button.prep-chip:hover { border-color: var(--accent); }
   .pb-btn.ico { min-width: 44px; }
   .frame-jump input, .ep-in { min-height: 44px; font-size: 16px; }       /* 16px 미만이면 브라우저가 확대 */
 }
+
+/* 등록·수정 화면: 3D 미리보기 + 영상 목록이 길어지면 화면 안에서 스크롤(항목이 잘리지 않게).
+   카드 높이는 고정이라(상단 탭 유지) 스크롤 컨테이너는 이 본문 하나로 둔다. */
+.reg-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
