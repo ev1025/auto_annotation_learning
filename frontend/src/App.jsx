@@ -979,18 +979,16 @@ function ConfirmModal({ open, title, message, confirmLabel, danger, alertOnly, o
 }
 
 
-// 등록 행의 썸네일 자리. 프레임 추출 중이면 진행률(%)을 돌리고, 그 외에는 로컬 썸네일을 보여준다.
-function VidThumb({ file, prog }) {
-  if (prog && prog.stage !== 'done') {
-    const pct = prog.total ? Math.min(99, Math.round(prog.count / prog.total * 100)) : null
-    return (
-      <div className="vm-thumb none vm-thumb-prog">
-        <span className="prep-spin" aria-hidden="true" />
-        <b>{pct == null ? '준비' : `${pct}%`}</b>
-      </div>
-    )
-  }
-  return <LocalThumb file={file} />
+// 고른 3D 파일을 저장 전에 바로 보여준다. 파일당 objectURL 한 번만 만들고 바뀔 때 해제한다.
+function LocalModel({ file }) {
+  const [url, setUrl] = useState(null)
+  useEffect(() => {
+    const u = URL.createObjectURL(file)
+    setUrl(u)
+    return () => URL.revokeObjectURL(u)
+  }, [file])
+  if (!url) return null
+  return <model-viewer class="reg-3d-view" camera-controls auto-rotate alt={file.name} src={url} />
 }
 
 // 업로드 전 로컬 영상 파일의 썸네일. 서버에 아직 없으니 브라우저에서 한 프레임을 그려 쓴다.
@@ -1981,18 +1979,20 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
                   <IcCube />
                   <div className="reg-drop-txt">
                     <b>{m3dFile ? m3dFile.name : (editing && editPart.has_model3d ? '3D 모델 등록됨' : '3D 모델 불러오기')}</b>
-                    <p>{m3dFile ? `${(m3dFile.size / 1048576).toFixed(1)} MB · 저장 시 반영`
-                                : '클릭하여 .glb · .obj · .stl · .ply 파일 선택'}</p>
                   </div>
+                  <span className="vm-size">{m3dFile ? `${(m3dFile.size / 1048576).toFixed(1)} MB`
+                                                     : '.glb · .obj · .stl'}</span>
                 </button>
               </div>
 
               {/* 등록된 3D 를 칸 아래에 그림만 띄운다. glb 는 이미지가 아니라 3D 라 뷰어가 필요하다 */}
-              {editing && editPart.has_model3d && !m3dFile && (
-                <model-viewer class="reg-3d-view" camera-controls auto-rotate
-                              alt={`${editPart.name} 3D 모델`}
-                              src={`/api/xr/parts/${encodeURIComponent(editPart.name)}/model3d`} />
-              )}
+              {m3dFile
+                ? <LocalModel file={m3dFile} />                       /* 고른 파일을 저장 전에 미리 본다 */
+                : editing && editPart.has_model3d && (
+                    <model-viewer class="reg-3d-view" camera-controls auto-rotate
+                                  alt={`${editPart.name} 3D 모델`}
+                                  src={`/api/xr/parts/${encodeURIComponent(editPart.name)}/model3d`} />
+                  )}
             </div>
 
             <div className="reg-field reg-vid-field">
@@ -2011,10 +2011,10 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
                   <IcVideo />
                   <div className="reg-drop-txt">
                     <b>{!editing && vidFiles.length ? `동영상 ${vidFiles.length}개 선택됨` : '부품 동영상 추가'}</b>
-                    <p>{!editing && vidFiles.length
-                          ? `${(vidFiles.reduce((a, f) => a + f.size, 0) / 1048576).toFixed(1)} MB · 등록 시 프레임을 미리 추출합니다`
-                          : '클릭하여 동영상 업로드(여러 개 선택 가능) 또는 직접 촬영'}</p>
                   </div>
+                  <span className="vm-size">{!editing && vidFiles.length
+                    ? `${(vidFiles.reduce((a, f) => a + f.size, 0) / 1048576).toFixed(1)} MB`
+                    : '업로드 · 직접 촬영'}</span>
                   <IcChevronDown />
                 </button>
                 {vidMenu && (
@@ -2047,11 +2047,11 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
                       <div className="vm-row" role="button" tabIndex={0}
                            onClick={() => setOpenVid(open ? null : key)}
                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenVid(open ? null : key) } }}>
-                        <VidThumb file={f} prog={vidProg[f.name]} />
-                        <div className="vm-meta">
+                        <LocalThumb file={f} />
+                        <div className="vm-meta one">
                           <b>{f.name}</b>
-                          <span>{(f.size / 1048576).toFixed(1)} MB · 등록 시 프레임 추출</span>
                         </div>
+                        <span className="vm-size">{(f.size / 1048576).toFixed(1)} MB</span>
                         <span className={`vm-caret${open ? ' on' : ''}`}><IcChevronDown /></span>
                         <button type="button" className="csel-ic del" title="목록에서 제거"
                                 onClick={e => { e.stopPropagation(); setOpenVid(o => o === key ? null : o); setVidFiles(vidFiles.filter((_, k) => k !== i)) }}><IcX /></button>
@@ -2080,10 +2080,10 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
                                onClick={() => setOpenVid(open ? null : v.stem)}
                                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenVid(open ? null : v.stem) } }}>
                             <ServerThumb src={v.src} alt={v.stem} />
-                            <div className="vm-meta">
+                            <div className="vm-meta one">
                               <b>{v.stem}</b>
-                              <span>프레임 {v.frames}장{v.size_mb != null ? ` · ${v.size_mb} MB` : ''}</span>
                             </div>
+                            <span className="vm-size">{v.frames}장{v.size_mb != null ? ` · ${v.size_mb} MB` : ''}</span>
                             <span className={`vm-caret${open ? ' on' : ''}`}><IcChevronDown /></span>
                             <button className="csel-ic del" type="button" disabled={!!busy} title="이 영상 삭제"
                                     onClick={e => { e.stopPropagation(); setConfirmDel(v) }}><IcTrash /></button>
@@ -2106,7 +2106,12 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
         {msg && <div className={`reg-msg ${msg.ok ? 'ok' : 'err'}`}>{msg.text}</div>}
         </div>
       <div className="reg-actions">
-          {busy && <span className="reg-busy"><span className="spinner" />{busy}</span>}
+          {(() => {                                  // 프레임 추출 진행률: 등록 버튼 왼쪽에 % 로만
+            const act = Object.values(vidProg).filter(p => p && p.stage !== 'done' && p.total)
+            if (!act.length) return busy ? <span className="reg-busy"><span className="spinner" />{busy}</span> : null
+            const pct = Math.min(99, Math.round(act.reduce((a, p) => a + p.count / p.total, 0) / act.length * 100))
+            return <span className="reg-busy">프레임 추출 {pct}%</span>
+          })()}
           <button className="act-btn train" type="button" disabled={!name.trim() || !!busy}
                   onClick={editing ? save : create}>
             {editing ? '저장' : '부품 등록'}
