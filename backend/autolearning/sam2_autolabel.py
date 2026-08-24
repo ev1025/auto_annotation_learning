@@ -517,7 +517,7 @@ OCCL_P = 0.5              # 합성 객체 중 절반은 판넬로 부분 가림(
 OCCL_FRAC = (0.35, 0.8)   # 가림 판넬 폭 = 부품 박스 폭의 35~80%
 
 
-def _synth_augment(oi, ol, logln, n_syn=400):
+def _synth_augment(oi, ol, logln, n_syn=400, cancelled=None):
     """멀티클래스 학습셋(oi/ol)의 객체를 SAM2로 누끼 → 실배경에 copy-paste 합성 n_syn장 추가.
     배경 과적합을 줄이는 opt-in 증강. 라벨의 원래 클래스 idx를 유지한다. (run_augtrain 로직을 멀티클래스로 일반화)"""
     import random
@@ -586,7 +586,9 @@ def _synth_augment(oi, ol, logln, n_syn=400):
     logger.info(f"[synth] 누끼 대상 {len(picked)}장 선별(부품당 최대 {CUT_PER_CLASS})")
     cuts, hit, miss = [], 0, 0
     pred = None
-    for ip, lp, ci in picked:
+    for _k, (ip, lp, ci) in enumerate(picked):
+        if cancelled and _k % 20 == 0 and cancelled():
+            raise _Cancelled
         cache = CUTS_DIR / f"{ip.stem}.png"
         if cache.exists() and cache.stat().st_mtime >= lp.stat().st_mtime:
             rgba = cv2.imread(str(cache), cv2.IMREAD_UNCHANGED)
@@ -632,6 +634,8 @@ def _synth_augment(oi, ol, logln, n_syn=400):
     # 2) 합성: 배경에 1~2개 랜덤 붙여넣기(회전·스케일), 멀티클래스 라벨 기록
     made = 0
     for k in range(n_syn):
+        if cancelled and k % 50 == 0 and cancelled():
+            raise _Cancelled
         bg = _prep_bg(random.choice(bgs)); H, W = bg.shape[:2]; labels = []
         for _ in range(1 if random.random() > 0.25 else 2):
             ci = random.choice(list(by_cls))          # 클래스 먼저 균등하게, 그 안에서 객체
@@ -844,7 +848,9 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
         # 없으면 모델이 처음 보는 장면에서 36개 중 가장 비슷한 걸 골라 버린다(사무실 시리얼 사진을
         # gearbox 0.85 로 잡던 사고). 권장 비율은 학습셋의 10% 안쪽.
         n_bg = 0
-        for bp in sorted((config.DATA_DIR / "bell412" / "_negatives" / "images").glob("*.jpg")):
+        for _k, bp in enumerate(sorted((config.DATA_DIR / "bell412" / "_negatives" / "images").glob("*.jpg"))):
+            if _k % 100 == 0 and j.get("cancel"):
+                raise _Cancelled
             shutil.copy(bp, oi / f"bg_{bp.stem}.jpg")         # 라벨 파일을 쓰지 않는다 = 배경
             n_bg += 1
         if n_bg:
@@ -873,7 +879,7 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
         n_aug = 0
         if augment:
             j.update(note="배경 합성 증강 생성 중")
-            n_aug = _synth_augment(oi, ol, logln) or 0
+            n_aug = _synth_augment(oi, ol, logln, cancelled=lambda: bool(j.get("cancel"))) or 0
 
         # 2) 학습
         from ultralytics import YOLO
@@ -1064,13 +1070,20 @@ def start_multiclass(session, epochs, only_classes=None, augment=False):
                      daemon=True).start()
     return {"job": jid}
 
-def cancel_multiclass(job):
-    """학습 중단 요청(다음 배치/에폭 경계에서 정지)."""
+def cancel_multiclass(job=None):
+    """학습 중단 요청. 배치 콜백이 이 표시를 보고 즉시 예외로 빠져나온다.
+
+    화면을 새로 열거나 탭을 옮기면 프론트가 job id 를 잃는다. 그때도 멈춰야 하므로
+    id 가 없거나 모르는 값이면 진행 중인 잡(_ACTIVE)을 대상으로 삼는다.
+    """
     j = JOBS.get(job)
     if not j:
-        return {"error": "unknown job"}
+        job = _ACTIVE.get("job")
+        j = JOBS.get(job)
+    if not j:
+        return {"error": "진행 중인 학습이 없습니다."}
     j["cancel"] = True
-    return {"ok": True}
+    return {"ok": True, "job": job, "stage": j.get("stage")}
 
 # ==================== 3단계: 모델 평가·적용 (A/B 비교 → 서비스 적용/롤백) ====================
 def weights_of(runid):

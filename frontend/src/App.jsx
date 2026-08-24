@@ -41,7 +41,7 @@ const partOf = (rel) => { const p = rel.replace(/\/videos$/, '').split('/'); ret
 // 부품 라벨링(SAM2): 데이터셋(그룹)→부품(폴더) 순회. 부품마다 학습 테이크 탭 → 입력 마스크 확인 → 라벨 생성 → 다음 부품
 // onPrep: 전체 프레임 미리 컷 진행상황을 화면 제목줄(PageHead)로 올려 보낸다.
 // 예전에는 색상 범례 줄 오른쪽에 끼워 넣어 배경작업 상태가 범례처럼 보였다.
-function AutoLabelView({ onPrep }) {
+function AutoLabelView({ onPrep, active }) {
   const [folders, setFolders] = useState([])        // [{folder,label,videos:[{name,count,ready}]}]
   const [partIdx, setPartIdx] = useState(0)         // 부품(폴더) 인덱스
   const [takeIdx, setTakeIdx] = useState(0)         // (구) 학습 테이크 인덱스
@@ -149,6 +149,9 @@ function AutoLabelView({ onPrep }) {
   }, [])
   useEffect(() => { loadFolders() }, [loadFolders])
   useEffect(() => { loadSessions() }, [loadSessions])
+  useEffect(() => {                       // 탭을 다시 열 때마다 갱신(그 사이 등록한 부품 반영)
+    if (active) { loadFolders(); loadSessions() }
+  }, [active, loadFolders, loadSessions])
 
   useEffect(() => {   // 폴더 로드되면 부품 전체 프레임 미리 컷(1회, 백그라운드) — 탭 전에 자동 준비
     if (!folders.length || preppedRef.current.has('all')) return
@@ -975,7 +978,7 @@ function ConfirmModal({ open, title, message, confirmLabel, danger, alertOnly, o
   )
 }
 
-function PartsApp({ onPrep }) {
+function PartsApp({ onPrep, active }) {
   const [folders, setFolders] = useState([])
   // F5 복구용: page·job·cmpJob·session을 세션스토리지에서 초기화(같은 탭 새로고침이면 있던 자리로 복원)
   const [session, setSession] = useState(() => sessionStorage.getItem('xr_session') || null)
@@ -1260,8 +1263,14 @@ function PartsApp({ onPrep }) {
     flashSvc(`신규 모델을 적용했습니다 · 현재 서비스 모델 ${s?.label || r.session || target}`)
   }
   const doCancel = async () => {   // 학습 중단
-    if (!job || job === 'err') return
-    await fetch('/api/sam2/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job }) }).catch(() => {})
+    // job id 를 잃은 상태(화면 재진입·탭 이동)에서도 보낸다. 서버가 진행 중인 잡을 찾아 멈춘다.
+    const r = await fetch('/api/sam2/cancel', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job: job && job !== 'err' ? job : null }),
+    }).then(x => x.json()).catch(() => ({ error: '중단 요청 실패' }))
+    if (r.error) { notify(r.error); return }
+    // 중단은 배치 콜백에서 잡히므로 1~2초 안에 stage 가 cancelled 로 바뀐다. 폴링이 받아 화면을 정리한다.
+    fetch('/api/sam2/active').then(x => x.json()).then(a => { if (!a?.running) setJob(null) }).catch(() => {})
   }
 
   const ep = status?.epoch || 0
@@ -1336,7 +1345,7 @@ function PartsApp({ onPrep }) {
                         부품 학습<IcChevronRight />
                       </button>
                     </>} />
-          <AutoLabelView onPrep={onPrep} />
+          <AutoLabelView onPrep={onPrep} active={active} />
         </>
       ) : page === 'training' ? (
         // ===== 2단계: 학습 (설정 → 진행 → 결과 요약) =====
@@ -2175,7 +2184,7 @@ export default function App() {
   const dropEdit = (id) => setEditPart(p => (p && p.id === id ? null : p))
   const view = (id) => id === 'register' ? <RegisterPart editPart={editPart} onExitEdit={() => setEditPart(null)} onSaved={doneEdit} onDeleted={doneEdit} />
                      : id === 'list' ? <PartList onEdit={openEdit} onDeleted={dropEdit} active={tab === 'list'} flash={flash} onFlashDone={() => setFlash(null)} />
-                     : <PartsApp onPrep={setPrep} />
+                     : <PartsApp onPrep={setPrep} active={tab === 'train'} />
   return (
     <main className="solo">
       <div className="apptabs">
