@@ -1952,12 +1952,6 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
             ? '부품 정보를 수정하고 등록된 영상을 확인·삭제·추가합니다.'
             : '부품 정보와 3D 모델·동영상을 등록합니다.'}</p>
         </div>
-        {editing && (
-          <div className="tab-head-actions">
-            <button className="act-btn dline" type="button" onClick={() => setConfirmDelPart(true)}><IcTrash /> 부품 삭제</button>
-            <button className="act-btn neutral" type="button" onClick={onExitEdit}>+ 새 부품 등록</button>
-          </div>
-        )}
       </div>
       <div className="reg-form">
         {/* 2열: 왼쪽 = 식별 정보(이름·카테고리·설명), 오른쪽 = 첨부(3D·동영상) */}
@@ -1987,7 +1981,8 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
                      onChange={e => setM3dFile(e.target.files?.[0] || null)} />
               {/* 등록된 3D 는 칸 아래에 작게 띄운다. glb 는 이미지가 아니라 3D 라 뷰어가 필요하다 */}
               <div className="reg-3d-wrap">
-                <button type="button" className="reg-drop" onClick={() => m3dInput.current?.click()}>
+                <button type="button" className={`reg-drop${m3dFile || (editing && has3d) ? ' has-del' : ''}`}
+                        onClick={() => m3dInput.current?.click()}>
                   <IcCube />
                   <div className="reg-drop-txt">
                     <b>{m3dFile ? m3dFile.name : (editing && has3d ? '3D 모델 등록됨' : '3D 모델 불러오기')}</b>
@@ -2025,17 +2020,19 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
                      style={{ display: 'none' }}
                      onChange={editing ? addVideos : pickVideos} />
               <div className="reg-vidwrap" ref={vidRef}>
-                <button type="button" className="reg-drop" onClick={() => setVidMenu(v => !v)} aria-expanded={vidMenu}>
+                <button type="button" className="reg-drop"
+                        onClick={() => (IS_TOUCH ? setVidMenu(v => !v) : vidInput.current?.click())}
+                        aria-expanded={IS_TOUCH ? vidMenu : undefined}>
                   <IcVideo />
                   <div className="reg-drop-txt">
                     <b>{!editing && vidFiles.length ? `동영상 ${vidFiles.length}개 선택됨` : '부품 동영상 추가'}</b>
                   </div>
                   <span className="vm-size">{!editing && vidFiles.length
                     ? `${(vidFiles.reduce((a, f) => a + f.size, 0) / 1048576).toFixed(1)} MB`
-                    : '업로드 · 직접 촬영'}</span>
-                  <IcChevronDown />
+                    : '.mp4 · .mov'}</span>
+                  {IS_TOUCH && <IcChevronDown />}
                 </button>
-                {vidMenu && (
+                {IS_TOUCH && vidMenu && (
                   <div className="reg-vidpop">
                     <button className="reg-vopt" type="button" onClick={() => { setVidMenu(false); vidInput.current?.click() }}>
                       <IcVideo /><div><b>동영상 업로드</b><span>.mp4 · .mov 파일 선택(여러 개)</span></div>
@@ -2137,6 +2134,10 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
               </span>
             )
           })()}
+          {editing && (
+            <button className="act-btn dline" type="button" disabled={!!busy}
+                    onClick={() => setConfirmDelPart(true)}><IcTrash /> 부품 삭제</button>
+          )}
           {editing && (
             <button className="act-btn ghost" type="button" disabled={!!busy} onClick={onExitEdit}>
               취소

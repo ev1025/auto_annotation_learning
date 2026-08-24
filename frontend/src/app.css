@@ -1079,4 +1079,6 @@ button.prep-chip:hover { border-color: var(--accent); }
 
 /* 3D 칸의 제거(X): 버튼 밖 오른쪽에 겹쳐 둔다(파일 선택 클릭과 충돌하지 않게) */
 .reg-3d-wrap { position: relative; }
-.reg-3d-del { position: absolute; top: 50%; right: var(--sp-4); transform: translateY(-50%); }
+.reg-3d-del { position: absolute; top: 50%; right: var(--sp-5); transform: translateY(-50%); }
+/* 휴지통이 겹치지 않게 버튼 오른쪽에 자리를 비워 둔다 */
+.reg-drop.has-del { padding-right: 44px; }
