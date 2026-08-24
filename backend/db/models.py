@@ -83,7 +83,7 @@ class PartVideo(Base):
     """부품 촬영 테이크. 부품 1개에 영상 N개라서 별도 테이블이 필요하다.
 
     role 은 항상 'train' 이다. 파일명으로 학습/평가를 가르던 규칙은 제거했고(2026-08-14),
-    평가용 영상은 제품 밖(data/_eval/<부품>)에 따로 둔다. 컬럼은 과거 행 호환으로 남겨둔다."""
+    평가용 영상은 부품 폴더 안 eval/ 에 따로 둔다. 컬럼은 과거 행 호환으로 남겨둔다."""
     __tablename__ = "part_videos"
     __table_args__ = (UniqueConstraint("part_id", "stem", name="uq_part_video_stem"),)
 

@@ -672,14 +672,12 @@ def _synth_augment(oi, ol, logln, n_syn=400):
           + (f" (판넬 가림 {len(occs)}종 적용)" if occs else " (가림 누끼 없음)"), "ok")
     return made
 
-# ---- 내부 평가용 영상(제품 로직 밖) ----
-# data/_eval/<부품>/*.mp4 : 성능 확인용 미학습 영상. '_' 로 시작해 autolabel._videos() 인덱스에서
-# 빠지므로 등록·목록·학습 화면에는 보이지 않는다. 프레임 저장소 규칙은 부품 영상과 같다
-# (results/autolabels/<부품>/images/<stem>) — cache_dir_of 가 부모 폴더명을 부품으로 보기 때문.
-EVAL_ROOT = config.DATA_DIR / "_eval"
-
+# ---- 내부 평가용 영상 ----
+# data/bell412/<부품>/eval/*.mp4 : 성능 확인용 미학습 영상. 부품 폴더 안에 두어 그 부품의 자료가
+# 한자리에 모이게 한다. autolabel._videos() 가 'eval' 폴더를 제외하므로 등록·목록·학습 화면에는
+# 보이지 않는다. 프레임 저장소 규칙은 부품 영상과 같다(results/autolabels/<부품>/images/<stem>).
 def eval_videos(part):
-    d = EVAL_ROOT / part
+    d = config.DATA_DIR / "bell412" / part / "eval"
     return sorted(f for f in d.glob("*") if f.suffix.lower() in autolabel.VIDEO_EXT) if d.is_dir() else []
 
 
