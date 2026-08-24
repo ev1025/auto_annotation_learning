@@ -230,6 +230,11 @@ def api_xr_model3d(name: str):
                         headers={"Cache-Control": "no-store"})
 
 
+@app.delete("/api/parts/{pid}/model3d")
+def api_part_model3d_delete(pid: int):
+    return reg.delete_model3d(pid) if reg else _need_reg()
+
+
 @app.get("/api/part_codes")
 def api_part_codes():
     """전역 부품 코드표 {부품명: 코드}. 클라이언트·문서용 참조.

@@ -1793,7 +1793,19 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
   const [msg, setMsg] = useState(null)                 // {ok|err, text}
   const [confirmDel, setConfirmDel] = useState(null)   // 삭제할 영상
   const [openVid, setOpenVid] = useState(null)
-  const [vidProg, setVidProg] = useState({})       // 파일별 프레임 추출 진행률         // 미리보기 펼친 영상 stem
+  const [vidProg, setVidProg] = useState({})       // 파일별 프레임 추출 진행률
+  const [m3dGone, setM3dGone] = useState(false)    // 등록된 3D 를 지웠는지(화면 즉시 반영)
+  const [confirm3d, setConfirm3d] = useState(false)
+  const has3d = !!editPart?.has_model3d && !m3dGone          // 등록된 3D 유무(지운 직후 즉시 반영)
+
+  const del3d = async () => {
+    setConfirm3d(false)
+    const r = await fetch(`/api/parts/${editPart.id}/model3d`, { method: 'DELETE' })
+      .then(x => x.json()).catch(() => ({ error: '요청 실패' }))
+    if (r.error) { setMsg({ ok: false, text: r.error }); return }
+    setM3dGone(true)
+    setMsg({ ok: true, text: '3D 모델을 제거했습니다' })
+  }         // 미리보기 펼친 영상 stem
   const [confirmDelPart, setConfirmDelPart] = useState(false)   // 이 부품 자체를 삭제
   const vidRef = useRef(null)
   const vidInput = useRef(null)
@@ -1978,17 +1990,23 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
                 <button type="button" className="reg-drop" onClick={() => m3dInput.current?.click()}>
                   <IcCube />
                   <div className="reg-drop-txt">
-                    <b>{m3dFile ? m3dFile.name : (editing && editPart.has_model3d ? '3D 모델 등록됨' : '3D 모델 불러오기')}</b>
+                    <b>{m3dFile ? m3dFile.name : (editing && has3d ? '3D 모델 등록됨' : '3D 모델 불러오기')}</b>
                   </div>
                   <span className="vm-size">{m3dFile ? `${(m3dFile.size / 1048576).toFixed(1)} MB`
                                                      : '.glb · .obj · .stl'}</span>
                 </button>
+                {(m3dFile || (editing && has3d)) && (
+                  <button type="button" className="csel-ic del reg-3d-del" title="3D 모델 제거"
+                          onClick={e => { e.stopPropagation(); m3dFile ? setM3dFile(null) : setConfirm3d(true) }}>
+                    <IcTrash />
+                  </button>
+                )}
               </div>
 
               {/* 등록된 3D 를 칸 아래에 그림만 띄운다. glb 는 이미지가 아니라 3D 라 뷰어가 필요하다 */}
               {m3dFile
                 ? <LocalModel file={m3dFile} />                       /* 고른 파일을 저장 전에 미리 본다 */
-                : editing && editPart.has_model3d && (
+                : editing && has3d && (
                     <model-viewer class="reg-3d-view" camera-controls auto-rotate
                                   alt={`${editPart.name} 3D 모델`}
                                   src={`/api/xr/parts/${encodeURIComponent(editPart.name)}/model3d`} />
@@ -2054,7 +2072,7 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
                         <span className="vm-size">{(f.size / 1048576).toFixed(1)} MB</span>
                         <span className={`vm-caret${open ? ' on' : ''}`}><IcChevronDown /></span>
                         <button type="button" className="csel-ic del" title="목록에서 제거"
-                                onClick={e => { e.stopPropagation(); setOpenVid(o => o === key ? null : o); setVidFiles(vidFiles.filter((_, k) => k !== i)) }}><IcX /></button>
+                                onClick={e => { e.stopPropagation(); setOpenVid(o => o === key ? null : o); setVidFiles(vidFiles.filter((_, k) => k !== i)) }}><IcTrash /></button>
                       </div>
                       {open && (
                         <div className="vm-player">
@@ -2106,18 +2124,34 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
         {msg && <div className={`reg-msg ${msg.ok ? 'ok' : 'err'}`}>{msg.text}</div>}
         </div>
       <div className="reg-actions">
-          {(() => {                                  // 프레임 추출 진행률: 등록 버튼 왼쪽에 % 로만
+          {(() => {   // 진행 표시는 등록 버튼 왼쪽 한 곳. 문구는 버튼과 같은 말로 통일하고 % 만 덧붙인다
             const act = Object.values(vidProg).filter(p => p && p.stage !== 'done' && p.total)
-            if (!act.length) return busy ? <span className="reg-busy"><span className="spinner" />{busy}</span> : null
-            const pct = Math.min(99, Math.round(act.reduce((a, p) => a + p.count / p.total, 0) / act.length * 100))
-            return <span className="reg-busy">프레임 추출 {pct}%</span>
+            if (!busy && !act.length) return null
+            const pct = act.length
+              ? Math.min(99, Math.round(act.reduce((a, p) => a + p.count / p.total, 0) / act.length * 100))
+              : null
+            return (
+              <span className="reg-busy">
+                <span className="spinner" />
+                {editing ? '저장 중' : '부품 등록 중'}{pct == null ? '' : ` ${pct}%`}
+              </span>
+            )
           })()}
+          {editing && (
+            <button className="act-btn ghost" type="button" disabled={!!busy} onClick={onExitEdit}>
+              취소
+            </button>
+          )}
           <button className="act-btn train" type="button" disabled={!name.trim() || !!busy}
                   onClick={editing ? save : create}>
             {editing ? '저장' : '부품 등록'}
           </button>
         </div>
       </div>
+      <ConfirmModal open={confirm3d} title="3D 모델 제거"
+                    message="등록된 3D 모델을 제거할까요? XR 이 내려받는 파일도 함께 사라집니다."
+                    confirmLabel="제거" danger
+                    onConfirm={del3d} onCancel={() => setConfirm3d(false)} />
       <ConfirmModal open={!!confirmDel} title="영상 삭제"
                     message={confirmDel ? `${confirmDel.stem} 을(를) 삭제할까요? 이 영상으로 만든 프레임·라벨·참조샷도 함께 사라집니다.` : ''}
                     confirmLabel="삭제" danger
@@ -2246,12 +2280,15 @@ export default function App() {
   // 언마운트하면 진행 중 학습·찍어둔 참조샷·비교 결과·입력값이 전부 날아가고 재진입 때 전부 재조회(=재로드)됨.
   const [seen, setSeen] = useState(() => ({ [tab]: true }))   // 안 가본 탭은 마운트 안 해 초기 로딩 비용 절약
   const [editPart, setEditPart] = useState(null)              // 부품 목록의 '수정' -> 등록 화면 편집 모드
-  const go = (t) => {
+  const go = (t, keepEdit = false) => {
     setTab(t)
     setSeen(s => s[t] ? s : { ...s, [t]: true })
     localStorage.setItem('xr_tab', t)
+    // 등록 탭을 떠나면 수정 상태를 푼다. 탭은 unmount 되지 않아서, 그냥 두면 다음에 등록 탭에
+    // 들어올 때 '부품 수정' 화면이 그대로 남는다(사용자 지적).
+    if (t !== 'register' && !keepEdit) setEditPart(null)
   }
-  const openEdit = (p) => { setEditPart(p); go('register') }  // 수정은 등록 화면에서(영상 목록까지 한곳에서)
+  const openEdit = (p) => { setEditPart(p); go('register', true) }  // 수정은 등록 화면에서(영상 목록까지 한곳에서)
   const [flash, setFlash] = useState(null)                    // 목록에서 잠깐 강조할 부품 이름
   const doneEdit = (name) => { setEditPart(null); setFlash(name || null); go('list') }  // 결과를 볼 수 있는 목록으로
   // 삭제한 부품을 수정 중이었으면 편집 상태를 비운다(탭 keep-alive 라 그냥 두면

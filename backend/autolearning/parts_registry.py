@@ -33,7 +33,7 @@ from db import migrate_from_files as dbsync
 from sqlalchemy import func
 
 from db.models import Category, Part, PartVideo
-from db.session import SessionLocal, rel
+from db.session import SessionLocal, abspath, rel
 
 PARTS_ROOT = config.DATA_DIR / "bell412"
 VIDEO_EXT = {".mp4", ".mov", ".avi", ".mkv"}
@@ -327,6 +327,30 @@ def upload_model3d(pid: int, filename: str, data: bytes) -> dict:
             served = None
         return {"ok": True, "path": p.model_3d_path, "bytes": len(data),
                 "fileserver": served}
+
+
+def delete_model3d(pid: int) -> dict:
+    """등록된 3D 모델 제거. 우리 파일·DB 경로·파일 서버 복사본을 함께 지운다."""
+    with SessionLocal() as s:
+        p = s.get(Part, pid)
+        if not p:
+            return _err("없는 부품입니다.")
+        if not p.model_3d_path:
+            return _err("등록된 3D 모델이 없습니다.")
+        name, stored = p.name, p.model_3d_path
+        p.model_3d_path = None
+        s.commit()
+    fp = abspath(stored)
+    if fp and fp.exists():
+        fp.unlink()
+    d = PARTS_ROOT / name / "3d"
+    if d.is_dir() and not any(d.iterdir()):
+        d.rmdir()
+    try:
+        _fileserver_delete(name, stored)
+    except Exception as e:                       # 파일 서버 문제로 삭제가 막히면 안 된다
+        print(f"[파일서버] {name} 3D 삭제 실패: {type(e).__name__}: {e}", flush=True)
+    return {"ok": True, "name": name}
 
 
 def upload_video(pid: int, filename: str, data: bytes) -> dict:
