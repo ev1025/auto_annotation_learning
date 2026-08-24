@@ -261,8 +261,9 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 }
 /* 범례: 양쪽 여백을 두고 가운데 정렬, 항목 간격은 균등하게 */
 .mask-legend {
-  display: flex; align-items: center; justify-content: space-evenly; flex-wrap: wrap;
-  gap: var(--sp-3) var(--sp-8); padding: 0 var(--sp-8);
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+  /* 간격·여백을 글자 크기 기준(em)으로 둔다(고정 px 아님) */
+  gap: var(--sp-3) 1em; padding: 0 1em;
   font-size: var(--fs-sm); color: var(--ink);
 }
 .mask-legend .lg-item { display: inline-flex; align-items: center; gap: var(--sp-3); }
