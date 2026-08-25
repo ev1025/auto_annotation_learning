@@ -352,7 +352,7 @@ function AutoLabelView({ onPrep, active }) {
             </button>
             <button className="act-btn primary" onClick={genLabel} disabled={running || curShots.length === 0}>
               {labelStatus?.running ? '라벨 생성 중...'
-                : ((isLabeled(src) || servedSet.has(partName)) ? '↻ 라벨 다시 생성' : '라벨 생성')}
+                : ((isLabeled(src) || servedSet.has(partName)) ? '라벨 다시 생성' : '라벨 생성')}
             </button>
             <button className="act-btn neutral" onClick={openReview} disabled={running || !(isLabeled(src) || labeledAnywhere.has(partName))}
                     title="현재 부품에 생성된 학습 라벨 프레임을 확인하고 잘못된 사진을 삭제">라벨 검수</button>
@@ -634,7 +634,7 @@ function fmtId(s) {
 }
 
 // 모델 버전 카드(기존/신규 나란히 비교). highlightNew=신규 부품 뱃지 강조
-// 표시 항목은 딱 4가지: ①모델 ID ②생성 일시 ③학습 부품 뱃지 ④인식률(있으면). 중복 캡션 없음
+// 표시 항목은 3가지: ①모델 ID ②생성 일시 ③학습 부품 수. 인식률은 성립하지 않아 뺐다(아래 주석)
 function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, onApply, applied }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -691,11 +691,10 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
                    }}>
                 <span className="rbmenu-main">
                   <span className="rbmenu-t">{m.time || fmtId(m.model_id)}</span>
-                  <span className="rbmenu-s">
-                    {m.n_classes}종
-                    {m.gen_rate != null ? ` · 전체 인식률 ${Math.round(m.gen_rate * 100)}%` : ''}
-                    {m.newp_rate != null ? ` · 신규 부품 ${Math.round(m.newp_rate * 100)}%` : ''}
-                  </span>
+                  {/* 인식률(gen_rate·newp_rate)은 빼 두었다. 앞 12종 표본에 평가영상이 없으면
+                      학습에 쓴 영상으로 재고 박스 위치(IoU)도 안 봐서, 성능처럼 읽히면 오해를 부른다.
+                      실제 성능은 사람 GT 로만 잰다(scripts/experiments/gt_viewer.py). */}
+                  <span className="rbmenu-s">{m.n_classes}종</span>
                 </span>
                 {active
                   ? <span className="rbmenu-cur">현재</span>
