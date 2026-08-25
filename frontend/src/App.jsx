@@ -1463,7 +1463,6 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
   const [name, setName] = useState('')
   const [cat, setCat] = useState(null)                 // category_id
   const [desc, setDesc] = useState('')
-  const [vidMenu, setVidMenu] = useState(false)        // 동영상 프레임 클릭 시 열리는 선택 팝오버
   const [vidFiles, setVidFiles] = useState([])         // (신규 등록 시) 함께 업로드할 영상
   const [m3dFile, setM3dFile] = useState(null)         // 3D 모델 파일
   const [vids, setVids] = useState([])                 // (수정 시) 이미 등록된 영상 목록
@@ -1489,13 +1488,6 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
   const vidInput = useRef(null)
   const camInput = useRef(null)     // 직접 촬영용(capture 속성이 붙은 별도 input)
   const m3dInput = useRef(null)
-
-  useEffect(() => {                                    // 바깥 클릭 시 팝오버 닫기
-    if (!vidMenu) return
-    const onDoc = (e) => { if (vidRef.current && !vidRef.current.contains(e.target)) setVidMenu(false) }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [vidMenu])
 
   const loadVids = useCallback((pid) => {
     fetch(`/api/parts/${pid}/videos`).then(r => r.json())
@@ -1697,10 +1689,12 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
               <input ref={camInput} type="file" accept="video/*" capture="environment"
                      style={{ display: 'none' }}
                      onChange={editing ? addVideos : pickVideos} />
+              {/* 업로드와 직접 촬영을 나란히 둔다. 예전에는 한 버튼 + 우측 화살표로 메뉴를
+                  펼치는 방식이었는데, PC 에서 화살표가 하는 일이 없어 지웠다. 그때 메뉴를
+                  같이 접어 '직접 촬영' 진입로까지 사라졌다(8/25 지적). 화살표 없이 두 버튼으로 둔다. */}
               <div className="reg-vidwrap" ref={vidRef}>
                 <button type="button" className="reg-drop"
-                        onClick={() => (IS_TOUCH ? setVidMenu(v => !v) : vidInput.current?.click())}
-                        aria-expanded={IS_TOUCH ? vidMenu : undefined}>
+                        onClick={() => vidInput.current?.click()}>
                   <IcVideo />
                   <div className="reg-drop-txt">
                     <b>{!editing && vidFiles.length ? `동영상 ${vidFiles.length}개 선택됨` : '부품 동영상 추가'}</b>
@@ -1708,21 +1702,12 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
                   <span className="vm-size">{!editing && vidFiles.length
                     ? `${(vidFiles.reduce((a, f) => a + f.size, 0) / 1048576).toFixed(1)} MB`
                     : '.mp4 · .mov'}</span>
-                  {IS_TOUCH && <IcChevronDown />}
                 </button>
-                {IS_TOUCH && vidMenu && (
-                  <div className="reg-vidpop">
-                    <button className="reg-vopt" type="button" onClick={() => { setVidMenu(false); vidInput.current?.click() }}>
-                      <IcVideo /><div><b>동영상 업로드</b><span>.mp4 · .mov 파일 선택(여러 개)</span></div>
-                    </button>
-                    <button className="reg-vopt" type="button"
-                            onClick={() => { setVidMenu(false); camInput.current?.click() }}>
-                      <IcCamera /><div><b>직접 촬영</b><span>{IS_TOUCH
-                        ? '폰 카메라로 바로 촬영'
-                        : '폰에서 촬영 (PC 는 파일 선택창이 열립니다)'}</span></div>
-                    </button>
-                  </div>
-                )}
+                <button type="button" className="reg-drop cam" onClick={() => camInput.current?.click()}>
+                  <IcCamera />
+                  <div className="reg-drop-txt"><b>직접 촬영</b></div>
+                  <span className="vm-size">{IS_TOUCH ? '카메라' : '카메라 앱'}</span>
+                </button>
               </div>
 
               {/* 신규 등록: 올릴 파일 목록(개별 제거). 비어 있으면 자리표시로 열 높이 유지 */}

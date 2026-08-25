@@ -478,7 +478,6 @@ button.prep-chip:hover { border-color: var(--accent); }
   font-family: inherit; cursor: pointer; transition: border-color .12s, background .12s; }
 .reg-drop:hover { border-color: var(--accent); background: var(--accent-bg); }
 .reg-drop > svg { width: var(--ic-xl); height: var(--ic-xl); color: var(--accent); flex-shrink: 0; }
-.reg-drop > svg:last-child { width: var(--ic-md); height: var(--ic-md); color: var(--faint); }   /* 우측 펼침 화살표 */
 .reg-drop-txt { flex: 1; min-width: 0; }
 .reg-drop-txt b { display: block; font-size: var(--fs-base); color: var(--ink-strong); }
 .reg-drop-txt p { margin: var(--sp-1) 0 0; font-size: var(--fs-xs); color: var(--muted); }
@@ -492,16 +491,10 @@ button.prep-chip:hover { border-color: var(--accent); }
 .reg-msg.err { background: var(--danger-bg-soft); border-color: var(--danger-line); color: var(--danger-ink); }
 .csel-err { font-size: var(--fs-xs); color: var(--danger-ink); padding: var(--sp-3) var(--sp-4) 0; }
 /* 동영상: 프레임 클릭 -> 업로드/촬영 선택 팝오버(프레임 폭, 마지막 필드라 위로 열림) */
-.reg-vidwrap { position: relative; }
-.reg-vidpop { position: absolute; bottom: calc(100% + var(--sp-3)); left: 0; right: 0; z-index: 60;
-  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-md);
-  box-shadow: var(--shadow-lg); padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-1); }
-.reg-vopt { display: flex; align-items: center; gap: var(--sp-6); width: 100%; text-align: left;
-  padding: var(--sp-4) var(--sp-5); border: none; border-radius: var(--r-sm); background: none; cursor: pointer; font-family: inherit; }
-.reg-vopt:hover { background: var(--accent-bg); }
-.reg-vopt > svg { width: var(--ic-lg); height: var(--ic-lg); color: var(--accent); flex-shrink: 0; }
-.reg-vopt b { display: block; font-size: var(--fs-base); color: var(--ink-strong); }
-.reg-vopt span { font-size: var(--fs-xs); color: var(--muted); }
+/* 업로드 | 직접 촬영 두 버튼을 나란히. 촬영 쪽은 자주 쓰는 것이 아니라 좁게 둔다. */
+.reg-vidwrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-4); }
+.reg-drop.cam { border-style: solid; }
+.reg-drop.cam .reg-drop-txt { flex: 0 1 auto; }
 
 /* 부품 카테고리 선택(선택·추가·편집·삭제) */
 .csel { position: relative; }
