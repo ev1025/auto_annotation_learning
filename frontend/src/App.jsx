@@ -1232,27 +1232,24 @@ function PartsApp({ onPrep, active }) {
                   <div className="ev2-card">
                     <h4 className="ev2-h">학습 결과 요약</h4>
                     <div className="tr-body">
-                      <div className="result-cards">
-                        {/* 학습률 = 산입 / 입력. 퍼센트만 보여 주면 '무엇 대비 몇 %' 인지 알 수 없어
-                            두 개수를 캡션에 같이 적는다. 라벨이 코드표에 없거나 이미지가 없어
-                            빠지면 여기서 바로 드러난다. */}
-                        <div className="rcard"><span>학습률</span>
+                      {/* 카드 4개(2x2) 에서 3줄 목록으로. 세로 공간이 남는데 칸을 나누면
+                          숫자가 좁은 폭에 갇혀 접혔다. 라벨 왼쪽·수치 오른쪽으로 세워
+                          개수를 한 줄에 다 적는다. */}
+                      <div className="result-rows">
+                        <div className="rrow"><span>Epoch</span><b>{tot}/{tot}</b></div>
+                        <div className="rrow"><span>데이터 종류</span><b>{status?.n_classes ?? '—'}종</b></div>
+                        {/* 학습률 = 산입 / 입력. 분모·분자와 증강 장수를 캡션 한 줄에 적는다.
+                            라벨이 미매핑이거나 이미지가 없어 빠지면 여기서 바로 드러난다. */}
+                        <div className="rrow"><span>학습률</span>
                           <b>{status?.learn_rate != null ? `${status.learn_rate}%` : '—'}</b>
-                          {status?.input_total != null
-                            ? <small>입력 {status.input_total.toLocaleString()} · 산입 {(status.ingested ?? status.n_images ?? 0).toLocaleString()}</small>
-                            : null}
-                        </div>
-                        <div className="rcard"><span>Epoch</span><b>{tot}/{tot}</b></div>
-                        <div className="rcard"><span>데이터 종류</span><b>{status?.n_classes ?? '—'}종</b></div>
-                        {/* 2x2 균등. 학습셋의 원본·증강은 메인 수치 아래 캡션으로 내린다
-                            (한 줄에 같이 두면 만 단위 숫자에서 엉킨다). */}
-                        <div className="rcard"><span>학습셋</span>
-                          {status?.n_images != null ? (<>
-                            <b>{(status.n_images + (status.n_augmented || 0)).toLocaleString()}장</b>
-                            {status.n_augmented
-                              ? <small>산입 {status.n_images.toLocaleString()} · 증강 {status.n_augmented.toLocaleString()}</small>
-                              : null}
-                          </>) : <b>—</b>}
+                          {status?.n_images != null ? (
+                            <small>
+                              입력 {(status.input_total ?? status.n_images).toLocaleString()}
+                              {' · 산입 '}{status.n_images.toLocaleString()}
+                              {status.n_augmented ? ` · 증강 ${status.n_augmented.toLocaleString()}` : ''}
+                              {' · 학습셋 '}{(status.n_images + (status.n_augmented || 0)).toLocaleString()}
+                            </small>
+                          ) : null}
                         </div>
                       </div>
                       <div className="tr-chart">
