@@ -569,6 +569,17 @@ button.prep-chip:hover { border-color: var(--accent); }
   box-shadow: var(--shadow-lg); padding: var(--sp-6); display: none; pointer-events: none; }
 .pt-name:hover .pt-preview { display: block; animation: ptPop .14s ease-out; }
 @keyframes ptPop { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+/* 목록 끝쪽 행은 카드를 위로 띄운다. 아래로 내면 카드가 .pt-scroll(overflow-y:auto) 바닥을 넘어
+   스크롤 높이가 늘어나고, 그 순간 행이 밀려 호버가 풀렸다 잡혔다 하며 화면이 떨린다.
+   위쪽으로 넘친 것은 스크롤을 만들지 않고 잘리기만 하므로 이 방향은 안전하다.
+   카드 높이가 행 4개쯤이라 끝에서 4행까지가 대상. 위 여백이 그만큼 있는 행에만 적용한다. */
+.part-table tbody tr:nth-child(n+5):nth-last-child(-n+4) .pt-preview {
+  top: auto; bottom: calc(100% + var(--sp-4));
+}
+.part-table tbody tr:nth-child(n+5):nth-last-child(-n+4) .pt-name:hover .pt-preview {
+  animation-name: ptPopUp;
+}
+@keyframes ptPopUp { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .pt-name:hover .pt-preview { animation: none; } }
 .pt-preview-thumb { width: 100%; aspect-ratio: 16 / 9; border-radius: var(--r-sm); background: var(--surface-3);
   display: flex; align-items: center; justify-content: center; color: var(--faint); margin-bottom: var(--sp-4); }
