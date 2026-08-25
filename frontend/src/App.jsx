@@ -1142,39 +1142,53 @@ function PartsApp({ onPrep, active }) {
 
             {/* 우측: 실시간 로그 + 결과 */}
             <section className="train-monitor">
-              {job && status && (
-                <div className="prog-head">
-                  <CircularProgress pct={pct} done={trainDone} />
-                  <div className="prog-head-info">
-                    <b className="prog-head-title">{headText}</b>
-                    {running && <span className="prog-sub"><span className="spinner" /> 진행 중...</span>}
-                  </div>
-                  {running && <button className="act-btn stop" onClick={doCancel} style={{ marginLeft: 'auto' }}>■ 학습 중단</button>}
-                  {trainDone && (
-                    <button className="act-btn train" onClick={doApply} disabled={applied} style={{ marginLeft: 'auto' }}>
-                      {applied ? '✓ 서비스 적용됨' : '신규 모델 서비스 적용'}
-                    </button>
+              {/* 학습 액션 바 — 상태가 바뀌어도 자리·높이가 그대로다.
+                  왼쪽은 '지금 어떤 상태인가', 오른쪽은 '지금 할 수 있는 동작'.
+                  주 동작(학습 시작 · 서비스 적용)은 항상 맨 오른쪽에 온다.
+                  예전에는 학습 전(train-setup-bar)과 학습 중(prog-head)이 서로 다른 바라
+                  시작을 누르는 순간 그 자리 전체가 다른 모양으로 갈아끼워졌다. */}
+              <div className="train-bar">
+                <div className="train-bar-state">
+                  {job && status ? (
+                    <>
+                      <CircularProgress pct={pct} done={trainDone} />
+                      <div className="prog-head-info">
+                        <b className="prog-head-title">{headText}</b>
+                        {running && <span className="prog-sub"><span className="spinner" /> 진행 중...</span>}
+                      </div>
+                    </>
+                  ) : (
+                    <span className="al-hint">
+                      {items.length === 0 ? '라벨 생성된 부품이 없습니다'
+                        : selected.length === 0 ? '학습할 부품을 선택하세요'
+                        : `학습 대상 ${selected.length}종 선택됨`}
+                    </span>
                   )}
-                  {(trainDone || status?.stage === 'cancelled') &&
-                    <button className="act-btn ghost" onClick={newRun}
-                            style={trainDone ? undefined : { marginLeft: 'auto' }}>새 학습</button>}
-                  {/* 과거 모델 조회는 학습이 끝난 뒤에만 나온다. 적용·새 학습과 같은 줄에 둬서
-                      모델을 다루는 동작을 한자리에 모은다(감싸는 div 없이 바로 flex 항목으로). */}
+                </div>
+
+                <div className="train-bar-actions">
+                  {(!job || !status) && <>
+                    <span className="al-hint">Epoch</span>
+                    <input className="ep-in" type="number" min={1} value={epochs}
+                           onChange={(e) => setEpochs(Math.max(1, Math.floor(+e.target.value) || 1))} />
+                    <button className="act-btn train" onClick={runTrain}
+                            disabled={selected.length === 0}>학습 시작</button>
+                  </>}
+                  {running && <button className="act-btn stop" onClick={doCancel}>■ 학습 중단</button>}
+                  {/* 과거 모델 조회는 학습이 끝난 뒤에만. 왼쪽부터 약한 동작 -> 주 동작 순서 */}
                   {trainDone &&
                     <RollbackMenu models={models} servedId={served?.model_id}
                                   onRollbackTo={askRollbackTo} onDeleteModel={askDeleteModel}
                                   onKeep={null} onApply={null} applied={applied} />}
+                  {(trainDone || status?.stage === 'cancelled') &&
+                    <button className="act-btn ghost" onClick={newRun}>새 학습</button>}
+                  {trainDone && (
+                    <button className="act-btn train" onClick={doApply} disabled={applied}>
+                      {applied ? '✓ 서비스 적용됨' : '신규 모델 서비스 적용'}
+                    </button>
+                  )}
                 </div>
-              )}
-              {(!job || !status) && (
-                // 학습 시작 전(또는 잡 상태를 확인 못한 경우): 에포크 입력창 + 시작 버튼
-                <div className="train-setup-bar">
-                  <span className="al-hint">Epoch</span>
-                  <input className="ep-in" type="number" min={1} value={epochs}
-                         onChange={(e) => setEpochs(Math.max(1, Math.floor(+e.target.value) || 1))} />
-                  <button className="act-btn train" onClick={runTrain} disabled={selected.length === 0}>학습 시작</button>
-                </div>
-              )}
+              </div>
               {/* 로그창 크기는 고정한다. 예전에는 학습 중 compact(120px) -> 완료 200px 로 바뀌어
                   화면이 커졌다 작아졌다 했다. */}
               {job && status && <LogConsole log={status?.log} />}

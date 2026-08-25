@@ -342,13 +342,19 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .circ.done .circ-label { color: var(--success-strong); }
 .circ.done .circ-label svg { width: var(--ic-xl); height: var(--ic-xl); transform: none; }
 /* 진행 헤더(원형 + 상태 텍스트) */
-.prog-head { display: flex; align-items: center; gap: var(--sp-8); padding: 0 0 var(--sp-6); flex-shrink: 0; }
+/* 학습 액션 바 — 학습 전·중·후가 모두 이 한 줄을 쓴다. 자리와 높이가 고정이라
+   상태가 바뀌어도 화면이 튀지 않는다. 왼쪽=상태, 오른쪽=동작. */
+.train-bar { display: flex; align-items: center; gap: var(--sp-6); min-height: 60px;
+  padding: var(--pad-cell); margin-bottom: var(--sp-6); flex-shrink: 0;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-lg); }
+.train-bar-state { display: flex; align-items: center; gap: var(--sp-6); min-width: 0; flex: 1 1 auto; }
+.train-bar-actions { display: flex; align-items: center; gap: var(--sp-4); margin-left: auto; flex-shrink: 0; }
+/* 버튼 폭을 맞춰 셋이 나란히 있을 때 들쭉날쭉하지 않게 한다(입력창은 제외). */
+.train-bar-actions .act-btn, .train-bar-actions .rbmenu-btn { min-width: 124px; }
+.train-bar-actions .rbmenu { display: inline-flex; align-items: center; }
+.train-bar-actions .ep-in { min-height: var(--ctl-md); }
 .prog-head-info { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
 .prog-head-title { font-size: var(--fs-md); color: var(--ink); }
-/* 완료 줄의 세 버튼(적용 · 새 학습 · 과거 모델 조회)을 같은 크기로 보이게 한다.
-   rbmenu-btn 은 .act-btn 을 같이 쓰지만 폭이 글자 길이대로라 셋이 들쭉날쭉했다. */
-.prog-head .act-btn, .prog-head .rbmenu-btn { min-width: 136px; }
-.prog-head .rbmenu { display: inline-flex; align-items: center; }
 .prog-sub { display: inline-flex; align-items: center; gap: var(--sp-3); font-size: var(--fs-sm); color: var(--muted); }
 .prog-sub.done { color: var(--success); font-weight: 600; }
 
@@ -640,11 +646,6 @@ button.prep-chip:hover { border-color: var(--accent); }
 .train-monitor { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-6);
   min-height: 0; overflow-y: auto; }   /* 로그·결과가 길면 이 영역만 스크롤(탭·헤더 고정) */
 /* 학습 시작 전 셋업 바 (에포크 입력 + 시작 버튼) */
-.train-setup-bar {
-  display: flex; align-items: center; gap: var(--sp-5); flex-shrink: 0; flex-wrap: wrap; row-gap: var(--sp-4);
-  padding: var(--pad-cell); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-lg);
-}
-.train-setup-bar .ep-in { min-height: var(--ctl-md); }   /* 같은 바의 버튼과 높이 일치 */
 .train-result { margin-top: var(--sp-1); }
 .train-result table thead th { background: var(--surface-2); }   /* 평가표 헤더 구분 */
 .result-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-6); margin: var(--sp-3) 0 var(--sp-2); }
@@ -1042,9 +1043,13 @@ button.prep-chip:hover { border-color: var(--accent); }
   .train-config { flex: 0 0 auto !important; max-height: 34dvh; }   /* 목록은 화면 1/3, 안에서 스크롤 */
   .train-monitor { flex: 1 1 auto; overflow: visible; }             /* 스크롤은 .tab-pane 하나 */
   .train-split.running .train-monitor { order: -1; }                /* 학습 중엔 진행률·로그를 위로 */
-  .train-setup-bar .act-btn.train { flex: 1 1 auto; min-height: 46px; font-size: var(--fs-md); }
-  .prog-head { flex-wrap: wrap; gap: var(--sp-5); }
-  .prog-head .act-btn.stop { margin-left: 0 !important; flex: 1 1 100%; min-height: 44px; }
+  /* 폰: 상태 줄과 동작 줄을 위아래로 쌓고 버튼은 가로를 채운다 */
+  .train-bar { flex-wrap: wrap; gap: var(--sp-5); }
+  .train-bar-state { flex: 1 1 100%; }
+  .train-bar-actions { flex: 1 1 100%; margin-left: 0; flex-wrap: wrap; }
+  .train-bar-actions .act-btn { flex: 1 1 auto; min-height: 46px; font-size: var(--fs-md); }
+  .train-bar-actions .rbmenu { flex: 1 1 auto; }
+  .train-bar-actions .rbmenu-btn { width: 100%; min-height: 46px; }
   .term { height: 170px; min-height: 170px; font-size: var(--fs-xs); }
   .term.compact { height: 120px; min-height: 120px; }
   .al-panes { flex-direction: column; flex: 0 0 auto !important; }
