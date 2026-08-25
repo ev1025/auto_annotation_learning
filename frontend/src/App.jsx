@@ -1071,13 +1071,18 @@ function PartsApp({ onPrep, active }) {
   const ep = status?.epoch || 0
   const tot = status?.total_epochs || epochs
   const ingT = status?.ingest_total || 0
+  // 괄호 앞에서 줄을 바꾼다(칸이 좁아 아무 데서나 끊기면 '(Epoch 0/' 처럼 잘린다).
+  // 화면은 .prog-head-title 의 white-space: pre-line 으로 이 줄바꿈을 살린다.
   const stageText = {
     start: '학습 준비 중...',
     build: (status?.note && /증강|합성/.test(status.note))    // 산입 후 배경합성 증강 단계(수 분)면 라벨 구분
       ? '배경 합성 증강 생성 중...'
-      : `학습 데이터 산입 중... (${Math.min(ingShown, ingT || ingShown)}/${ingT})`,
-    train: `YOLO 모델 학습 중... (Epoch ${ep}/${tot})`,
-    eval: `검출 평가 중... (${status?.eval_done || 0}/${status?.eval_total || 0})`,
+      : `학습 데이터 산입 중...
+(${Math.min(ingShown, ingT || ingShown)}/${ingT})`,
+    train: `YOLO 모델 학습 중...
+(Epoch ${ep}/${tot})`,
+    eval: `검출 평가 중...
+(${status?.eval_done || 0}/${status?.eval_total || 0})`,
     done: '학습 완료', cancelled: '학습 중단됨', error: '학습 오류',
   }
   const headText = status?.error ? '학습 오류' : (stageText[status?.stage] || '학습 중...')
@@ -1254,7 +1259,9 @@ function PartsApp({ onPrep, active }) {
 // title 을 안 주면 제목 줄을 그리지 않는다(카드 제목과 겹치지 않게).
 function MiniLineChart({ title, data, series }) {
   const pts = (data || []).filter(d => series.some(s => d[s.key] != null))
-  const W = 300, H = 130, pl = 40, pr = 10, pt = 10, pb = 22
+  // viewBox 를 실제로 그려지는 크기(약 480x150)에 맞춘다. 예전에는 300x130 으로 잡아
+  // 브라우저가 1.65배로 늘렸고, 11px 눈금 글자가 화면에서 18px 로 보였다.
+  const W = 480, H = 150, pl = 38, pr = 10, pt = 12, pb = 20
   let body = <div className="chart-empty">데이터 대기 중...</div>
   if (pts.length) {
     const xs = pts.map(p => p.epoch)

@@ -648,10 +648,14 @@ button.prep-chip:hover { border-color: var(--accent); }
 /* 학습 시작 전 셋업 바 (에포크 입력 + 시작 버튼) */
 /* 로그 줄: 왼쪽 진행 링 | 오른쪽 로그. 로그 폭을 조금 줄여 오른쪽에 여백을 둔다. */
 .log-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-6);
-  align-items: center; margin-bottom: var(--sp-6); }
-.log-prog { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3);
-  flex-shrink: 0; width: 168px; text-align: center; }
-.log-prog .prog-head-title { font-size: var(--fs-sm); line-height: 1.35; }
+  align-items: stretch; margin-bottom: var(--sp-6); }
+/* 로그 옆에 링만 떠 있으면 허전해 카드로 감싼다. 높이는 로그(term)와 맞춘다. */
+.log-prog { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--sp-3); flex-shrink: 0; width: 168px; text-align: center; align-self: stretch;
+  padding: var(--pad-cell); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: var(--r-lg); }
+.log-prog .prog-head-title { font-size: var(--fs-sm); line-height: 1.4;
+  white-space: pre-line; word-break: keep-all; }   /* 괄호 앞 줄바꿈을 살린다 */
 .log-prog .prog-sub { font-size: var(--fs-2xs); white-space: nowrap; }
 @media (max-width: 900px) { .log-row { grid-template-columns: minmax(0, 1fr); }
   .log-prog { flex-direction: row; justify-content: center; } }
@@ -660,11 +664,14 @@ button.prep-chip:hover { border-color: var(--accent); }
 /* 결과 요약 카드 안: 왼쪽 수치 4칸 | 오른쪽 손실 곡선.
    두 열을 stretch 로 묶고 수치칸을 1fr 로 늘려 곡선과 높이를 맞춘다
    (안 맞추면 곡선이 열 너비에 비례해 커져 왼쪽만 붕 뜬다). */
-.tr-body { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
-  gap: var(--sp-6); align-items: stretch; }
-.tr-body .result-cards { margin: 0; height: 100%; grid-auto-rows: 1fr; }
-.tr-chart { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.tr-body { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: var(--sp-6); align-items: start; }
+/* 수치 4칸은 서로 높이만 맞추고(1fr), 곡선 높이까지 따라 늘리지는 않는다.
+   늘렸더니 칸이 124px 로 부풀어 내용이 붕 떴다. */
+.tr-body .result-cards { margin: 0; grid-auto-rows: 1fr; }
+.tr-chart { display: flex; flex-direction: column; min-width: 0; }
 .tr-chart .chart { border: 0; padding: 0; background: transparent; }   /* 카드 안이라 테두리 이중이 된다 */
+.tr-chart .chart-svg { max-height: 168px; }
 @media (max-width: 900px) { .tr-body { grid-template-columns: minmax(0, 1fr); } }
 .train-result table thead th { background: var(--surface-2); }   /* 평가표 헤더 구분 */
 .result-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-6); margin: var(--sp-3) 0 var(--sp-2); }
@@ -681,7 +688,7 @@ button.prep-chip:hover { border-color: var(--accent); }
 .chart-grid { stroke: var(--line); stroke-width: 1; }
 .chart-tick { fill: var(--faint); font-size: var(--fs-2xs); }
 .chart-empty { height: 90px; display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: var(--fs-xs); }
-.chart-legend { display: flex; gap: var(--sp-6); margin-top: var(--sp-2); flex-wrap: wrap; }
+.chart-legend { display: flex; justify-content: center; gap: var(--sp-6); margin-top: var(--sp-2); flex-wrap: wrap; }
 .cl { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-2xs); color: var(--muted); }
 .cl i { width: var(--sp-5); height: var(--sp-5); border-radius: var(--r-xs); display: inline-block; }
 
