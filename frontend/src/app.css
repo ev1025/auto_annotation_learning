@@ -345,6 +345,10 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .prog-head { display: flex; align-items: center; gap: var(--sp-8); padding: 0 0 var(--sp-6); flex-shrink: 0; }
 .prog-head-info { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
 .prog-head-title { font-size: var(--fs-md); color: var(--ink); }
+/* 완료 줄의 세 버튼(적용 · 새 학습 · 과거 모델 조회)을 같은 크기로 보이게 한다.
+   rbmenu-btn 은 .act-btn 을 같이 쓰지만 폭이 글자 길이대로라 셋이 들쭉날쭉했다. */
+.prog-head .act-btn, .prog-head .rbmenu-btn { min-width: 136px; }
+.prog-head .rbmenu { display: inline-flex; align-items: center; }
 .prog-sub { display: inline-flex; align-items: center; gap: var(--sp-3); font-size: var(--fs-sm); color: var(--muted); }
 .prog-sub.done { color: var(--success); font-weight: 600; }
 

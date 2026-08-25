@@ -1158,12 +1158,12 @@ function PartsApp({ onPrep, active }) {
                   {(trainDone || status?.stage === 'cancelled') &&
                     <button className="act-btn ghost" onClick={newRun}
                             style={trainDone ? undefined : { marginLeft: 'auto' }}>새 학습</button>}
-                  {/* 과거 모델 조회는 적용·새 학습과 같은 줄에 둔다(모델을 다루는 동작끼리 모음) */}
-                  <div style={running ? undefined : { marginLeft: trainDone || status?.stage === 'cancelled' ? undefined : 'auto' }}>
+                  {/* 과거 모델 조회는 학습이 끝난 뒤에만 나온다. 적용·새 학습과 같은 줄에 둬서
+                      모델을 다루는 동작을 한자리에 모은다(감싸는 div 없이 바로 flex 항목으로). */}
+                  {trainDone &&
                     <RollbackMenu models={models} servedId={served?.model_id}
-                                onRollbackTo={askRollbackTo} onDeleteModel={askDeleteModel}
-                                onKeep={null} onApply={null} applied={applied} />
-                  </div>
+                                  onRollbackTo={askRollbackTo} onDeleteModel={askDeleteModel}
+                                  onKeep={null} onApply={null} applied={applied} />}
                 </div>
               )}
               {(!job || !status) && (
@@ -1173,11 +1173,6 @@ function PartsApp({ onPrep, active }) {
                   <input className="ep-in" type="number" min={1} value={epochs}
                          onChange={(e) => setEpochs(Math.max(1, Math.floor(+e.target.value) || 1))} />
                   <button className="act-btn train" onClick={runTrain} disabled={selected.length === 0}>학습 시작</button>
-                  <div style={{ marginLeft: 'auto' }}>
-                    <RollbackMenu models={models} servedId={served?.model_id}
-                                onRollbackTo={askRollbackTo} onDeleteModel={askDeleteModel}
-                                onKeep={null} onApply={null} applied={applied} />
-                  </div>
                 </div>
               )}
               {/* 로그창 크기는 고정한다. 예전에는 학습 중 compact(120px) -> 완료 200px 로 바뀌어
