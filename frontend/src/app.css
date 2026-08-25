@@ -344,7 +344,7 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 /* 진행 헤더(원형 + 상태 텍스트) */
 /* 학습 액션 바 — 학습 전·중·후가 모두 이 한 줄을 쓴다. 자리와 높이가 고정이라
    상태가 바뀌어도 화면이 튀지 않는다. 왼쪽=상태, 오른쪽=동작. */
-.train-bar { display: flex; align-items: center; gap: var(--sp-6); min-height: 60px;
+.train-bar { display: flex; align-items: center; gap: var(--sp-6); height: 60px;
   padding: var(--pad-cell); margin-bottom: var(--sp-6); flex-shrink: 0;
   background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-lg); }
 .train-bar-state { display: flex; align-items: center; gap: var(--sp-6); min-width: 0; flex: 1 1 auto; }
@@ -646,10 +646,26 @@ button.prep-chip:hover { border-color: var(--accent); }
 .train-monitor { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-6);
   min-height: 0; overflow-y: auto; }   /* 로그·결과가 길면 이 영역만 스크롤(탭·헤더 고정) */
 /* 학습 시작 전 셋업 바 (에포크 입력 + 시작 버튼) */
-/* 결과 요약(좁게) | 학습 손실 그래프(남는 폭). 폰에서는 세로로 쌓인다. */
-.train-result { margin-top: var(--sp-1); display: grid; gap: var(--sp-6);
-  grid-template-columns: minmax(0, 340px) minmax(0, 1fr); align-items: start; }
-@media (max-width: 900px) { .train-result { grid-template-columns: minmax(0, 1fr); } }
+/* 로그 줄: 왼쪽 진행 링 | 오른쪽 로그. 로그 폭을 조금 줄여 오른쪽에 여백을 둔다. */
+.log-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-6);
+  align-items: center; margin-bottom: var(--sp-6); }
+.log-prog { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3);
+  flex-shrink: 0; width: 168px; text-align: center; }
+.log-prog .prog-head-title { font-size: var(--fs-sm); line-height: 1.35; }
+.log-prog .prog-sub { font-size: var(--fs-2xs); white-space: nowrap; }
+@media (max-width: 900px) { .log-row { grid-template-columns: minmax(0, 1fr); }
+  .log-prog { flex-direction: row; justify-content: center; } }
+
+.train-result { margin-top: var(--sp-1); }
+/* 결과 요약 카드 안: 왼쪽 수치 4칸 | 오른쪽 손실 곡선.
+   두 열을 stretch 로 묶고 수치칸을 1fr 로 늘려 곡선과 높이를 맞춘다
+   (안 맞추면 곡선이 열 너비에 비례해 커져 왼쪽만 붕 뜬다). */
+.tr-body { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+  gap: var(--sp-6); align-items: stretch; }
+.tr-body .result-cards { margin: 0; height: 100%; grid-auto-rows: 1fr; }
+.tr-chart { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.tr-chart .chart { border: 0; padding: 0; background: transparent; }   /* 카드 안이라 테두리 이중이 된다 */
+@media (max-width: 900px) { .tr-body { grid-template-columns: minmax(0, 1fr); } }
 .train-result table thead th { background: var(--surface-2); }   /* 평가표 헤더 구분 */
 .result-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-6); margin: var(--sp-3) 0 var(--sp-2); }
 .rcard { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--pad-cell);
@@ -826,7 +842,9 @@ button.prep-chip:hover { border-color: var(--accent); }
 .rbmenu-item.active:hover { background: var(--success-bg-soft); border-color: var(--success-line); }
 .rbmenu-item.keep { border-bottom: 1px solid var(--line); border-radius: 0; margin-bottom: var(--sp-2); padding-bottom: var(--sp-6); }
 .rbmenu-item.keep .rbmenu-t { color: var(--danger-ink); }
-.rbmenu-main { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; flex: 1; }
+/* 한 줄로: '2026-08-25 02:24 · 36종'. 예전에는 세로로 쌓아 항목 하나가 두 줄이었다. */
+.rbmenu-main { display: flex; align-items: baseline; gap: var(--sp-3); min-width: 0; flex: 1; }
+.rbmenu-main .rbmenu-t { white-space: nowrap; }
 .rbmenu-t { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-strong); font-variant-numeric: tabular-nums; }
 .rbmenu-s { font-size: var(--fs-2xs); color: var(--muted); }
 .rbmenu-cur { font-size: var(--fs-2xs); font-weight: 700; color: var(--success-ink); background: var(--success-bg);

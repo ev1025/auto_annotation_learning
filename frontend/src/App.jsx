@@ -694,7 +694,7 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
                   {/* 인식률(gen_rate·newp_rate)은 빼 두었다. 앞 12종 표본에 평가영상이 없으면
                       학습에 쓴 영상으로 재고 박스 위치(IoU)도 안 봐서, 성능처럼 읽히면 오해를 부른다.
                       실제 성능은 사람 GT 로만 잰다(scripts/experiments/gt_viewer.py). */}
-                  <span className="rbmenu-s">{m.n_classes}종</span>
+                  <span className="rbmenu-s">· {m.n_classes}종</span>
                 </span>
                 {active
                   ? <span className="rbmenu-cur">현재</span>
@@ -872,7 +872,7 @@ function PartsApp({ onPrep, active }) {
     }
   }
   const backToLabel = () => setPage('label')               // 학습은 계속 진행(폴링 유지), 라벨 화면으로 복귀
-  const newRun = () => { setJob(null); setStatus(null); setCmpJob(null); setCmp(null); setApplied(false); setSvcMsg(null); setPicked(allPartList()); setPage('training') }
+  const newRun = () => { syncedRun.current = null; setJob(null); setStatus(null); setCmpJob(null); setCmp(null); setApplied(false); setSvcMsg(null); setPicked(allPartList()); setPage('training') }
 
   const [confirmState, setConfirmState] = useState(null)   // 인앱 확인 모달 {title,message,confirmLabel,danger,onOk}
   const ask = (opts) => setConfirmState(opts)
@@ -1011,6 +1011,16 @@ function PartsApp({ onPrep, active }) {
     fetch('/api/sam2/models').then(r => r.json()).then(d => setModels(d.models || [])).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doneStage])
+  // 학습이 끝나면 왼쪽 목록을 '실제로 학습된 부품'으로 맞춘다(status.per_class = {부품: 장수}).
+  // 안 하면 1종만 골라 학습해도 기본 선택(라벨된 전체)이 그대로 남아 37/37 로 보인다.
+  const syncedRun = useRef(null)
+  useEffect(() => {
+    const runid = status?.session
+    if (!doneStage || !runid || syncedRun.current === runid) return
+    const trained = Object.keys(status?.per_class || {})
+    if (trained.length) { setPicked(trained); syncedRun.current = runid }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doneStage, status?.session])
 
   // 모델 변경 3가지(신규 적용 · 기존 유지 · 과거 롤백)는 동작을 통일한다.
   //   화면 이동 없음 / 결과는 같은 자리 한 줄 / 버튼은 사라지지 않고 상태만 바뀐다.
@@ -1148,16 +1158,10 @@ function PartsApp({ onPrep, active }) {
                   예전에는 학습 전(train-setup-bar)과 학습 중(prog-head)이 서로 다른 바라
                   시작을 누르는 순간 그 자리 전체가 다른 모양으로 갈아끼워졌다. */}
               <div className="train-bar">
+                {/* 진행 상태(링·단계명·스피너)는 로그 왼쪽으로 뺐다. 여기에 두면 링이 들어올 때마다
+                    바 높이가 커졌다 작아졌다 한다. 이 줄에는 한 줄짜리 안내만 남긴다. */}
                 <div className="train-bar-state">
-                  {job && status ? (
-                    <>
-                      <CircularProgress pct={pct} done={trainDone} />
-                      <div className="prog-head-info">
-                        <b className="prog-head-title">{headText}</b>
-                        {running && <span className="prog-sub"><span className="spinner" /> 진행 중...</span>}
-                      </div>
-                    </>
-                  ) : (
+                  {(!job || !status) && (
                     <span className="al-hint">
                       {items.length === 0 ? '라벨 생성된 부품이 없습니다'
                         : selected.length === 0 ? '학습할 부품을 선택하세요'
@@ -1191,36 +1195,47 @@ function PartsApp({ onPrep, active }) {
                 </div>
               </div>
               {/* 로그창 크기는 고정한다. 예전에는 학습 중 compact(120px) -> 완료 200px 로 바뀌어
-                  화면이 커졌다 작아졌다 했다. */}
-              {job && status && <LogConsole log={status?.log} />}
+                  화면이 커졌다 작아졌다 했다.
+                  진행 링을 로그 왼쪽에 둔다. 위 버튼 줄에 있으면 '동작' 자리에 '상태'가 섞인다. */}
+              {job && status && (
+                <div className="log-row">
+                  <div className="log-prog">
+                    <CircularProgress pct={pct} done={trainDone} />
+                    <b className="prog-head-title">{headText}</b>
+                    {running && <span className="prog-sub"><span className="spinner" /> 진행 중...</span>}
+                  </div>
+                  <LogConsole log={status?.log} />
+                </div>
+              )}
               {status?.error && <div className="reco-banner rollback"><IcWarn /><span>학습 오류: {status.error}</span></div>}
               {status?.stage === 'cancelled' && <div className="reco-banner review"><IcWarn /><span>학습이 중단되었습니다.</span></div>}
               {trainDone && (
                 <div className="train-result">
-                  {/* 왼쪽 = 결과 요약(폭을 줄였다), 오른쪽 = 학습 손실 곡선.
+                  {/* 요약과 손실 곡선을 한 카드 안에 좌우로 둔다.
                       loss 는 학습셋에 대한 값이라 '수렴했나'를 보는 것이지 성능 지표가 아니다.
                       Recall·Precision·F1 은 val 이 train 과 같은 폴더라 성능처럼 읽히면
                       안 돼서 그리지 않는다(2026-08-25). */}
                   <div className="ev2-card">
                     <h4 className="ev2-h">학습 결과 요약</h4>
-                    <div className="result-cards">
-                      <div className="rcard"><span>학습률(산입률)</span><b>{status?.learn_rate != null ? `${status.learn_rate}%` : '—'}</b></div>
-                      <div className="rcard"><span>Epoch</span><b>{tot}/{tot}</b></div>
-                      <div className="rcard"><span>학습셋</span>
-                        {status?.n_images != null ? (<>
-                          <b>{status.n_images + (status.n_augmented || 0)}장</b>
-                          {status.n_augmented ? <small>(원본 {status.n_images}장 + 증강 {status.n_augmented}장)</small> : null}
-                        </>) : <b>—</b>}
+                    <div className="tr-body">
+                      <div className="result-cards">
+                        <div className="rcard"><span>학습률(산입률)</span><b>{status?.learn_rate != null ? `${status.learn_rate}%` : '—'}</b></div>
+                        <div className="rcard"><span>Epoch</span><b>{tot}/{tot}</b></div>
+                        <div className="rcard"><span>학습셋</span>
+                          {status?.n_images != null ? (<>
+                            <b>{status.n_images + (status.n_augmented || 0)}장</b>
+                            {status.n_augmented ? <small>(원본 {status.n_images}장 + 증강 {status.n_augmented}장)</small> : null}
+                          </>) : <b>—</b>}
+                        </div>
+                        <div className="rcard"><span>데이터 종류</span><b>{status?.n_classes ?? '—'}종</b></div>
                       </div>
-                      <div className="rcard"><span>데이터 종류</span><b>{status?.n_classes ?? '—'}종</b></div>
+                      <div className="tr-chart">
+                        <MiniLineChart title="학습 손실" data={status?.curve || []}
+                          series={[{ key: 'box', name: 'box_loss', color: '#ef4444' },
+                                   { key: 'cls', name: 'cls_loss', color: '#f59e0b' },
+                                   { key: 'dfl', name: 'dfl_loss', color: '#8b5cf6' }]} />
+                      </div>
                     </div>
-                  </div>
-                  <div className="ev2-card">
-                    <h4 className="ev2-h">학습 손실</h4>
-                    <MiniLineChart data={status?.curve || []}
-                      series={[{ key: 'box', name: 'box_loss', color: '#ef4444' },
-                               { key: 'cls', name: 'cls_loss', color: '#f59e0b' },
-                               { key: 'dfl', name: 'dfl_loss', color: '#8b5cf6' }]} />
                   </div>
                 </div>
               )}
