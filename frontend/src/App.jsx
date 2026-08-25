@@ -1109,13 +1109,6 @@ function PartsApp({ onPrep, active }) {
           <PageHead
             title="부품 학습"
             back={onBackFromTrain}
-            right={
-              // 모델 평가 페이지를 없애고(정답이 없어 지표가 성립 안 함) 관리 기능만 여기로 흡수:
-              // 과거 버전 조회 · 롤백 · 삭제. 적용 버튼은 학습 완료 시 진행 헤더에 나온다.
-              <RollbackMenu models={models} servedId={served?.model_id}
-                            onRollbackTo={askRollbackTo} onDeleteModel={askDeleteModel}
-                            onKeep={null} onApply={null} applied={applied} />
-            }
           />
 
           {/* running 클래스: 폰에서 학습 중일 때 진행률·로그를 목록 위로 올리기 위한 표식(app.css) */}
@@ -1165,7 +1158,13 @@ function PartsApp({ onPrep, active }) {
                   )}
                   {(trainDone || status?.stage === 'cancelled') &&
                     <button className="act-btn ghost" onClick={newRun}
-                            style={trainDone ? undefined : { marginLeft: 'auto' }}>↻ 새 학습</button>}
+                            style={trainDone ? undefined : { marginLeft: 'auto' }}>새 학습</button>}
+                  {/* 과거 모델 조회는 적용·새 학습과 같은 줄에 둔다(모델을 다루는 동작끼리 모음) */}
+                  <div style={running ? undefined : { marginLeft: trainDone || status?.stage === 'cancelled' ? undefined : 'auto' }}>
+                    <RollbackMenu models={models} servedId={served?.model_id}
+                                onRollbackTo={askRollbackTo} onDeleteModel={askDeleteModel}
+                                onKeep={null} onApply={null} applied={applied} />
+                  </div>
                 </div>
               )}
               {(!job || !status) && (
@@ -1175,6 +1174,11 @@ function PartsApp({ onPrep, active }) {
                   <input className="ep-in" type="number" min={1} value={epochs}
                          onChange={(e) => setEpochs(Math.max(1, Math.floor(+e.target.value) || 1))} />
                   <button className="act-btn train" onClick={runTrain} disabled={selected.length === 0}>학습 시작</button>
+                  <div style={{ marginLeft: 'auto' }}>
+                    <RollbackMenu models={models} servedId={served?.model_id}
+                                onRollbackTo={askRollbackTo} onDeleteModel={askDeleteModel}
+                                onKeep={null} onApply={null} applied={applied} />
+                  </div>
                 </div>
               )}
               {/* 로그창 크기는 고정한다. 예전에는 학습 중 compact(120px) -> 완료 200px 로 바뀌어
