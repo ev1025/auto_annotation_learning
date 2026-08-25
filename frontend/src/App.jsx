@@ -1175,11 +1175,8 @@ function PartsApp({ onPrep, active }) {
                             disabled={selected.length === 0}>학습 시작</button>
                   </>}
                   {running && <button className="act-btn stop" onClick={doCancel}>■ 학습 중단</button>}
-                  {/* 과거 모델 조회는 학습이 끝난 뒤에만. 왼쪽부터 약한 동작 -> 주 동작 순서 */}
-                  {trainDone &&
-                    <RollbackMenu models={models} servedId={served?.model_id}
-                                  onRollbackTo={askRollbackTo} onDeleteModel={askDeleteModel}
-                                  onKeep={null} onApply={null} applied={applied} />}
+                  {/* 순서: 새 학습 · 신규 모델 적용 · 과거 모델 조회.
+                      과거 모델 조회는 학습이 끝난 뒤에만 나온다. */}
                   {(trainDone || status?.stage === 'cancelled') &&
                     <button className="act-btn ghost" onClick={newRun}>새 학습</button>}
                   {trainDone && (
@@ -1187,6 +1184,10 @@ function PartsApp({ onPrep, active }) {
                       {applied ? '✓ 서비스 적용됨' : '신규 모델 서비스 적용'}
                     </button>
                   )}
+                  {trainDone &&
+                    <RollbackMenu models={models} servedId={served?.model_id}
+                                  onRollbackTo={askRollbackTo} onDeleteModel={askDeleteModel}
+                                  onKeep={null} onApply={null} applied={applied} />}
                 </div>
               </div>
               {/* 로그창 크기는 고정한다. 예전에는 학습 중 compact(120px) -> 완료 200px 로 바뀌어
