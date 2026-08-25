@@ -1462,6 +1462,7 @@ def delete_model(model_id):
     if _run_meta(model_id) is None and not d.exists():
         return {"error": "해당 버전이 없습니다."}
     shutil.rmtree(d, ignore_errors=True)
+    _db_sync_runs()          # DB(train_runs)에서도 지운다. 목록(/api/sam2/models)은 DB 를 읽는다
     logger.info(f"[delete_model] run {model_id} 삭제")
     return {"ok": True, "model_id": model_id}
 

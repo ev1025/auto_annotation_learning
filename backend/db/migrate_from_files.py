@@ -214,6 +214,7 @@ def sync_part_dir(s, pdir: Path, stats: dict) -> None:
 def migrate_runs(s, stats: dict) -> None:
     """results/<model_id>/meta.json -> train_runs, _served.json -> is_active."""
     served_id = None
+    seen = set()                      # 이번에 폴더에서 확인한 run — 없어진 것을 지우기 위해 모은다
     sf = RESULTS / "_served.json"
     if sf.exists():
         try:
@@ -253,7 +254,19 @@ def migrate_runs(s, stats: dict) -> None:
         run.onnx_path = rel(meta["onnx"]) if meta.get("onnx") else None
         run.meta = meta
         run.is_active = False
+        seen.add(mid)
         stats["runs"] += 1
+
+    # 폴더가 사라진 run 은 DB 에서도 지운다.
+    # 여기가 upsert 만 하고 있어서, 모델을 삭제해도(폴더 rmtree) 과거 모델 조회 목록에 계속 남았다.
+    # /api/sam2/models 는 DB(train_runs)를 읽기 때문이다. 오래된 run 자동 파기(_prune_runs)도 마찬가지다.
+    # 가중치 파일이 없는 버전은 롤백 대상이 될 수 없으므로 목록에 두지 않는 것이 맞다.
+    gone = [r for r in s.query(TrainRun).all() if r.model_id not in seen]
+    for r in gone:
+        s.delete(r)
+    if gone:
+        stats["runs_gone"] = len(gone)
+        print(f"[DB] 폴더가 없는 학습이력 {len(gone)}건 정리: {[r.model_id for r in gone][:5]}", flush=True)
     s.flush()
 
     if served_id:

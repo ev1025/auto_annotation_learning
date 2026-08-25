@@ -919,7 +919,8 @@ function PartsApp({ onPrep, active }) {
   const notify = (message) =>   // 인앱 알림(네이티브 alert 대체)
     ask({ title: '알림', message, confirmLabel: '확인', alertOnly: true, onOk: () => {} })
   const askDeleteModel = (mid) =>   // 타임라인/히스토리에서 버전 삭제(현재 서비스 모델은 백엔드가 거부)
-    ask({ title: '모델 삭제', message: `모델 #${mid} 을(를) 삭제할까요? 되돌릴 수 없습니다.`,
+    ask({ title: '모델 삭제', message: `모델 #${mid} 을(를) 삭제할까요?
+되돌릴 수 없습니다.`,
           confirmLabel: '삭제', danger: true, onOk: () => doDeleteModel(mid) })
   const doDeleteModel = async (mid) => {
     const r = await fetch('/api/sam2/delete_model', {
@@ -999,6 +1000,9 @@ function PartsApp({ onPrep, active }) {
   useEffect(() => {
     // folders 로드 전엔 it.part 가 원본 영상명이라 served.classes 매칭이 안 됨 → folders 까지 준비된 뒤 1회 초기화
     if (didInitPick.current || !servedLoaded || items.length === 0 || folders.length === 0) return
+    // 새로고침으로 '완료된 학습'을 복원해 보여주는 중이면 기본값(전체)으로 덮지 않는다.
+    // 목록·세션 로드가 status 보다 늦게 끝나면 아래 동기화가 채워 둔 선택을 지워 37/37 로 돌아갔다.
+    if (doneStage) { didInitPick.current = true; return }
     setPicked(allPartList())
     didInitPick.current = true
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1018,7 +1022,8 @@ function PartsApp({ onPrep, active }) {
     const runid = status?.session
     if (!doneStage || !runid || syncedRun.current === runid) return
     const trained = Object.keys(status?.per_class || {})
-    if (trained.length) { setPicked(trained); syncedRun.current = runid }
+    const list = trained.length ? trained : (status?.classes || [])   // per_class 가 없으면 classes 로
+    if (list.length) { setPicked(list); syncedRun.current = runid }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doneStage, status?.session])
 
@@ -1226,13 +1231,18 @@ function PartsApp({ onPrep, active }) {
                       <div className="result-cards">
                         <div className="rcard"><span>학습률(산입률)</span><b>{status?.learn_rate != null ? `${status.learn_rate}%` : '—'}</b></div>
                         <div className="rcard"><span>Epoch</span><b>{tot}/{tot}</b></div>
-                        <div className="rcard"><span>학습셋</span>
-                          {status?.n_images != null ? (<>
-                            <b>{status.n_images + (status.n_augmented || 0)}장</b>
-                            {status.n_augmented ? <small>(원본 {status.n_images}장 + 증강 {status.n_augmented}장)</small> : null}
-                          </>) : <b>—</b>}
-                        </div>
                         <div className="rcard"><span>데이터 종류</span><b>{status?.n_classes ?? '—'}종</b></div>
+                        {/* 학습셋은 원본·증강 숫자가 만 단위까지 가므로 한 줄을 통째로 쓴다.
+                            좁은 칸에 두면 '(원본 228장 + 증강 398 / 장)' 처럼 어설프게 접힌다. */}
+                        <div className="rcard wide"><span>학습셋</span>
+                          {status?.n_images != null ? (
+                            <b>{(status.n_images + (status.n_augmented || 0)).toLocaleString()}장
+                              {status.n_augmented
+                                ? <small>원본 {status.n_images.toLocaleString()} + 증강 {status.n_augmented.toLocaleString()}</small>
+                                : null}
+                            </b>
+                          ) : <b>—</b>}
+                        </div>
                       </div>
                       <div className="tr-chart">
                         <MiniLineChart title="학습 손실" data={status?.curve || []}
