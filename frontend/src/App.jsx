@@ -1084,7 +1084,8 @@ function PartsApp({ onPrep, active }) {
   const stageText = {
     start: '학습 준비 중...',
     build: (status?.note && /증강|합성/.test(status.note))    // 산입 후 배경합성 증강 단계(수 분)면 라벨 구분
-      ? '배경 합성 증강 생성 중...'
+      ? `배경 합성 증강
+생성 중...`
       : `학습 데이터 산입 중...
 (${Math.min(ingShown, ingT || ingShown)}/${ingT})`,
     train: `YOLO 모델 학습 중...
