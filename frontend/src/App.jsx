@@ -896,17 +896,21 @@ function PartsApp({ onPrep, active }) {
   }, [])
 
   const folderOf = (video) => folders.find(f => f.videos.some(v => v.name === video))
+  // 신규 = 현재 서비스 모델에 없는 부품. 목록의 '신규' 배지와 같은 기준을 쓴다.
+  const isNewPart = (it) => served ? !(served.classes || []).includes(it.part) : !it.trained
   const items = Object.keys(labeledMap).map(video => {   // 라벨 1장 이상 생성된 부품만 학습 대상
     const f = folderOf(video)
     return { video, part: f ? partOf(f.folder) : video,
              labels: labeledMap[video].labels, trained: trainedVideos.includes(video) }
-  }).filter(it => it.labels > 0).sort((a, b) => a.part.localeCompare(b.part))
+  }).filter(it => it.labels > 0)
+    // 방금 등록·라벨한 신규 부품을 맨 위로 올린다(목록이 길어 아래로 묻히면 못 찾는다).
+    .sort((a, b) => (Number(isNewPart(b)) - Number(isNewPart(a))) || a.part.localeCompare(b.part))
   const selected = items.filter(it => picked.includes(it.part))
   const allOn = items.length > 0 && selected.length === items.length
   const toggle = (p) => setPicked(c => c.includes(p) ? c.filter(x => x !== p) : [...c, p])
   const toggleAll = () => setPicked(allOn ? [] : items.map(it => it.part))
-  // 이미 학습된(현재 서비스 모델 보유) 부품 = 학습됨. 배지 판정과 동일 기준. 망각 방지 위해 기본 선택 대상.
-  const trainedPartList = () => items.filter(it => served ? (served.classes || []).includes(it.part) : it.trained).map(it => it.part)
+  // 기본 선택 = 라벨된 부품 전체(학습됨 + 신규). 학습이 매번 from-scratch 라 빠진 부품은 잊는다.
+  const allPartList = () => items.map(it => it.part)
 
   const openTrain = () => {   // 학습 페이지로 이동(부품목록/라벨/모델평가 어디서 오든)
     // 화면 이동만으로는 학습·평가 결과를 비우지 않는다(초기화는 '새 학습'에서만).
@@ -925,7 +929,7 @@ function PartsApp({ onPrep, active }) {
     }
   }
   const backToLabel = () => setPage('label')               // 학습은 계속 진행(폴링 유지), 라벨 화면으로 복귀
-  const newRun = () => { setJob(null); setStatus(null); setCmpJob(null); setCmp(null); setApplied(false); setSvcMsg(null); setPicked(trainedPartList()); setPage('training') }
+  const newRun = () => { setJob(null); setStatus(null); setCmpJob(null); setCmp(null); setApplied(false); setSvcMsg(null); setPicked(allPartList()); setPage('training') }
 
   const [confirmState, setConfirmState] = useState(null)   // 인앱 확인 모달 {title,message,confirmLabel,danger,onOk}
   const ask = (opts) => setConfirmState(opts)
@@ -1048,11 +1052,11 @@ function PartsApp({ onPrep, active }) {
   }, [])
   useEffect(() => { loadServed() }, [loadServed])
 
-  // 학습 대상 기본 선택: 이미 학습된(학습됨) 부품을 기본으로 체크(망각 방지). served·부품목록이 준비되면 최초 1회.
+  // 학습 대상 기본 선택: 라벨된 부품 전체(학습됨 + 신규). served·부품목록이 준비되면 최초 1회.
   useEffect(() => {
     // folders 로드 전엔 it.part 가 원본 영상명이라 served.classes 매칭이 안 됨 → folders 까지 준비된 뒤 1회 초기화
     if (didInitPick.current || !servedLoaded || items.length === 0 || folders.length === 0) return
-    setPicked(trainedPartList())
+    setPicked(allPartList())
     didInitPick.current = true
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [servedLoaded, items, folders])
