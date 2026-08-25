@@ -556,7 +556,8 @@ function AutoLabelView({ onPrep, active }) {
       )}
 
       <ConfirmModal open={!!confirmDelVid} title="영상 삭제"
-                    message={confirmDelVid ? `${confirmDelVid} 영상을 삭제할까요? 이 영상으로 만든 프레임·라벨·참조샷도 함께 사라집니다.` : ''}
+                    message={confirmDelVid ? `${confirmDelVid} 영상을 삭제할까요?
+이 영상으로 만든 프레임·라벨·참조샷도 함께 사라집니다.` : ''}
                     confirmLabel="삭제" danger
                     onCancel={() => setConfirmDelVid(null)}
                     onConfirm={() => { const v = confirmDelVid; setConfirmDelVid(null); deleteVideo(v) }} />
@@ -877,14 +878,17 @@ function PartsApp({ onPrep, active }) {
   const [confirmState, setConfirmState] = useState(null)   // 인앱 확인 모달 {title,message,confirmLabel,danger,onOk}
   const ask = (opts) => setConfirmState(opts)
   const onBackFromTrain = () => {                          // 부품 학습 뒤로가기: 학습 중이면 종료 확인
-    if (running) ask({ title: '학습 종료', message: '학습을 종료하시겠습니까? 진행 중인 학습이 중단됩니다.',
+    // 확인 문구는 '무엇을 하나' / '그래서 어떻게 되나' 를 줄로 나눈다(.cfm-msg white-space: pre-line)
+    if (running) ask({ title: '학습 종료', message: `학습을 종료하시겠습니까?
+진행 중인 학습이 중단됩니다.`,
                        confirmLabel: '종료', danger: true, onOk: () => { doCancel(); backToLabel() } })
     else backToLabel()
   }
   const askRollbackTo = (mid) => {                         // 과거 버전 롤백 확인(네이티브 confirm 대신 인앱 모달)
     const m = (models || []).find(x => x.model_id === mid)
     const when = (m && (m.time || fmtId(m.model_id))) || mid
-    ask({ title: '과거 모델로 롤백', message: `이 버전(${when})으로 롤백할까요? 현재 서비스 모델이 됩니다.`,
+    ask({ title: '과거 모델로 롤백', message: `이 버전(${when})으로 롤백할까요?
+현재 서비스 모델이 됩니다.`,
           confirmLabel: '롤백', onOk: () => doRollbackTo(mid) })
   }
 
@@ -1823,11 +1827,13 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
                     confirmLabel="제거" danger
                     onConfirm={del3d} onCancel={() => setConfirm3d(false)} />
       <ConfirmModal open={!!confirmDel} title="영상 삭제"
-                    message={confirmDel ? `${confirmDel.stem} 을(를) 삭제할까요? 이 영상으로 만든 프레임·라벨·참조샷도 함께 사라집니다.` : ''}
+                    message={confirmDel ? `${confirmDel.stem} 을(를) 삭제할까요?
+이 영상으로 만든 프레임·라벨·참조샷도 함께 사라집니다.` : ''}
                     confirmLabel="삭제" danger
                     onCancel={() => setConfirmDel(null)} onConfirm={() => delVideo(confirmDel)} />
       <ConfirmModal open={confirmDelPart} title="부품 삭제"
-                    message={editing ? `${editPart.name} 을(를) 삭제할까요? 등록한 영상과 생성된 라벨이 함께 사라집니다.` : ''}
+                    message={editing ? `${editPart.name} 을(를) 삭제할까요?
+등록한 영상과 생성된 라벨이 함께 사라집니다.` : ''}
                     confirmLabel="삭제" danger
                     onCancel={() => setConfirmDelPart(false)} onConfirm={delPart} />
     </div>
@@ -1926,7 +1932,8 @@ function PartList({ onEdit, onDeleted, active, flash, onFlashDone }) {
         </div>
       )}
       <ConfirmModal open={!!confirmDel} title="부품 삭제"
-                    message={confirmDel ? `${confirmDel.name} 을(를) 삭제할까요? 등록한 영상과 생성된 라벨이 함께 사라집니다.` : ''}
+                    message={confirmDel ? `${confirmDel.name} 을(를) 삭제할까요?
+등록한 영상과 생성된 라벨이 함께 사라집니다.` : ''}
                     confirmLabel="삭제" danger
                     onCancel={() => setConfirmDel(null)} onConfirm={() => doDelete(confirmDel)} />
     </div>
