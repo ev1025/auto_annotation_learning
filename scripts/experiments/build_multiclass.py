@@ -24,21 +24,30 @@ def load_classes():
     return names, {n: i for i, n in enumerate(names)}
 
 
-_VID2PART = None
-
-
 def _video_part_map():
     """영상 stem → 부품(폴더명). data/bell412/<부품>/videos/<영상> 구조 기준.
-    부품 정체성은 폴더가 결정한다(영상 파일명이 train/test여도 폴더로 클래스 확정)."""
-    global _VID2PART
-    if _VID2PART is None:
-        m = {}
-        for vp in glob.glob(BASE + "/data/bell412/*/videos/*.*"):
-            vstem = os.path.splitext(os.path.basename(vp))[0]
-            part = os.path.basename(os.path.dirname(os.path.dirname(vp)))   # <부품>/videos/<영상>
-            m.setdefault(vstem, part)
-        _VID2PART = m
-    return _VID2PART
+
+    부품 정체성은 **폴더**가 결정한다. 영상 파일명은 참고하지 않는다.
+
+      gearbox/videos/{Gearbox_gearbox1, Gearbox_gearbox2, train1, train2}  -> gearbox
+      shim/videos/{Gearbox_shim, Gearbox_shim2}                            -> shim
+      seal_spring/videos/Gearbox_spring                                    -> seal_spring
+      cap_spring/videos/Gearbox_spring2                                    -> cap_spring
+
+    즉 뒤의 숫자는 '같은 부품의 다른 테이크'라는 뜻이고, 다른 부품이면 폴더(=이름)를
+    다르게 둔다. spring/spring2 가 서로 다른 부품이라 seal_spring/cap_spring 으로 개명한
+    이유가 이것이다.
+
+    캐시하지 않는다. 예전에는 모듈 전역에 한 번만 담아 뒀는데, 부품 이름을 바꾸면
+    대시보드를 껐다 켜기 전까지 옛 폴더명을 계속 돌려줘서 '학습됨' 배지가 어긋났다.
+    영상이 40여 개라 매번 훑어도 비용이 없다.
+    """
+    m = {}
+    for vp in glob.glob(BASE + "/data/bell412/*/videos/*.*"):
+        vstem = os.path.splitext(os.path.basename(vp))[0]
+        part = os.path.basename(os.path.dirname(os.path.dirname(vp)))   # <부품>/videos/<영상>
+        m.setdefault(vstem, part)
+    return m
 
 
 def stem_to_class(stem):
@@ -47,7 +56,10 @@ def stem_to_class(stem):
     vm = _video_part_map()
     if v in vm:                                             # 폴더명 기준(영상 파일명 무관)
         return re.sub(r"\s+", "_", vm[v].lower())
-    part = v.split("_", 1)[1] if "_" in v else v            # 폴백: 카테고리(Gearbox_/Tools_) 제거
+    # 폴백(옛 규칙): 부품 폴더에 없는 영상일 때만. 카테고리 접두사를 떼고 끝 숫자를 지운다.
+    # 지금 규칙과 어긋난다는 점에 주의 — Gearbox_spring2 가 여기로 오면 cap_spring 이 아니라
+    # spring 이 된다. 폴더에 있는 영상은 위에서 이미 끝나므로 정상 경로에서는 닿지 않는다.
+    part = v.split("_", 1)[1] if "_" in v else v            # 카테고리(Gearbox_/Tools_) 제거
     part = re.sub(r"\d+$", "", part).strip()                # bracket2 → bracket
     return re.sub(r"\s+", "_", part.lower())                # seal support → seal_support
 
