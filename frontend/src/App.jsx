@@ -653,7 +653,7 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
         // 주 CTA(분할버튼): 왼쪽=신규 적용, 오른쪽 ▾=다른 작업 메뉴
         <>
           <button className="act-btn train big split-main" onClick={onApply} disabled={applied}>
-            {applied ? '✓ 서비스 적용됨' : '신규 모델 서비스 적용'}
+            {applied ? '✓ 적용됨' : '신규 모델 적용'}
           </button>
           <button className="act-btn train big split-caret" onClick={() => setOpen(o => !o)}
                   aria-haspopup="true" aria-expanded={open} aria-label="다른 작업 (과거 롤백 · 신규 폐기)">
@@ -1190,7 +1190,7 @@ function PartsApp({ onPrep, active }) {
                     <button className="act-btn ghost" onClick={newRun}>새 학습</button>}
                   {trainDone && (
                     <button className="act-btn train" onClick={doApply} disabled={applied}>
-                      {applied ? '✓ 서비스 적용됨' : '신규 모델 서비스 적용'}
+                      {applied ? '✓ 적용됨' : '신규 모델 적용'}
                     </button>
                   )}
                   {trainDone &&

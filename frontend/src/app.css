@@ -349,8 +349,10 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
   background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-lg); }
 .train-bar-state { display: flex; align-items: center; gap: var(--sp-6); min-width: 0; flex: 1 1 auto; }
 .train-bar-actions { display: flex; align-items: center; gap: var(--sp-4); margin-left: auto; flex-shrink: 0; }
-/* 버튼 폭을 맞춰 셋이 나란히 있을 때 들쭉날쭉하지 않게 한다(입력창은 제외). */
-.train-bar-actions .act-btn, .train-bar-actions .rbmenu-btn { min-width: 124px; }
+/* 최소 폭만 주고 나머지는 글자에 맡긴다. 전부 같은 폭으로 묶으면 '새 학습'처럼
+   짧은 글자가 빈 버튼처럼 넓어진다. */
+.train-bar-actions .act-btn, .train-bar-actions .rbmenu-btn { min-width: 104px; }
+.train-bar-actions > .act-btn.ghost { min-width: 84px; }   /* '새 학습' (과거 모델 조회는 .rbmenu 안에 있어 제외) */
 .train-bar-actions .rbmenu { display: inline-flex; align-items: center; }
 .train-bar-actions .ep-in { min-height: var(--ctl-md); }
 .prog-head-info { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
