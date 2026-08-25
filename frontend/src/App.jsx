@@ -657,14 +657,14 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
             {applied ? '✓ 적용됨' : '신규 모델 적용'}
           </button>
           <button className="act-btn train big split-caret" onClick={() => setOpen(o => !o)}
-                  aria-haspopup="true" aria-expanded={open} aria-label="다른 작업 (과거 롤백 · 신규 폐기)">
+                  aria-haspopup="true" aria-expanded={open} aria-label="다른 작업 (모델 변경 · 신규 폐기)">
             <IcChevronDown />
           </button>
         </>
       ) : (
         <button className="act-btn ghost rbmenu-btn" onClick={() => setOpen(o => !o)}
                 aria-haspopup="true" aria-expanded={open}>
-          과거 모델 조회 <IcChevronDown />
+          모델 변경 <IcChevronDown />
         </button>
       )}
       {open && (
@@ -679,8 +679,8 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
               </span>
             </button>
           )}
-          {onApply && <div className="rbmenu-sec">과거 버전으로 롤백</div>}
-          {recent.length === 0 && <div className="rbmenu-empty">등록된 과거 버전이 없습니다.</div>}
+          {onApply && <div className="rbmenu-sec">다른 버전으로 변경</div>}
+          {recent.length === 0 && <div className="rbmenu-empty">저장된 다른 버전이 없습니다.</div>}
           {recent.map(m => {
             const active = m.is_active || m.model_id === servedId
             return (
@@ -816,7 +816,7 @@ function PartsApp({ onPrep, active }) {
   // 아래 저장 effect 가 곧 xr_page 를 덮어써서 effect 안에서는 구분할 수 없다.
   const freshTab = useRef(!sessionStorage.getItem('xr_page'))
   const [applied, setApplied] = useState(false)      // 신규 모델 서비스 적용 완료
-  const [svcMsg, setSvcMsg] = useState(null)         // 모델 변경 결과(적용·유지·롤백 공통 한 줄)
+  const [svcMsg, setSvcMsg] = useState(null)         // 모델 변경 결과(적용·유지·변경 공통 한 줄)
   const svcTimer = useRef(null)
   const flashSvc = (text) => {                       // 2초 뒤 자동으로 사라진다(닫기 버튼 없음)
     clearTimeout(svcTimer.current)
@@ -884,11 +884,11 @@ function PartsApp({ onPrep, active }) {
                        confirmLabel: '종료', danger: true, onOk: () => { doCancel(); backToLabel() } })
     else backToLabel()
   }
-  const askRollbackTo = (mid) => {                         // 과거 버전 롤백 확인(네이티브 confirm 대신 인앱 모달)
+  const askRollbackTo = (mid) => {                         // 저장된 다른 버전으로 변경 확인(네이티브 confirm 대신 인앱 모달)
     const m = (models || []).find(x => x.model_id === mid)
     const when = (m && (m.time || fmtId(m.model_id))) || mid
-    ask({ title: '과거 모델로 롤백', message: `이 버전(${when})으로 변경할까요?`,
-          confirmLabel: '롤백', onOk: () => doRollbackTo(mid) })
+    ask({ title: '모델 변경', message: `이 버전(${when})으로 변경할까요?`,
+          confirmLabel: '변경', onOk: () => doRollbackTo(mid) })
   }
 
   const runTrain = async () => {
@@ -1010,7 +1010,7 @@ function PartsApp({ onPrep, active }) {
     didInitPick.current = true
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [servedLoaded, items, folders])
-  // 학습 완료 시 버전 목록 갱신(방금 만든 모델이 과거 모델 조회에 바로 보이게)
+  // 학습 완료 시 버전 목록 갱신(방금 만든 모델이 모델 변경 목록에 바로 보이게)
   const doneStage = status?.stage === 'done' && !status?.error   // trainDone 은 아래에서 선언되어 여기선 TDZ
   useEffect(() => {
     if (!doneStage) return
@@ -1030,7 +1030,7 @@ function PartsApp({ onPrep, active }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doneStage, status?.session])
 
-  // 모델 변경 3가지(신규 적용 · 기존 유지 · 과거 롤백)는 동작을 통일한다.
+  // 모델 변경 3가지(신규 적용 · 기존 유지 · 다른 버전으로 변경)는 동작을 통일한다.
   //   화면 이동 없음 / 결과는 같은 자리 한 줄 / 버튼은 사라지지 않고 상태만 바뀐다.
   const refreshServed = async () => {
     const [s, m] = await Promise.all([
@@ -1046,11 +1046,11 @@ function PartsApp({ onPrep, active }) {
     if (!mid) return
     const r = await fetch('/api/sam2/rollback_to', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id: mid })
-    }).then(x => x.json()).catch(() => ({ error: '롤백 실패' }))
+    }).then(x => x.json()).catch(() => ({ error: '모델 변경 실패' }))
     if (r.error) { notify(r.error); return }
     setApplied(false)
     const s = await refreshServed()
-    flashSvc(`과거 버전으로 롤백했습니다 · 현재 서비스 모델 ${s?.label || mid}`)
+    flashSvc(`모델을 변경했습니다 · 현재 서비스 모델 ${s?.label || mid}`)
   }
 
   const doApply = async () => {   // 신규 모델을 서비스에 적용(추론 서버 배포는 백엔드가 함께 처리)
@@ -1125,7 +1125,7 @@ function PartsApp({ onPrep, active }) {
       ) : page === 'training' ? (
         // ===== 2단계: 학습 (설정 → 진행 → 결과 요약) =====
         <div className="train-page">
-          {svcMsg && (   // 적용·롤백 결과가 항상 같은 자리에 나오고 2초 뒤 사라진다
+          {svcMsg && (   // 적용·변경 결과가 항상 같은 자리에 나오고 2초 뒤 사라진다
             <div className="svc-msg" role="status"><IcCheck /><span>{svcMsg}</span></div>
           )}
           <PageHead
@@ -1192,8 +1192,8 @@ function PartsApp({ onPrep, active }) {
                             disabled={selected.length === 0}>학습 시작</button>
                   </>}
                   {running && <button className="act-btn stop" onClick={doCancel}>■ 학습 중단</button>}
-                  {/* 순서: 새 학습 · 신규 모델 적용 · 과거 모델 조회.
-                      과거 모델 조회는 학습이 끝난 뒤에만 나온다. */}
+                  {/* 순서: 새 학습 · 신규 모델 적용 · 모델 변경.
+                      모델 변경은 학습이 끝난 뒤에만 나온다. */}
                   {(trainDone || status?.stage === 'cancelled') &&
                     <button className="act-btn ghost" onClick={newRun}>새 학습</button>}
                   {trainDone && (
