@@ -1232,16 +1232,15 @@ function PartsApp({ onPrep, active }) {
                         <div className="rcard"><span>학습률(산입률)</span><b>{status?.learn_rate != null ? `${status.learn_rate}%` : '—'}</b></div>
                         <div className="rcard"><span>Epoch</span><b>{tot}/{tot}</b></div>
                         <div className="rcard"><span>데이터 종류</span><b>{status?.n_classes ?? '—'}종</b></div>
-                        {/* 학습셋은 원본·증강 숫자가 만 단위까지 가므로 한 줄을 통째로 쓴다.
-                            좁은 칸에 두면 '(원본 228장 + 증강 398 / 장)' 처럼 어설프게 접힌다. */}
-                        <div className="rcard wide"><span>학습셋</span>
-                          {status?.n_images != null ? (
-                            <b>{(status.n_images + (status.n_augmented || 0)).toLocaleString()}장
-                              {status.n_augmented
-                                ? <small>원본 {status.n_images.toLocaleString()} + 증강 {status.n_augmented.toLocaleString()}</small>
-                                : null}
-                            </b>
-                          ) : <b>—</b>}
+                        {/* 2x2 균등. 학습셋의 원본·증강은 메인 수치 아래 캡션으로 내린다
+                            (한 줄에 같이 두면 만 단위 숫자에서 엉킨다). */}
+                        <div className="rcard"><span>학습셋</span>
+                          {status?.n_images != null ? (<>
+                            <b>{(status.n_images + (status.n_augmented || 0)).toLocaleString()}장</b>
+                            {status.n_augmented
+                              ? <small>원본 {status.n_images.toLocaleString()} · 증강 {status.n_augmented.toLocaleString()}</small>
+                              : null}
+                          </>) : <b>—</b>}
                         </div>
                       </div>
                       <div className="tr-chart">

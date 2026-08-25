@@ -670,10 +670,9 @@ button.prep-chip:hover { border-color: var(--accent); }
   gap: var(--sp-6); align-items: start; }
 /* 수치 4칸은 서로 높이만 맞추고(1fr), 곡선 높이까지 따라 늘리지는 않는다.
    늘렸더니 칸이 124px 로 부풀어 내용이 붕 떴다. */
+/* 2x2 균등. 네 칸의 높이를 1fr 로 맞춰 캡션이 있는 칸에 나머지가 끌려가지 않게 한다. */
 .tr-body .result-cards { margin: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; }
-.rcard.wide { grid-column: 1 / -1; }                       /* 학습셋: 한 줄을 통째로 */
-.rcard.wide b { display: flex; align-items: baseline; gap: var(--sp-4); flex-wrap: wrap; }
-.rcard.wide small { font-weight: 400; }
+.rcard small { font-weight: 400; font-size: var(--fs-2xs); color: var(--faint); line-height: 1.4; }
 .tr-chart { display: flex; flex-direction: column; min-width: 0; }
 .tr-chart .chart { border: 0; padding: 0; background: transparent; }   /* 카드 안이라 테두리 이중이 된다 */
 .tr-chart .chart-svg { max-height: 168px; }
