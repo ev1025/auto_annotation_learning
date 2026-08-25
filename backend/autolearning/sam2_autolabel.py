@@ -726,16 +726,11 @@ def _csv_epochs(runs_dir):
                      "dfl": pick(row, "train/dfl_loss"),
                      "map50": pick(row, "metrics/mAP50(B)", "metrics/mAP50"),
                      "map5095": pick(row, "metrics/mAP50-95(B)", "metrics/mAP50-95"),
-                     # 화면 곡선은 mAP 대신 이 둘을 쓴다.
-                     #   r(재현율)  = 있는 부품을 실제로 인지한 비율 = "인지했다"
-                     #   p(정밀도)  = 인지했다고 한 것 중 맞은 비율 = "헛인지 안 했다"
-                     # mAP 는 이 학습이 train 과 val 에 같은 폴더를 쓰므로 0.99 로 포화돼 판단에 못 쓴다.
+                     # p·r·mAP 는 meta.json 기록용으로만 남긴다. 이 학습은 train 과 val 이
+                     # 같은 폴더라 0.99 로 포화된다 — 성능 지표가 아니므로 화면에 그리지 않는다.
+                     # 실제 성능은 사람 GT 로만 잰다(scripts/experiments/gt_viewer.py).
                      "p": pick(row, "metrics/precision(B)", "metrics/precision"),
                      "r": pick(row, "metrics/recall(B)", "metrics/recall")})
-        # 탐지에는 '정확도(accuracy)' 라는 지표가 없다(맞힌 칸/전체 칸을 셀 수 없어서).
-        # 대신 Precision·Recall 을 하나로 합친 F1 을 함께 그린다. F1 = 2PR/(P+R)
-        _p, _r = rows[-1]["p"], rows[-1]["r"]
-        rows[-1]["f1"] = round(2 * _p * _r / (_p + _r), 4) if (_p and _r) else None
     return rows
 
 
@@ -932,16 +927,13 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
                     j.update(epoch=r["epoch"], total_epochs=epochs, cur_loss=loss,
                              cur_map=r["map50"], cur_map5095=r["map5095"])
                     j.setdefault("curve", []).append(r)
+                    # Recall·Precision·F1·mAP 는 화면·로그에 내보내지 않는다.
+                    # 이 학습은 train 과 val 에 같은 폴더를 써서 자기가 외운 것을 다시 재는 값이라
+                    # 성능처럼 읽히면 오해를 부른다(curve 에는 기록만 남긴다).
                     seg = [f"Epoch {r['epoch']}/{epochs}"]
                     if loss is not None:
                         seg.append(f"loss {loss:.3f}")
-                    if r["r"] is not None:
-                        seg.append(f"Recall {r['r'] * 100:.1f}%")
-                    if r["p"] is not None:
-                        seg.append(f"Precision {r['p'] * 100:.1f}%")
-                    if r.get("f1") is not None:
-                        seg.append(f"F1 {r['f1'] * 100:.1f}%")
-                    logln("  ".join(seg), "ok" if (r["r"] or 0) > 0 else "info")
+                    logln("  ".join(seg), "info")
                 seen = len(rows)
 
         model.add_callback("on_train_batch_end", _on_batch)

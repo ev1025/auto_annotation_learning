@@ -651,7 +651,6 @@ button.prep-chip:hover { border-color: var(--accent); }
 .rcard small { font-size: var(--fs-2xs); color: var(--muted); }
 
 /* 학습곡선 차트(SVG) */
-.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--sp-6); flex-shrink: 0; margin-bottom: var(--sp-2); }
 .chart { border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--pad-cell); background: #fff; }
 .chart-title { font-size: var(--fs-xs); font-weight: 600; color: var(--ink); margin-bottom: var(--sp-2); }
 .chart-svg { width: 100%; height: auto; display: block; }

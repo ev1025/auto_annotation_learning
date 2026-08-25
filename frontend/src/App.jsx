@@ -614,62 +614,6 @@ function CircularProgress({ pct, done }) {
 }
 
 // 학습곡선: 에폭별 지표를 SVG 선그래프로(외부 라이브러리 없이). data=curve, series=[{key,name,color}]
-function MiniLineChart({ title, data, series }) {
-  const pts = (data || []).filter(d => series.some(s => d[s.key] != null))
-  const W = 300, H = 130, pl = 40, pr = 10, pt = 10, pb = 22
-  let body = <div className="chart-empty">데이터 대기 중...</div>
-  if (pts.length) {
-    const xs = pts.map(p => p.epoch)
-    const xmin = Math.min(...xs), xmax = Math.max(...xs)
-    const ys = []
-    series.forEach(s => pts.forEach(p => { if (p[s.key] != null) ys.push(p[s.key]) }))
-    let ymin = Math.min(...ys), ymax = Math.max(...ys)
-    if (ymin === ymax) { ymin -= 0.01; ymax += 0.01 }
-    const sx = x => pl + (xmax === xmin ? 0.5 : (x - xmin) / (xmax - xmin)) * (W - pl - pr)   // 1점이면 가운데
-    const sy = y => pt + (1 - (y - ymin) / (ymax - ymin)) * (H - pt - pb)
-    const fmt = v => Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(2)
-    body = (
-      <svg viewBox={`0 0 ${W} ${H}`} className="chart-svg">
-        {[ymax, (ymax + ymin) / 2, ymin].map((v, i) => (
-          <g key={i}>
-            <line x1={pl} y1={sy(v)} x2={W - pr} y2={sy(v)} className="chart-grid" />
-            <text x={pl - 4} y={sy(v) + 3} className="chart-tick" textAnchor="end">{fmt(v)}</text>
-          </g>
-        ))}
-        {series.map(s => {
-          const sp = pts.filter(p => p[s.key] != null)
-          const d = sp.map((p, i) => `${i ? 'L' : 'M'}${sx(p.epoch).toFixed(1)} ${sy(p[s.key]).toFixed(1)}`).join(' ')
-          const last = sp[sp.length - 1]
-          return (
-            <g key={s.key}>
-              {sp.length > 1 && <path d={d} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" />}
-              {/* 마지막 값에 점을 찍는다. 에포크가 1개면 선이 그려지지 않아 예전에는
-                  빈 격자만 보였다(1에포크 학습에서 "점이 안 찍힌다"). */}
-              {last && <circle cx={sx(last.epoch)} cy={sy(last[s.key])} r={sp.length > 1 ? 3 : 4}
-                               fill={s.color} stroke="#fff" strokeWidth="1.5" />}
-            </g>
-          )
-        })}
-        {/* 에포크가 1개면 축 양끝에 같은 숫자가 찍혀 이상해 보였다 → 가운데 하나만 */}
-        {xmin === xmax
-          ? <text x={(pl + W - pr) / 2} y={H - 5} className="chart-tick" textAnchor="middle">{xmin}</text>
-          : (<>
-              <text x={pl} y={H - 5} className="chart-tick">{xmin}</text>
-              <text x={W - pr} y={H - 5} className="chart-tick" textAnchor="end">{xmax}</text>
-            </>)}
-      </svg>
-    )
-  }
-  return (
-    <div className="chart">
-      <div className="chart-title">{title}</div>
-      {body}
-      <div className="chart-legend">{series.map(s => <span key={s.key} className="cl"><i style={{ background: s.color }} />{s.name}</span>)}</div>
-    </div>
-  )
-}
-
-// 라벨링·학습 두 페이지가 공유하는 공통 헤더(제목 타이포·뒤로가기·하단 구분선 통일)
 function PageHead({ title, back, right, flat }) {
   return (
     <div className={`page-head${flat ? ' flat' : ''}`}>
@@ -1238,22 +1182,6 @@ function PartsApp({ onPrep, active }) {
               {job && status && <LogConsole log={status?.log} />}
               {status?.error && <div className="reco-banner rollback"><IcWarn /><span>학습 오류: {status.error}</span></div>}
               {status?.stage === 'cancelled' && <div className="reco-banner review"><IcWarn /><span>학습이 중단되었습니다.</span></div>}
-              {/* 곡선을 결과 요약보다 먼저 보여준다(학습 경과 -> 최종 요약 순서) */}
-              {job && status?.curve?.length > 0 && (
-                <div className="ev2-card">
-                  <h4 className="ev2-h">학습 곡선</h4>
-                  <div className="charts">
-                    <MiniLineChart title="Loss" data={status.curve}
-                      series={[{ key: 'box', name: 'box_loss', color: '#ef4444' }, { key: 'cls', name: 'cls_loss', color: '#f59e0b' }, { key: 'dfl', name: 'dfl_loss', color: '#8b5cf6' }]} />
-                    {/* mAP 는 이 학습에서 train=val 이라 0.99 로 포화돼 판단에 못 쓴다.
-                        대신 '인지했다/못했다'를 그대로 보여주는 두 지표를 그린다. */}
-                    <MiniLineChart title="Recall · Precision · F1" data={status.curve}
-                      series={[{ key: 'r', name: 'Recall', color: '#10b981' },
-                               { key: 'p', name: 'Precision', color: '#06b6d4' },
-                               { key: 'f1', name: 'F1', color: '#8b5cf6' }]} />
-                  </div>
-                </div>
-              )}
               {trainDone && (
                 <div className="train-result">
                   {/* 결과 요약 카드 */}
