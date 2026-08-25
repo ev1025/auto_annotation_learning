@@ -1197,7 +1197,10 @@ function PartsApp({ onPrep, active }) {
               {status?.stage === 'cancelled' && <div className="reco-banner review"><IcWarn /><span>학습이 중단되었습니다.</span></div>}
               {trainDone && (
                 <div className="train-result">
-                  {/* 결과 요약 카드 */}
+                  {/* 왼쪽 = 결과 요약(폭을 줄였다), 오른쪽 = 학습 손실 곡선.
+                      loss 는 학습셋에 대한 값이라 '수렴했나'를 보는 것이지 성능 지표가 아니다.
+                      Recall·Precision·F1 은 val 이 train 과 같은 폴더라 성능처럼 읽히면
+                      안 돼서 그리지 않는다(2026-08-25). */}
                   <div className="ev2-card">
                     <h4 className="ev2-h">학습 결과 요약</h4>
                     <div className="result-cards">
@@ -1212,7 +1215,13 @@ function PartsApp({ onPrep, active }) {
                       <div className="rcard"><span>데이터 종류</span><b>{status?.n_classes ?? '—'}종</b></div>
                     </div>
                   </div>
-                  {/* 검출 평가 카드 삭제(사용자 요청). 인식 결과는 '모델 평가·적용' 화면의 인식 결과 비교에서 확인 */}
+                  <div className="ev2-card">
+                    <h4 className="ev2-h">학습 손실</h4>
+                    <MiniLineChart data={status?.curve || []}
+                      series={[{ key: 'box', name: 'box_loss', color: '#ef4444' },
+                               { key: 'cls', name: 'cls_loss', color: '#f59e0b' },
+                               { key: 'dfl', name: 'dfl_loss', color: '#8b5cf6' }]} />
+                  </div>
                 </div>
               )}
             </section>
@@ -1225,6 +1234,64 @@ function PartsApp({ onPrep, active }) {
     </div>
   )
 }
+
+// 작은 선그래프. 지금은 학습 손실(box·cls·dfl)에만 쓴다.
+// title 을 안 주면 제목 줄을 그리지 않는다(카드 제목과 겹치지 않게).
+function MiniLineChart({ title, data, series }) {
+  const pts = (data || []).filter(d => series.some(s => d[s.key] != null))
+  const W = 300, H = 130, pl = 40, pr = 10, pt = 10, pb = 22
+  let body = <div className="chart-empty">데이터 대기 중...</div>
+  if (pts.length) {
+    const xs = pts.map(p => p.epoch)
+    const xmin = Math.min(...xs), xmax = Math.max(...xs)
+    const ys = []
+    series.forEach(s => pts.forEach(p => { if (p[s.key] != null) ys.push(p[s.key]) }))
+    let ymin = Math.min(...ys), ymax = Math.max(...ys)
+    if (ymin === ymax) { ymin -= 0.01; ymax += 0.01 }
+    const sx = x => pl + (xmax === xmin ? 0.5 : (x - xmin) / (xmax - xmin)) * (W - pl - pr)   // 1점이면 가운데
+    const sy = y => pt + (1 - (y - ymin) / (ymax - ymin)) * (H - pt - pb)
+    const fmt = v => Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(2)
+    body = (
+      <svg viewBox={`0 0 ${W} ${H}`} className="chart-svg">
+        {[ymax, (ymax + ymin) / 2, ymin].map((v, i) => (
+          <g key={i}>
+            <line x1={pl} y1={sy(v)} x2={W - pr} y2={sy(v)} className="chart-grid" />
+            <text x={pl - 4} y={sy(v) + 3} className="chart-tick" textAnchor="end">{fmt(v)}</text>
+          </g>
+        ))}
+        {series.map(s => {
+          const sp = pts.filter(p => p[s.key] != null)
+          const d = sp.map((p, i) => `${i ? 'L' : 'M'}${sx(p.epoch).toFixed(1)} ${sy(p[s.key]).toFixed(1)}`).join(' ')
+          const last = sp[sp.length - 1]
+          return (
+            <g key={s.key}>
+              {sp.length > 1 && <path d={d} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" />}
+              {/* 마지막 값에 점을 찍는다. 에포크가 1개면 선이 그려지지 않아 예전에는
+                  빈 격자만 보였다(1에포크 학습에서 "점이 안 찍힌다"). */}
+              {last && <circle cx={sx(last.epoch)} cy={sy(last[s.key])} r={sp.length > 1 ? 3 : 4}
+                               fill={s.color} stroke="#fff" strokeWidth="1.5" />}
+            </g>
+          )
+        })}
+        {/* 에포크가 1개면 축 양끝에 같은 숫자가 찍혀 이상해 보였다 → 가운데 하나만 */}
+        {xmin === xmax
+          ? <text x={(pl + W - pr) / 2} y={H - 5} className="chart-tick" textAnchor="middle">{xmin}</text>
+          : (<>
+              <text x={pl} y={H - 5} className="chart-tick">{xmin}</text>
+              <text x={W - pr} y={H - 5} className="chart-tick" textAnchor="end">{xmax}</text>
+            </>)}
+      </svg>
+    )
+  }
+  return (
+    <div className="chart">
+      {title ? <div className="chart-title">{title}</div> : null}
+      {body}
+      <div className="chart-legend">{series.map(s => <span key={s.key} className="cl"><i style={{ background: s.color }} />{s.name}</span>)}</div>
+    </div>
+  )
+}
+
 
 // ===== 탭1: 부품 등록 (틀만 — 내부 로직 미구현) =====
 // 부품 카테고리 선택 — 드롭다운에서 항목 선택·추가·편집·삭제(세션 내, 로직 틀)

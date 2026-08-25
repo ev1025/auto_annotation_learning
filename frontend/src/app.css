@@ -646,7 +646,10 @@ button.prep-chip:hover { border-color: var(--accent); }
 .train-monitor { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-6);
   min-height: 0; overflow-y: auto; }   /* 로그·결과가 길면 이 영역만 스크롤(탭·헤더 고정) */
 /* 학습 시작 전 셋업 바 (에포크 입력 + 시작 버튼) */
-.train-result { margin-top: var(--sp-1); }
+/* 결과 요약(좁게) | 학습 손실 그래프(남는 폭). 폰에서는 세로로 쌓인다. */
+.train-result { margin-top: var(--sp-1); display: grid; gap: var(--sp-6);
+  grid-template-columns: minmax(0, 340px) minmax(0, 1fr); align-items: start; }
+@media (max-width: 900px) { .train-result { grid-template-columns: minmax(0, 1fr); } }
 .train-result table thead th { background: var(--surface-2); }   /* 평가표 헤더 구분 */
 .result-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-6); margin: var(--sp-3) 0 var(--sp-2); }
 .rcard { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--pad-cell);
