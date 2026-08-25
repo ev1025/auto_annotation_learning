@@ -673,9 +673,11 @@ button.prep-chip:hover { border-color: var(--accent); }
 /* 결과 요약: 3줄 목록. 라벨 왼쪽 · 수치 오른쪽. 캡션은 수치 아래 오른쪽 정렬.
    2x2 카드였을 때는 칸이 154px 로 좁아 숫자가 접혔다. */
 .result-rows { display: flex; flex-direction: column; gap: var(--sp-4); }
+/* 세 줄의 높이를 같게 고정한다. 캡션이 있는 줄만 63px 로 커져 들쭉날쭉했다. */
 .rrow { display: grid; grid-template-columns: auto minmax(0, 1fr);
   grid-template-areas: "label value" "caption caption";   /* 캡션은 두 열을 다 써야 안 접힌다 */
-  align-items: baseline; column-gap: var(--sp-6);
+  align-content: center; align-items: baseline; column-gap: var(--sp-6);
+  min-height: 73px;
   background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md);
   padding: var(--pad-cell); }
 .rrow span { grid-area: label; align-self: center; font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; }
