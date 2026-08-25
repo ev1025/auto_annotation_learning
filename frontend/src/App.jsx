@@ -887,8 +887,7 @@ function PartsApp({ onPrep, active }) {
   const askRollbackTo = (mid) => {                         // 과거 버전 롤백 확인(네이티브 confirm 대신 인앱 모달)
     const m = (models || []).find(x => x.model_id === mid)
     const when = (m && (m.time || fmtId(m.model_id))) || mid
-    ask({ title: '과거 모델로 롤백', message: `이 버전(${when})으로 롤백할까요?
-현재 서비스 모델이 됩니다.`,
+    ask({ title: '과거 모델로 롤백', message: `이 버전(${when})으로 변경할까요?`,
           confirmLabel: '롤백', onOk: () => doRollbackTo(mid) })
   }
 
