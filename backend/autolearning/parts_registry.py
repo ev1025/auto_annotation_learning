@@ -164,13 +164,23 @@ def create_part(name: str, category_id=None, description: str = "", code=None) -
         p = Part(name=name, category_id=cid, description=(description or "").strip() or None,
                  folder=rel(pdir), code=code)
         s.add(p); s.commit()
-        # 추론서버용 사본 갱신(DB 가 원천, json 은 파생물)
-        try:
-            import part_codes                              # noqa: PLC0415
-            part_codes.export_from_db()
-        except Exception as e:                             # noqa: BLE001 - 등록 자체를 막지 않는다
-            print(f"[part_codes] json 내보내기 실패: {type(e).__name__}: {e}", flush=True)
+        _export_codes()
         return {"ok": True, "id": p.id, "name": p.name, "folder": p.folder, "part_code": p.code}
+
+
+def _export_codes() -> None:
+    """DB -> data/bell412/parts/part_codes.json 사본 갱신.
+
+    학습이 라벨 폴더명(부품명)을 이 표에서 찾아 클래스로 바꾼다. 표가 낡으면 그 부품의
+    라벨이 통째로 '미매핑' 이 되어 학습이 "통합 라벨 부족(0)" 으로 죽는다.
+    실제로 spring -> seal_spring 개명 뒤 표를 안 고쳐서 그 두 부품 학습이 막혔다.
+    그래서 부품을 만들 때뿐 아니라 이름을 바꾸거나 지울 때도 반드시 다시 내보낸다.
+    """
+    try:
+        import part_codes                              # noqa: PLC0415
+        part_codes.export_from_db()
+    except Exception as e:                             # noqa: BLE001 - 등록·수정 자체를 막지 않는다
+        print(f"[part_codes] json 내보내기 실패: {type(e).__name__}: {e}", flush=True)
 
 
 def update_part(pid: int, name=None, category_id="keep", description=None) -> dict:
@@ -216,6 +226,7 @@ def update_part(pid: int, name=None, category_id="keep", description=None) -> di
         nm = p.name
     autolabel._videos(force=True)          # 영상 인덱스 캐시 무효화(이름 바뀐 경우)
     dbsync.sync_part(nm)                   # 이동된 경로로 영상·프레임 행 재동기화
+    _export_codes()                        # 바뀐 이름을 코드표에도 반영(안 하면 그 부품 학습이 막힌다)
     return {"ok": True, "id": pid, "name": nm}
 
 
@@ -234,6 +245,7 @@ def delete_part(pid: int) -> dict:
     for d in (PARTS_ROOT / name, autolabel.AUTOLABELS / name):
         shutil.rmtree(d, ignore_errors=True)
     autolabel._videos(force=True)
+    _export_codes()                        # 지운 부품이 코드표에 남지 않게
     return {"ok": True, "name": name}
 
 
