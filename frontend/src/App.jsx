@@ -1232,7 +1232,15 @@ function PartsApp({ onPrep, active }) {
                     <h4 className="ev2-h">학습 결과 요약</h4>
                     <div className="tr-body">
                       <div className="result-cards">
-                        <div className="rcard"><span>학습률(산입률)</span><b>{status?.learn_rate != null ? `${status.learn_rate}%` : '—'}</b></div>
+                        {/* 학습률 = 산입 / 입력. 퍼센트만 보여 주면 '무엇 대비 몇 %' 인지 알 수 없어
+                            두 개수를 캡션에 같이 적는다. 라벨이 코드표에 없거나 이미지가 없어
+                            빠지면 여기서 바로 드러난다. */}
+                        <div className="rcard"><span>학습률</span>
+                          <b>{status?.learn_rate != null ? `${status.learn_rate}%` : '—'}</b>
+                          {status?.input_total != null
+                            ? <small>입력 {status.input_total.toLocaleString()} · 산입 {(status.ingested ?? status.n_images ?? 0).toLocaleString()}</small>
+                            : null}
+                        </div>
                         <div className="rcard"><span>Epoch</span><b>{tot}/{tot}</b></div>
                         <div className="rcard"><span>데이터 종류</span><b>{status?.n_classes ?? '—'}종</b></div>
                         {/* 2x2 균등. 학습셋의 원본·증강은 메인 수치 아래 캡션으로 내린다
@@ -1241,7 +1249,7 @@ function PartsApp({ onPrep, active }) {
                           {status?.n_images != null ? (<>
                             <b>{(status.n_images + (status.n_augmented || 0)).toLocaleString()}장</b>
                             {status.n_augmented
-                              ? <small>원본 {status.n_images.toLocaleString()} · 증강 {status.n_augmented.toLocaleString()}</small>
+                              ? <small>산입 {status.n_images.toLocaleString()} · 증강 {status.n_augmented.toLocaleString()}</small>
                               : null}
                           </>) : <b>—</b>}
                         </div>
