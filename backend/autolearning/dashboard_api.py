@@ -29,7 +29,10 @@ import config
 import autolabel
 import sam2_autolabel as sa
 
-PORT = 7862
+# 포트. 기본은 7862 이고, 한 PC 에서 두 개를 동시에 띄울 때만 바꾼다
+# (예: 토르 것을 보면서 로컬 것도 켜 두는 경우. 둘 다 7862 면 뒤에 뜬 쪽이 죽는다)
+#   DASH_PORT=1234 python backend/autolearning/dashboard_api.py
+PORT = int(os.environ.get("DASH_PORT", "7862"))
 # 바인딩 호스트. 기본은 로컬 전용(안전). 서버에서 같이 쓰는 사람이 브라우저로 보게 하려면
 # DASH_HOST=0.0.0.0 으로 띄운다 (대시보드에 인증이 없으니 신뢰된 내부망에서만).
 HOST = os.environ.get("DASH_HOST", "127.0.0.1")

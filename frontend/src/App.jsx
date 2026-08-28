@@ -223,10 +223,11 @@ function AutoLabelView({ onPrep, active }) {
   // 라벨 생성 대상 = 이 부품에서 참조샷이 있는 모든 영상(현재 영상만 하지 않는다)
   const labelTargets = folderVideos.map(v => v.name)
     .map(n => ({ name: n, shots: buildShots(n) })).filter(x => x.shots.length > 0)
-  const shotFrames = Object.keys(pts).map(Number).filter(i => (pts[i] || []).length).sort((a, b) => a - b)  // 이 영상에서 탭한 프레임들
-  // 부품 선택(체크박스) → 선택한 부품 중 참조샷 있는 것들 일괄 라벨 생성 대상
-    .map(pf => ({ pf, stem: pfTrain(pf)[0] })).filter(x => x.stem)
-    .filter(x => buildShots(x.stem).length > 0).map(x => ({ video: `${x.pf.folder}/${x.stem}`, shots: buildShots(x.stem) }))
+  // 이 영상에서 탭한 프레임들. 세미콜론이 꼭 있어야 한다.
+  // 없으면 아래 줄이 `.` 로 시작할 때 한 문장으로 이어져(ASI 미적용) 이 값이 통째로 망가진다.
+  // 실제로 8/11 개편에서 다음 선언의 머리가 지워지고 꼬리만 남아 붙는 바람에
+  // shotFrames 가 항상 [] 이 되어 화면의 '참조샷' 이 늘 0 으로 보였다.
+  const shotFrames = Object.keys(pts).map(Number).filter(i => (pts[i] || []).length).sort((a, b) => a - b);
   const goShot = (i) => { setIdx(i); setActiveShot(shotKey(src, i)) }   // 그 프레임으로 이동 + (캐시 있으면) 마스크 표시
   const deleteShotFrame = async (i) => {            // 그 프레임 탭 삭제(서버 shots.json 까지 즉시 반영)
     dropMask(src, i)
@@ -263,6 +264,23 @@ function AutoLabelView({ onPrep, active }) {
     setActiveShot(shotKey(src, idx))
     setMaskBusy(false)
   }
+
+  // 탭하면 버튼을 누르지 않아도 마스크·박스가 바로 뜨게 한다.
+  // 점을 찍을 때마다 addPoint 가 그 프레임 마스크 캐시를 지우므로, 캐시가 비어 있으면 다시 만든다.
+  // 기다리지 않고 즉시 부른다(서버 실측 0.36초). 대기를 넣었더니 그만큼 체감이 느려졌다.
+  //
+  // maskBusy 를 의존성에 넣는 이유: 호출이 도는 중에 점을 더 찍으면 아래 guard 에 걸려 그냥 지나간다.
+  // 그때 다시 돌 계기가 없으면 마지막 점이 반영된 마스크가 영원히 안 뜬다.
+  // 호출이 끝나 maskBusy 가 false 로 바뀔 때 이 효과가 다시 평가되면서 최신 점으로 한 번 더 부른다.
+  useEffect(() => {
+    if (running || maskBusy || !src || !cur.length) return
+    if (masks[shotKey(src, idx)]) return          // 이 점 구성으로 만든 결과가 이미 있으면 그대로 쓴다
+    const t = setTimeout(() => { previewMask() }, 0)   // 렌더 중 호출을 피하려 한 틱만 미룬다
+    return () => clearTimeout(t)
+    // masks 는 의존성에 넣지 않는다. previewMask 가 masks 를 바꾸므로 넣으면 무한 호출이 된다.
+    // (위 guard 가 masks 를 읽으므로 결과가 생기면 다음 평가에서 바로 멈춘다)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, idx, cur, running, maskBusy])
 
   // 이 부품 라벨 생성: 참조샷 → SAM2 영상 전파 → 세션 폴더 누적
   const genLabel = async () => {
@@ -304,6 +322,9 @@ function AutoLabelView({ onPrep, active }) {
   const goPart = (i) => { setPartIdx(Math.max(0, Math.min(i, partFolders.length - 1))); setTakeIdx(0); setSelVideo(null) }
 
   const activeMask = masks[shotKey(src, idx)] || null   // 현재 프레임의 마스크만 표시(프레임 바뀌면 자동으로 사라짐)
+  // 마스크 결과를 원본 자리에 그대로 얹을 수 있는 상태인가.
+  // 서버가 주는 combo 는 '원본 + 마스크 + 박스 + 점' 을 합쳐 그린 한 장이라 원본을 대신할 수 있다.
+  const maskShown = !!(activeMask && !activeMask.error && activeMask.combo)
   const partName = curPartFolder ? partOf(curPartFolder.folder) : ''
   const openReview = () => {   // 현재 부품의 생성된 학습 프레임(세션 무관)을 검수 모달로
     if (!partName) return
@@ -347,9 +368,7 @@ function AutoLabelView({ onPrep, active }) {
                     title="마지막으로 찍은 점 하나 취소">되돌리기</button>
             <button className="act-btn neutral" onClick={clearFrame} disabled={running || !cur.length}
                     title="이 프레임에 찍은 점 모두 지우기">모두 지우기</button>
-            <button className="act-btn primary" onClick={previewMask} disabled={running || maskBusy || !cur.length}>
-              {maskBusy ? '생성 중...' : '입력 마스크 확인'}
-            </button>
+            {/* '입력 마스크 확인' 버튼 제거(2026-08-26): 탭하면 마스크가 자동으로 뜨므로 누를 일이 없다. */}
             <button className="act-btn primary" onClick={genLabel} disabled={running || curShots.length === 0}>
               {labelStatus?.running ? '라벨 생성 중...'
                 : ((isLabeled(src) || servedSet.has(partName)) ? '라벨 다시 생성' : '라벨 생성')}
@@ -411,27 +430,37 @@ function AutoLabelView({ onPrep, active }) {
               {/* 마스크 판정 배너 제거(2026-08-19): 판정 문구가 실제와 잘 안 맞았고,
                   배너가 세로 47px 을 차지해 프레임 이미지가 12% 작아졌다 커지는 들썩임을 만들었다.
                   마스크는 오른쪽 칸에서 눈으로 확인한다. */}
-              {/* 듀얼 이미지: 좌우 동일 비율로 축소(스크롤 없음), 여백 흰색 */}
-              <div className="al-panes" style={{ display: 'flex', gap: 12, flex: '1 1 0', minHeight: 0 }}>
-                <div className="img-pane">
+              {/* 이미지 한 장으로 통합(2026-08-26).
+                  전에는 왼쪽 원본 + 오른쪽 마스크로 나눠 그렸다. 같은 장면을 두 번 보여주면서
+                  화면 폭을 반으로 나눠 쓰는 셈이라 정작 봐야 할 이미지가 작았다.
+                  서버가 주는 combo 는 원본 위에 마스크·박스·점을 다 그려서 준다. 그래서 그것을
+                  원본 자리에 그대로 얹으면 한 칸으로 충분하고, 폭을 다 쓸 수 있다. */}
+              {/* 칸이 하나가 되면서 justify-content: center 를 준다.
+                  세로형 영상(9:16)은 높이에 걸려 폭이 좁아지는데, 칸이 폭을 다 차지하면
+                  이미지 옆으로 흰 여백이 700px 넘게 남는다. 칸을 이미지에 붙여(flex: 0 1 auto)
+                  가운데 놓으면 테두리가 이미지를 감싼다. */}
+              <div className="al-panes" style={{ display: 'flex', gap: 12, flex: '1 1 0', minHeight: 0, justifyContent: 'center' }}>
+                <div className="img-pane" style={{ flex: '0 1 auto', maxWidth: '100%' }}>
                   {preparing
                     ? <span className="al-hint">프레임 컷 중...</span>
                     : <div className="tap-box" onClick={(e) => addPoint(e, 1)} onContextMenu={(e) => addPoint(e, 0)}
                            style={natSize ? { aspectRatio: `${natSize.w} / ${natSize.h}` } : undefined}>
-                        {src && <img src={`/api/autolabel/frame?src=${encodeURIComponent(srcKey)}&idx=${idx}&w=720`} alt={`frame ${idx}`} draggable={false}
+                        {src && <img draggable={false}
+                                     src={maskShown ? activeMask.combo
+                                                    : `/api/autolabel/frame?src=${encodeURIComponent(srcKey)}&idx=${idx}&w=720`}
+                                     alt={maskShown ? '입력 마스크' : `frame ${idx}`}
                                      onLoad={(e) => { const im = e.currentTarget; setNatSize({ w: im.naturalWidth, h: im.naturalHeight }) }} />}
-                        {cur.map((p, i) => (
+                        {/* 마스크 그림에는 서버가 점을 이미 찍어 놓았다. 그 위에 또 찍으면 점이 두 겹으로 보인다.
+                            그래서 마스크가 뜨기 전(서버 응답을 기다리는 동안)에만 우리가 찍은 점을 보여준다.
+                            이게 있어야 탭한 순간 바로 반응이 보인다. */}
+                        {!maskShown && cur.map((p, i) => (
                           <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
                                 style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />
                         ))}
+                        {/* 진행·오류는 이미지 위에 얹는다. 아래에 줄로 두면 뜰 때마다 이미지 높이가 들썩인다. */}
+                        {maskBusy && <span className="img-badge">마스크 생성 중...</span>}
+                        {activeMask?.error && <span className="img-badge err">마스크 오류: {activeMask.error}</span>}
                       </div>}
-                </div>
-                <div className="img-pane">
-                  {activeMask
-                    ? (activeMask.error
-                        ? <span className="fn" style={{ color: '#b91c1c' }}>마스크 오류: {activeMask.error}</span>
-                        : <img src={activeMask.combo} alt="입력 마스크" style={{ maxHeight: '100%', maxWidth: '100%' }} />)
-                    : <span className="al-hint" style={{ padding: 12, textAlign: 'center' }}>입력 마스크 확인을 누르면 여기에 표시됩니다</span>}
                 </div>
               </div>
 

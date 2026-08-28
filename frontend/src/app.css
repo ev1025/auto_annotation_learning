@@ -134,6 +134,14 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 }
 .al-dot.pos { background: var(--dot-pos); }
 .al-dot.neg { background: var(--danger); }
+/* 이미지 위에 얹는 알림(마스크 생성 중·오류). 이미지 아래에 줄로 두면 뜰 때마다 높이가 들썩인다. */
+.img-badge {
+  position: absolute; left: 8px; top: 8px; z-index: 2;
+  background: rgba(17, 24, 39, 0.72); color: #fff;
+  font-size: 12px; line-height: 1.5; padding: 3px 8px;
+  border-radius: var(--r-sm); pointer-events: none; white-space: nowrap;
+}
+.img-badge.err { background: rgba(185, 28, 28, 0.92); }
 .al-controls { display: flex; gap: var(--sp-4); align-items: center; flex-wrap: wrap; margin: var(--sp-6) 0; }
 .al-slider { flex: 1; min-width: 160px; accent-color: var(--accent); }
 .al-hint { font-size: var(--fs-sm); color: var(--muted); }
