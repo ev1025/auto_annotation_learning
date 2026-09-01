@@ -342,7 +342,13 @@ def api_autolabel_prepare(src: str):
 # ---- SAM2 단계형 오토라벨 ----
 @app.post("/api/sam2/mask")
 def api_sam2_mask(payload: dict = Body(...)):
-    return sa.mask_preview(payload.get("src"), int(payload.get("frame", 0)), payload.get("points", []))
+    # 예외를 그대로 두면 500 이 나가고 프론트는 본문을 못 읽어 '요청 실패' 만 띄운다.
+    # 원인을 화면에 그대로 보여줘야 사용자가 다시 시도할지 판단할 수 있다.
+    try:
+        return sa.mask_preview(payload.get("src"), int(payload.get("frame", 0)), payload.get("points", []))
+    except Exception as e:   # noqa: BLE001
+        print(f"[mask] 실패: {type(e).__name__}: {e}", flush=True)
+        return {"error": f"{type(e).__name__}: {e}"[:200]}
 
 
 @app.get("/api/sam2/parts_sessions")
@@ -466,6 +472,108 @@ def api_sam2_rollback_to(payload: dict = Body(...)):
 @app.get("/api/sam2/status")
 def api_sam2_status(job: str):
     return sa.job_status(job)
+
+
+# ---- GT 만들기 + mAP 채점 (gt_label.html / mAP_Test.html) ----
+# 정적 서빙(app.mount("/"))보다 위에 둔다. 아래에 두면 mount 가 /api/gt/* 까지 먹는다.
+# 실패는 기존 규약대로 HTTP 200 + {"error": "한국어"} 로 준다(프론트가 본문 error 를 먼저 본다).
+import gt_eval as ge   # noqa: E402
+
+
+def _gt(fn, *args, **kw):
+    """gt_eval 호출 공용 래퍼. 예외가 500 으로 나가면 프론트가 본문을 못 읽어
+    '요청 실패' 만 띄운다. 원인을 그대로 화면에 보여준다."""
+    try:
+        return fn(*args, **kw)
+    except Exception as e:   # noqa: BLE001
+        print(f"[gt] {getattr(fn, '__name__', fn)} 실패: {type(e).__name__}: {e}", flush=True)
+        return {"error": f"{type(e).__name__}: {e}"[:300]}
+
+
+@app.get("/api/gt/videos")
+def api_gt_videos():
+    return _gt(ge.list_videos)
+
+
+@app.get("/api/gt/prepare")
+def api_gt_prepare(stem: str, step: int = 15):
+    return _gt(ge.prepare, stem, step)
+
+
+@app.get("/api/gt/frame")
+def api_gt_frame(stem: str, idx: int, w: int = 0):
+    b = _gt(ge.frame_jpeg, stem, idx, w)
+    if isinstance(b, dict):          # 래퍼가 잡은 예외
+        return JSONResponse(b, status_code=200)
+    if b is None:
+        return JSONResponse({"error": "frame not found"}, status_code=404)
+    return Response(content=b, media_type="image/jpeg",
+                    headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.post("/api/gt/scan")
+def api_gt_scan(payload: dict = Body(...)):
+    return _gt(ge.start_scan, payload.get("stems"), payload.get("step", 15),
+               payload.get("conf", 0.10))
+
+
+@app.get("/api/gt/scan/result")
+def api_gt_scan_result(run: str = None, parts: str = None, min_conf: float = 0.0):
+    # parts 는 쉼표 목록(a,b,c). 쿼리 문자열이라 배열을 못 받는다
+    ps = [x.strip() for x in (parts or "").split(",") if x.strip()]
+    return _gt(ge.scan_result, run, ps, min_conf)
+
+
+@app.get("/api/gt/status")
+def api_gt_status(parts: str = None):
+    ps = [x.strip() for x in (parts or "").split(",") if x.strip()]
+    return _gt(ge.gt_status, ps or None)
+
+
+@app.post("/api/gt/commit")
+def api_gt_commit(payload: dict = Body(...)):
+    return _gt(ge.commit, payload.get("part"), payload.get("stem"),
+               payload.get("idx"), payload.get("boxes") or [])
+
+
+@app.post("/api/gt/propagate")
+def api_gt_propagate(payload: dict = Body(...)):
+    return _gt(ge.start_propagate, payload.get("part"), payload.get("stem"),
+               payload.get("idx"), payload.get("box"), payload.get("span", 5))
+
+
+@app.post("/api/gt/eval")
+def api_gt_eval(payload: dict = Body(...)):
+    return _gt(ge.start_eval, payload.get("parts"), payload.get("iou", 0.5),
+               payload.get("report_conf", ge.REPORT_CONF), payload.get("weights"))
+
+
+# ---- 시나리오1 GT 만들기(일회용 화면) ----
+# 영상 선택·임계값 조절을 두지 않는다. 심사 기준(conf 0.70)으로만 5종 x 10컷을 모은다.
+@app.post("/api/gt/collect")
+def api_gt_collect(payload: dict = Body(default={})):
+    return ge.start_collect(int((payload or {}).get("step", 15)))
+
+
+@app.get("/api/gt/collect/result")
+def api_gt_collect_result(run: str = None):
+    return ge.collect_result(run)
+
+
+@app.post("/api/gt/tap")
+def api_gt_tap(payload: dict = Body(...)):
+    """탭한 점 -> SAM2 마스크 -> 박스. 실패해도 500 대신 error 를 돌려준다."""
+    try:
+        return ge.tap_box(payload.get("stem"), int(payload.get("idx", 0)),
+                           payload.get("points", []))
+    except Exception as e:   # noqa: BLE001
+        print(f"[gt/tap] 실패: {type(e).__name__}: {e}", flush=True)
+        return {"error": f"{type(e).__name__}: {e}"[:200]}
+
+
+@app.get("/api/gt/eval/result")
+def api_gt_eval_result(run: str = None):
+    return _gt(ge.eval_result, run)
 
 
 class NoCacheHTML(StaticFiles):

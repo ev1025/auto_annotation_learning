@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>mAP@0.5 공인평가 채점표</title>
+<!--
+  공인시험 심사자 앞에 띄우는 채점 화면. 빌드 없이 이 파일 하나로 동작한다
+  (vite public -> dist 로 복사됨). 주소: http://<서버>:7862/mAP_Test.html
+
+  쓰는 API 는 계약서에 있는 것만이다. 새 엔드포인트를 만들지 않는다.
+    GET  /api/gt/eval/result?run=<run>   결과 재조회(+ runs 목록). run 생략 = 최신
+    POST /api/gt/eval                    다시 채점 -> { job }
+    GET  /api/sam2/status?job=<id>       진행률 폴링
+    GET  /api/gt/frame?stem=&idx=&w=     실패 사례 썸네일
+
+  실패 규약: HTTP 200 + { "error": "메시지" }. 그래서 r.ok 가 아니라 본문 error 를 먼저 본다.
+
+  색은 frontend/src/app.css 의 :root 토큰을 인라인 복사했다(단일 파일 배포라 import 를 못 쓴다).
+  recog.html 의 다크 팔레트는 쓰지 않는다. 심사 화면은 인쇄까지 하므로 밝은 계통이어야 한다.
+-->
+<style>
+:root{
+  /* app.css :root 토큰 인라인 복사(밝은 계통). 값은 원본과 동일하게 유지한다 */
+  --bg:#f1f5f9; --surface:#ffffff; --surface-2:#f8fafc; --surface-3:#f1f5f9;
+  --line:#e2e8f0; --line-strong:#cbd5e1;
+  --ink-strong:#0f172a; --ink:#1e293b; --muted:#64748b; --faint:#94a3b8;
+  --accent:#4f46e5; --accent-2:#6366f1; --accent-ink:#4338ca;
+  --accent-bg:#eef2ff; --accent-line:#c7d2fe; --accent-ring:rgba(79,70,229,.16);
+  --success:#16a34a; --success-ink:#15803d; --success-line:#86efac; --success-bg:#dcfce7;
+  --warn:#b45309; --warn-line:#fde68a; --warn-bg:#fffbeb;
+  --danger:#dc2626; --danger-ink:#b91c1c; --danger-line:#fecaca; --danger-bg:#fee2e2;
+  --down:#1d6fe0;
+  --font-sans:'Noto Sans KR','Malgun Gothic',system-ui,sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,'D2Coding',Consolas,monospace;
+  --fs-2xs:11px; --fs-xs:12px; --fs-sm:13px; --fs-base:14px; --fs-md:15px;
+  --fs-lg:17px; --fs-xl:19px; --fs-display:32px; --lh:1.6;
+  --sp-1:2px; --sp-2:4px; --sp-3:6px; --sp-4:8px; --sp-5:10px;
+  --sp-6:12px; --sp-8:16px; --sp-10:20px; --sp-12:24px; --sp-16:32px;
+  --r-xs:4px; --r-sm:6px; --r:8px; --r-md:10px; --r-lg:12px; --r-pill:999px;
+  --ctl-md:34px;
+  --shadow-sm:0 1px 2px rgba(15,23,42,.05);
+  --shadow:0 1px 3px rgba(15,23,42,.08),0 1px 2px rgba(15,23,42,.04);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:var(--font-sans); color:var(--ink); background:var(--bg);
+  font-size:var(--fs-base); line-height:var(--lh);
+  /* 숫자 폭을 고정해야 표에서 자릿수가 흔들리지 않는다 */
+  font-variant-numeric:tabular-nums;
+}
+main{max-width:1180px; margin:0 auto; padding:var(--sp-10) var(--sp-12) 64px}
+button,select{font:inherit; color:inherit}
+button{cursor:pointer}
+.mono{font-family:var(--font-mono); font-size:var(--fs-xs)}
+
+/* ---------- 판정 히어로: 스크롤 없이 mAP·합격여부·기준선이 먼저 읽혀야 한다 ---------- */
+.hero{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg);
+  box-shadow:var(--shadow); padding:var(--sp-10) var(--sp-12);
+  display:flex; align-items:center; gap:var(--sp-12); flex-wrap:wrap;
+}
+.hero .score{flex:0 0 auto}
+.hero .score .k{font-size:var(--fs-sm); color:var(--muted); letter-spacing:-.01em}
+.hero .score .v{
+  font-size:56px; line-height:1.05; font-weight:800; color:var(--ink-strong);
+  letter-spacing:-.03em;
+}
+.hero .score .v small{font-size:var(--fs-xl); font-weight:700; color:var(--muted); margin-left:var(--sp-2)}
+.hero .score .base{font-size:var(--fs-sm); color:var(--muted); margin-top:var(--sp-1)}
+.badge{
+  flex:0 0 auto; display:inline-flex; align-items:center; gap:var(--sp-3);
+  padding:var(--sp-5) var(--sp-10); border-radius:var(--r-pill);
+  font-size:var(--fs-xl); font-weight:800; letter-spacing:-.02em; border:2px solid transparent;
+}
+.badge.pass{background:var(--success-bg); color:var(--success-ink); border-color:var(--success-line)}
+.badge.fail{background:var(--danger-bg); color:var(--danger-ink); border-color:var(--danger-line)}
+.badge.none{background:var(--surface-3); color:var(--muted); border-color:var(--line-strong); font-size:var(--fs-lg)}
+.hero .spacer{flex:1 1 40px}
+.hero .ctl{flex:0 0 auto; display:flex; flex-direction:column; gap:var(--sp-4); align-items:flex-end}
+.row{display:flex; align-items:center; gap:var(--sp-4); flex-wrap:wrap}
+select{
+  height:var(--ctl-md); padding:0 var(--sp-5); border:1px solid var(--line-strong);
+  border-radius:var(--r-sm); background:var(--surface); font-size:var(--fs-sm); max-width:220px;
+}
+.btn{
+  height:var(--ctl-md); padding:0 var(--sp-8); border-radius:var(--r-sm);
+  border:1px solid var(--line-strong); background:var(--surface); font-size:var(--fs-sm); font-weight:700;
+}
+.btn:hover:not(:disabled){border-color:var(--accent-line); background:var(--accent-bg); color:var(--accent-ink)}
+.btn.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+.btn.primary:hover:not(:disabled){background:var(--accent-2); border-color:var(--accent-2); color:#fff}
+.btn:disabled{opacity:.45; cursor:not-allowed}
+.msg{font-size:var(--fs-xs); color:var(--muted); min-height:16px; text-align:right; max-width:300px}
+.msg.err{color:var(--danger-ink); font-weight:700}
+
+/* ---------- 산식 문구: 시험규격 문구와 글자를 맞춘다 ---------- */
+.formula{
+  margin-top:var(--sp-6); background:var(--accent-bg); border:1px solid var(--accent-line);
+  border-radius:var(--r); padding:var(--sp-5) var(--sp-8);
+  display:flex; gap:var(--sp-12) var(--sp-16); flex-wrap:wrap;
+  font-size:var(--fs-sm); color:var(--accent-ink);
+}
+.formula b{color:var(--ink-strong)}
+
+section{margin-top:var(--sp-12)}
+h2{
+  font-size:var(--fs-lg); color:var(--ink-strong); font-weight:700; letter-spacing:-.01em;
+  margin-bottom:var(--sp-4);
+}
+h2 .sub{font-size:var(--fs-xs); color:var(--muted); font-weight:400; margin-left:var(--sp-4)}
+.panel{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg);
+  box-shadow:var(--shadow-sm); padding:var(--sp-8) var(--sp-10);
+}
+/* 표는 자기 컨테이너에서만 가로 스크롤한다(페이지 전체 가로 스크롤 금지) */
+.scroll{overflow-x:auto}
+table{width:100%; border-collapse:collapse; font-size:var(--fs-base); font-variant-numeric:tabular-nums}
+th{
+  font-weight:600; text-align:left; padding:var(--sp-4) var(--sp-5); white-space:nowrap;
+  border-bottom:2px solid var(--line); background:var(--surface-2); color:var(--ink-strong);
+}
+td{padding:var(--sp-4) var(--sp-5); border-bottom:1px solid var(--line); white-space:nowrap}
+th.num,td.num{text-align:right}
+tr.missing td{color:var(--faint); background:var(--surface-3)}
+tr.total td{font-weight:800; color:var(--ink-strong); background:var(--accent-bg); border-bottom:0}
+.tag{
+  display:inline-block; padding:0 var(--sp-4); border-radius:var(--r-pill);
+  font-size:var(--fs-2xs); font-weight:700; border:1px solid var(--line-strong); color:var(--muted);
+}
+.tag.no{background:var(--warn-bg); border-color:var(--warn-line); color:var(--warn)}
+.tag.yes{background:var(--success-bg); border-color:var(--success-line); color:var(--success-ink)}
+.swatch{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:var(--sp-4)}
+.foot{font-size:var(--fs-xs); color:var(--muted); margin-top:var(--sp-5)}
+.foot b{color:var(--warn)}
+
+/* 조건 표: 심사 문서에 그대로 옮기는 칸이라 라벨 폭을 고정한다.
+   13행을 한 줄로 세우면 클래스별 표가 화면 밖으로 밀린다 -> 두 칸으로 접어 높이를 반으로 줄인다 */
+.condgrid{display:flex; gap:0 var(--sp-10); flex-wrap:wrap}
+.condgrid>table{flex:1 1 420px; min-width:300px; width:auto}
+table.cond th{width:150px; background:var(--surface-2); border-bottom:1px solid var(--line)}
+table.cond td{white-space:normal; word-break:break-word}
+table.cond .mono{word-break:break-all}
+
+/* ---------- PR 곡선(인라인 SVG, 라이브러리 없음) ---------- */
+.chartwrap{display:flex; gap:var(--sp-12); flex-wrap:wrap; align-items:flex-start}
+.chart{flex:1 1 520px; min-width:320px}
+.chart svg{width:100%; height:auto; display:block}
+.legend{flex:0 0 250px; display:flex; flex-direction:column; gap:var(--sp-2)}
+.legend .li{
+  display:flex; align-items:center; gap:var(--sp-4); font-size:var(--fs-sm);
+  padding:var(--sp-2) var(--sp-4); border-radius:var(--r-xs); border:1px solid var(--line);
+}
+.legend .li .nm{flex:1 1 auto; overflow:hidden; text-overflow:ellipsis}
+.legend .li .ap{font-weight:700; color:var(--ink-strong)}
+.legend .li.off{color:var(--faint)}
+
+/* ---------- 실패 사례(기본 접힘) ---------- */
+details.worst{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg); padding:var(--sp-5) var(--sp-8);
+}
+details.worst>summary{
+  cursor:pointer; font-size:var(--fs-md); font-weight:700; color:var(--ink-strong); list-style:none;
+}
+details.worst>summary::-webkit-details-marker{display:none}
+details.worst>summary::before{content:'▸ '; color:var(--muted)}
+details.worst[open]>summary::before{content:'▾ '}
+.wgroup{margin-top:var(--sp-6)}
+.wgroup .t{font-size:var(--fs-sm); font-weight:700; color:var(--ink-strong); margin-bottom:var(--sp-3)}
+.thumbs{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:var(--sp-5)}
+.thumb{border:1px solid var(--line); border-radius:var(--r-sm); overflow:hidden; background:var(--surface-2)}
+.thumb img{width:100%; display:block; aspect-ratio:16/9; object-fit:cover; background:var(--surface-3)}
+.thumb .cap{padding:var(--sp-2) var(--sp-4); font-size:var(--fs-2xs); color:var(--muted); display:flex; gap:var(--sp-3)}
+.thumb .cap b{color:var(--danger-ink)}
+
+/* ---------- 결과 없음(첫 실행 모습) ---------- */
+.empty{
+  background:var(--surface); border:1px dashed var(--line-strong); border-radius:var(--r-lg);
+  padding:var(--sp-16); text-align:center; color:var(--muted);
+}
+.empty h3{font-size:var(--fs-xl); color:var(--ink-strong); margin-bottom:var(--sp-4)}
+.empty p{font-size:var(--fs-sm); margin-bottom:var(--sp-8)}
+.hide{display:none !important}
+
+/* ---------- 인쇄: 배경 제거, 표 분할 방지 ---------- */
+@media print{
+  @page{size:A4 portrait; margin:12mm}
+  body{background:#fff; font-size:11px}
+  main{max-width:none; padding:0}
+  .hero,.panel,details.worst{box-shadow:none; border-color:#999; break-inside:avoid}
+  .hero .score .v{font-size:40px}
+  .formula{background:#fff; border-color:#999; color:#000}
+  .badge{border-width:1px}
+  .badge.pass,.badge.fail,.badge.none{background:#fff; color:#000; border-color:#000}
+  th{background:#fff}
+  tr.total td,tr.missing td{background:#fff; color:#000}
+  /* 표·차트가 페이지 경계에서 잘리면 심사 자료로 못 쓴다 */
+  table,tr,thead,tbody,.chartwrap,.chart,.thumb{break-inside:avoid; page-break-inside:avoid}
+  section{break-inside:avoid}
+  .noprint{display:none !important}
+  details.worst>summary{list-style:none}
+  details.worst:not([open]) .wbody{display:none}
+  a[href]::after{content:''}
+}
+</style>
+</head>
+<body>
+<main>
+
+  <!-- ===== 1. 판정 히어로 ===== -->
+  <div class="hero">
+    <div class="score">
+      <div class="k">mAP@0.5 (IoU 0.5 고정)</div>
+      <div class="v" id="mapv">--<small>/ 100</small></div>
+      <div class="base">합격 기준 <b>&gt;= 51</b></div>
+    </div>
+    <div class="badge none" id="badge">평가 미실행</div>
+    <div class="spacer"></div>
+    <div class="ctl noprint">
+      <div class="row">
+        <select id="runsel" title="지난 채점 실행 선택"><option value="">실행 없음</option></select>
+        <button class="btn primary" id="rescore">다시 채점</button>
+      </div>
+      <div class="msg" id="msg" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <!-- ===== 5. 산식 표기(시험규격 문구와 일치) ===== -->
+  <div class="formula">
+    <span><b>AP</b> = PR 곡선 아래 면적 (모든 점 보간)</span>
+    <span><b>mAP</b> = 5종 AP 산술평균</span>
+    <span><b>IoU</b> 0.5</span>
+    <span><b>보고 임계 conf</b> 0.70</span>
+    <span><b>PR 곡선</b> conf 0.001 이상 전 구간</span>
+  </div>
+
+  <!-- ===== 결과 없음(첫 실행 모습) ===== -->
+  <div class="empty hide" id="emptybox">
+    <h3>아직 평가 결과가 없습니다</h3>
+    <p id="emptywhy">GT 라벨을 만든 뒤 채점을 실행하면 여기에 mAP@0.5 와 클래스별 AP 가 표시됩니다.</p>
+    <button class="btn primary noprint" id="rescore2">채점 실행</button>
+  </div>
+
+  <div id="body" class="hide">
+
+    <!-- ===== 2. 조건 표 ===== -->
+    <section>
+      <h2>시험 조건<span class="sub">심사 문서에 그대로 옮기는 값</span></h2>
+      <div class="panel scroll">
+        <div class="condgrid">
+          <table class="cond"><tbody id="condbody"></tbody></table>
+          <table class="cond"><tbody id="condbody2"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 3. 클래스별 표 ===== -->
+    <section>
+      <h2>클래스별 결과<span class="sub">TP / FP / FN 은 보고 임계 conf 0.70 기준</span></h2>
+      <div class="panel">
+        <div class="scroll">
+          <table>
+            <thead><tr>
+              <th>부품</th>
+              <th class="num">GT 이미지</th>
+              <th class="num">GT 박스</th>
+              <th class="num">TP</th>
+              <th class="num">FP</th>
+              <th class="num">FN</th>
+              <th class="num">Precision</th>
+              <th class="num">Recall</th>
+              <th class="num">F1</th>
+              <th class="num">AP@0.5</th>
+            </tr></thead>
+            <tbody id="clsbody"></tbody>
+          </table>
+        </div>
+        <div class="foot" id="clsfoot"></div>
+      </div>
+    </section>
+
+    <!-- ===== 4. PR 곡선 ===== -->
+    <section>
+      <h2>PR 곡선<span class="sub">가로 Recall, 세로 Precision. 곡선 아래 면적 = AP</span></h2>
+      <div class="panel">
+        <div class="chartwrap">
+          <div class="chart" id="chart"></div>
+          <div class="legend" id="legend"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 7. 실패 사례(기본 접힘) ===== -->
+    <section>
+      <details class="worst" id="worstbox">
+        <summary>실패 사례 프레임 <span id="worstn" style="font-weight:400;color:var(--muted)"></span></summary>
+        <div class="wbody" id="worstbody"></div>
+      </details>
+    </section>
+
+  </div>
+</main>
+
+<script>
+(function(){
+  'use strict';
+  var $ = function(id){ return document.getElementById(id); };
+
+  // 평가 대상 5종. 순서를 코드에 고정한다.
+  // 백엔드가 GT 0장인 부품을 빼고 보내도 화면에서는 5줄이 나와야 '5종 평균'이 성립한다.
+  var PARTS = ['seal_support','r-ring','shim','split_gearbox','bracket'];
+  // 클래스별 색. app.css 데이터 마커/상태 토큰의 hex 를 그대로 쓴다(구분되는 5색)
+  var COLORS = ['#4f46e5','#16a34a','#b45309','#dc2626','#1d6fe0'];
+  var EXTRA_COLOR = '#64748b';   // 5종 밖 부품이 섞여 오면 회색으로
+
+  var PASS_DEFAULT = 51;         // 계약서 합격선. 응답의 pass_threshold 가 있으면 그것을 쓴다
+  var cur = null;                // 지금 그린 summary
+  var polling = null;            // setTimeout 핸들
+
+  function esc(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  function num(v){ return (typeof v === 'number' && isFinite(v)) ? v : 0; }
+  function f3(v){ return (typeof v === 'number' && isFinite(v)) ? v.toFixed(3) : '-'; }
+  function f1(v){ return (typeof v === 'number' && isFinite(v)) ? v.toFixed(1) : '-'; }
+  function clamp01(v){ v = num(v); return v < 0 ? 0 : (v > 1 ? 1 : v); }
+
+  function say(text, isErr){
+    var m = $('msg');
+    m.textContent = text || '';
+    m.className = 'msg' + (isErr ? ' err' : '');
+  }
+
+  // 실패를 조용히 넘기지 않는다. 네트워크 실패는 예외로, 업무 실패는 본문 error 로 온다.
+  function api(url, opts){
+    return fetch(url, opts).then(function(r){
+      return r.json().catch(function(){
+        throw new Error('응답이 JSON 이 아닙니다 (HTTP ' + r.status + ')');
+      });
+    });
+  }
+
+  // ================= 로드 =================
+  function load(run){
+    say('결과를 불러옵니다...');
+    var url = '/api/gt/eval/result' + (run ? ('?run=' + encodeURIComponent(run)) : '');
+    api(url).then(function(d){
+      // runs 는 결과가 없어도 올 수 있으니 먼저 채운다
+      fillRuns(d && d.runs, d && d.run);
+      if (!d || d.error){
+        showEmpty((d && d.error) ? d.error : '결과 응답이 비었습니다.');
+        say(d && d.error ? d.error : '', !!(d && d.error));
+        return;
+      }
+      if (d.map50 == null && !(d.classes && d.classes.length)){
+        showEmpty('채점 결과 파일이 아직 없습니다.');
+        say('');
+        return;
+      }
+      render(d);
+      say('');
+    }).catch(function(e){
+      showEmpty('결과 조회 실패: ' + e.message);
+      say('결과 조회 실패: ' + e.message, true);
+    });
+  }
+
+  function fillRuns(runs, sel){
+    var s = $('runsel');
+    runs = (runs && runs.length) ? runs.slice() : [];
+    if (sel && runs.indexOf(sel) < 0) runs.unshift(sel);
+    if (!runs.length){
+      s.innerHTML = '<option value="">실행 없음</option>';
+      s.disabled = true;
+      return;
+    }
+    s.disabled = false;
+    s.innerHTML = runs.map(function(r){
+      return '<option value="' + esc(r) + '"' + (r === sel ? ' selected' : '') + '>' + esc(r) + '</option>';
+    }).join('');
+  }
+
+  function showEmpty(why){
+    cur = null;
+    $('body').classList.add('hide');
+    $('emptybox').classList.remove('hide');
+    $('emptywhy').textContent = why
+      ? (why + ' GT 라벨을 만든 뒤 채점을 실행하면 mAP@0.5 와 클래스별 AP 가 표시됩니다.')
+      : 'GT 라벨을 만든 뒤 채점을 실행하면 mAP@0.5 와 클래스별 AP 가 표시됩니다.';
+    $('mapv').innerHTML = '--<small>/ 100</small>';
+    $('badge').className = 'badge none';
+    $('badge').textContent = '평가 미실행';
+  }
+
+  // ================= 렌더 =================
+  function render(d){
+    cur = d;
+    $('emptybox').classList.add('hide');
+    $('body').classList.remove('hide');
+
+    var thr = (typeof d.pass_threshold === 'number') ? d.pass_threshold : PASS_DEFAULT;
+    // map50_pct 가 없으면 map50 에서 만든다(둘 중 하나만 와도 화면이 비지 않게)
+    var pct = (typeof d.map50_pct === 'number') ? d.map50_pct
+            : (typeof d.map50 === 'number' ? d.map50 * 100 : null);
+    // 판정은 백엔드 verdict 를 우선한다. 없으면 기준선과 직접 비교한다
+    var pass = d.verdict ? (d.verdict === 'pass') : (pct != null && pct >= thr);
+
+    $('mapv').innerHTML = (pct == null ? '--' : esc(f1(pct))) + '<small>/ 100</small>';
+    $('badge').className = 'badge ' + (pct == null ? 'none' : (pass ? 'pass' : 'fail'));
+    $('badge').textContent = pct == null ? '평가 미실행' : (pass ? '합격' : '불합격');
+    document.querySelector('.hero .base').innerHTML = '합격 기준 <b>&gt;= ' + esc(thr) + '</b>';
+
+    var rows = orderRows(d);
+    renderCond(d, rows, thr);
+    renderClasses(d, rows);
+    renderChart(rows);
+    renderWorst(rows);
+  }
+
+  // 5종을 항상 5줄로. 응답에 없는 부품은 GT 없음 자리표로 만든다
+  function orderRows(d){
+    var by = {};
+    (d.classes || []).forEach(function(c){ if (c && c.part) by[c.part] = c; });
+    var missing = {};
+    (d.missing || []).forEach(function(p){ missing[p] = true; });
+
+    var rows = PARTS.map(function(p, i){
+      var c = by[p] || { part: p, in_model: false, n_images: 0, n_gt: 0, ap: 0,
+                         tp: 0, fp: 0, fn: 0, precision: 0, recall: 0, f1: 0, pr: null, worst: [] };
+      // GT 가 0장이면 missing 목록에 없어도 GT 없음으로 본다(조용히 빠지는 것을 막는다)
+      c._missing = !!missing[p] || num(c.n_gt) === 0;
+      c._color = COLORS[i % COLORS.length];
+      return c;
+    });
+    // 5종 밖 부품이 응답에 섞여 있으면 버리지 않고 뒤에 붙인다(수치 은폐 금지)
+    (d.classes || []).forEach(function(c){
+      if (c && c.part && PARTS.indexOf(c.part) < 0){
+        c._missing = !!missing[c.part] || num(c.n_gt) === 0;
+        c._color = EXTRA_COLOR;
+        c._extra = true;
+        rows.push(c);
+      }
+    });
+    return rows;
+  }
+
+  function renderCond(d, rows, thr){
+    var imgs = 0, gts = 0;
+    rows.forEach(function(c){ imgs += num(c.n_images); gts += num(c.n_gt); });
+    var missNames = rows.filter(function(c){ return c._missing; })
+                        .map(function(c){ return c.part; });
+    var pairs = [
+      ['실행 번호(run)', '<span class="mono">' + esc(d.run || '-') + '</span>'],
+      ['모델 가중치 파일', '<span class="mono">' + esc(d.weights || '(서비스 모델)') + '</span>'],
+      ['학습 라벨(모델 설명)', esc(d.model_label || '-')],
+      ['IoU 임계', esc(d.iou != null ? d.iou : 0.5) + ' (고정)'],
+      ['보고 임계 conf', esc(d.report_conf != null ? d.report_conf : 0.7) + ' (TP/FP/FN 산출 기준, 운영 규격값)'],
+      ['PR 곡선 conf 구간', '0.001 이상 전 구간'],
+      ['평가 대상', PARTS.length + '종: <span class="mono">' + esc(PARTS.join(', ')) + '</span>'],
+      ['평가 이미지 수', imgs + ' 장 (클래스별 GT 폴더 합계)'],
+      ['GT 박스 수', gts + ' 개'],
+      ['AP 계산', '모든 점 보간(all-point interpolation)으로 PR 곡선 아래 면적'],
+      ['mAP 계산', PARTS.length + '종 AP 산술평균 (GT 없는 부품은 AP 0 으로 포함)'],
+      ['합격선', 'mAP@0.5 x 100 &gt;= ' + esc(thr)],
+      ['GT 없는 부품', missNames.length ? '<b style="color:var(--warn)">' + esc(missNames.join(', ')) + '</b>' : '없음']
+    ];
+    var half = Math.ceil(pairs.length / 2);
+    var tr = function(p){ return '<tr><th>' + p[0] + '</th><td>' + p[1] + '</td></tr>'; };
+    $('condbody').innerHTML = pairs.slice(0, half).map(tr).join('');
+    $('condbody2').innerHTML = pairs.slice(half).map(tr).join('');
+  }
+
+  function renderClasses(d, rows){
+    var t = { tp: 0, fp: 0, fn: 0, img: 0, gt: 0 };
+    var html = rows.map(function(c){
+      t.tp += num(c.tp); t.fp += num(c.fp); t.fn += num(c.fn);
+      t.img += num(c.n_images); t.gt += num(c.n_gt);
+      var name = '<span class="swatch" style="background:' + c._color + '"></span>' + esc(c.part);
+      var tags = '';
+      if (c._missing) tags += ' <span class="tag no">GT 없음 *</span>';
+      if (c.in_model === false && !c._missing) tags += ' <span class="tag no">모델 미포함</span>';
+      if (c._extra) tags += ' <span class="tag">5종 외</span>';
+      return '<tr class="' + (c._missing ? 'missing' : '') + '">'
+        + '<td>' + name + tags + '</td>'
+        + '<td class="num">' + num(c.n_images) + '</td>'
+        + '<td class="num">' + num(c.n_gt) + '</td>'
+        + '<td class="num">' + num(c.tp) + '</td>'
+        + '<td class="num">' + num(c.fp) + '</td>'
+        + '<td class="num">' + num(c.fn) + '</td>'
+        + '<td class="num">' + f3(c.precision) + '</td>'
+        + '<td class="num">' + f3(c.recall) + '</td>'
+        + '<td class="num">' + f3(c.f1) + '</td>'
+        + '<td class="num"><b>' + (c._missing ? '0.000' : f3(c.ap)) + '</b></td>'
+        + '</tr>';
+    }).join('');
+
+    var pct = (typeof d.map50_pct === 'number') ? d.map50_pct
+            : (typeof d.map50 === 'number' ? d.map50 * 100 : null);
+    html += '<tr class="total">'
+      + '<td>mAP@0.5 (' + PARTS.length + '종 평균)</td>'
+      + '<td class="num">' + t.img + '</td>'
+      + '<td class="num">' + t.gt + '</td>'
+      + '<td class="num">' + t.tp + '</td>'
+      + '<td class="num">' + t.fp + '</td>'
+      + '<td class="num">' + t.fn + '</td>'
+      + '<td class="num" colspan="3">' + (pct == null ? '-' : f1(pct) + ' / 100') + '</td>'
+      + '<td class="num">' + f3(d.map50) + '</td>'
+      + '</tr>';
+    $('clsbody').innerHTML = html;
+
+    var miss = rows.filter(function(c){ return c._missing; }).map(function(c){ return c.part; });
+    var foot = '<b>*</b> GT 없음 = 사람이 라벨한 정답 이미지가 0장인 부품. '
+      + 'AP 를 0 으로 두고 <b>평균에 그대로 포함</b>한다. 빼면 5종 평균이 아니게 되므로 제외하지 않는다.';
+    if (miss.length) foot += ' 해당 부품: <b>' + esc(miss.join(', ')) + '</b>';
+    else foot = '<b>*</b> GT 없음 부품은 없다. 5종 모두 사람이 라벨한 정답으로 채점했다.';
+    foot += '<br>TP / FP / FN 은 보고 임계 <b>conf 0.70</b>, IoU <b>0.5</b> 기준. '
+      + 'AP 와 PR 곡선은 conf 0.001 이상 전 구간을 쓴다(임계값에 따라 값이 다른 이유).';
+    $('clsfoot').innerHTML = foot;
+  }
+
+  // ================= PR 곡선(인라인 SVG 직접 계산) =================
+  // viewBox 고정 + width:100% 로 반응형. 플롯 영역 좌표를 직접 계산한다.
+  var VW = 620, VH = 400, PL = 56, PR_ = 18, PT = 18, PB = 46;
+  var PLW = VW - PL - PR_;        // 546
+  var PLH = VH - PT - PB;         // 336
+  function sx(r){ return PL + clamp01(r) * PLW; }
+  function sy(p){ return PT + (1 - clamp01(p)) * PLH; }
+
+  function renderChart(rows){
+    var g = [];
+    g.push('<svg viewBox="0 0 ' + VW + ' ' + VH + '" role="img" '
+      + 'aria-label="클래스별 Precision-Recall 곡선">');
+    // 곡선이 축 밖으로 튀는 것을 막는 클립(값이 0~1 을 벗어난 응답이 와도 그림이 깨지지 않게)
+    g.push('<defs><clipPath id="plotclip"><rect x="' + PL + '" y="' + PT
+      + '" width="' + PLW + '" height="' + PLH + '"/></clipPath></defs>');
+    g.push('<rect x="' + PL + '" y="' + PT + '" width="' + PLW + '" height="' + PLH
+      + '" fill="#ffffff" stroke="#cbd5e1"/>');
+
+    // 격자 + 눈금(0, 0.2, ... 1.0)
+    for (var i = 0; i <= 5; i++){
+      var v = i / 5;
+      var x = sx(v), y = sy(v);
+      g.push('<line x1="' + x.toFixed(1) + '" y1="' + PT + '" x2="' + x.toFixed(1)
+        + '" y2="' + (PT + PLH) + '" stroke="#e2e8f0"/>');
+      g.push('<line x1="' + PL + '" y1="' + y.toFixed(1) + '" x2="' + (PL + PLW)
+        + '" y2="' + y.toFixed(1) + '" stroke="#e2e8f0"/>');
+      g.push('<text x="' + x.toFixed(1) + '" y="' + (PT + PLH + 16)
+        + '" font-size="11" fill="#64748b" text-anchor="middle">' + v.toFixed(1) + '</text>');
+      g.push('<text x="' + (PL - 8) + '" y="' + (y + 4).toFixed(1)
+        + '" font-size="11" fill="#64748b" text-anchor="end">' + v.toFixed(1) + '</text>');
+    }
+    g.push('<text x="' + (PL + PLW / 2) + '" y="' + (VH - 8)
+      + '" font-size="12" fill="#1e293b" text-anchor="middle">Recall (재현율)</text>');
+    g.push('<text x="14" y="' + (PT + PLH / 2) + '" font-size="12" fill="#1e293b" '
+      + 'text-anchor="middle" transform="rotate(-90 14 ' + (PT + PLH / 2) + ')">Precision (정밀도)</text>');
+
+    // 곡선
+    g.push('<g clip-path="url(#plotclip)" fill="none" stroke-width="2.2" stroke-linejoin="round">');
+    var drew = 0;
+    rows.forEach(function(c){
+      var pts = prPoints(c.pr);
+      if (!pts) return;
+      drew++;
+      g.push('<polyline points="' + pts + '" stroke="' + c._color + '"/>');
+    });
+    g.push('</g>');
+    if (!drew){
+      g.push('<text x="' + (PL + PLW / 2) + '" y="' + (PT + PLH / 2)
+        + '" font-size="13" fill="#94a3b8" text-anchor="middle">PR 곡선 데이터가 없습니다</text>');
+    }
+    g.push('</svg>');
+    $('chart').innerHTML = g.join('');
+
+    $('legend').innerHTML = rows.map(function(c){
+      var has = !!prPoints(c.pr);
+      var note = c._missing ? 'GT 없음' : (has ? '' : '곡선 없음');
+      return '<div class="li' + (has ? '' : ' off') + '">'
+        + '<span class="swatch" style="background:' + c._color + '"></span>'
+        + '<span class="nm">' + esc(c.part) + (note ? ' <span class="tag no">' + note + '</span>' : '') + '</span>'
+        + '<span class="ap">AP ' + (c._missing ? '0.000' : f3(c.ap)) + '</span></div>';
+    }).join('')
+      + '<div class="foot" style="margin-top:8px">곡선 아래 면적이 그 부품의 AP@0.5 다. '
+      + '오른쪽 위로 붙을수록 좋다.</div>';
+  }
+
+  // pr.recall / pr.precision 은 같은 길이, recall 오름차순으로 온다는 계약.
+  // 길이가 다르게 와도 짧은 쪽까지만 그린다(그림이 깨지지 않게).
+  function prPoints(pr){
+    if (!pr || !pr.recall || !pr.precision) return '';
+    var n = Math.min(pr.recall.length, pr.precision.length);
+    if (!n) return '';
+    var out = [];
+    for (var i = 0; i < n; i++){
+      out.push(sx(pr.recall[i]).toFixed(1) + ',' + sy(pr.precision[i]).toFixed(1));
+    }
+    return out.join(' ');
+  }
+
+  // ================= 실패 사례 =================
+  function renderWorst(rows){
+    var total = 0, html = [];
+    rows.forEach(function(c){
+      var w = (c.worst || []).slice(0, 6);      // 계약상 최대 6개
+      if (!w.length) return;
+      total += w.length;
+      html.push('<div class="wgroup"><div class="t">'
+        + '<span class="swatch" style="background:' + c._color + '"></span>' + esc(c.part)
+        + ' <span style="font-weight:400;color:var(--muted)">' + w.length + '건</span></div><div class="thumbs">'
+        + w.map(function(x){
+            var src = '/api/gt/frame?stem=' + encodeURIComponent(x.stem || '')
+                    + '&idx=' + encodeURIComponent(x.idx) + '&w=320';
+            // 프레임 캐시가 지워졌으면 404 다. 그림만 감추고 캡션은 남겨 원인을 보이게 한다
+            return '<div class="thumb">'
+              + '<img src="' + esc(src) + '" alt="' + esc(x.stem) + ' #' + esc(x.idx) + '" '
+              + 'loading="lazy" onerror="this.style.visibility=\'hidden\'"/>'
+              + '<div class="cap"><span class="mono">' + esc(x.stem) + ' #' + esc(x.idx) + '</span>'
+              + '<b>' + esc(String(x.reason || '').toUpperCase()) + '</b></div></div>';
+          }).join('')
+        + '</div></div>');
+    });
+    if (!total){
+      $('worstn').textContent = '(없음)';
+      $('worstbody').innerHTML = '<div class="foot">보고된 실패 사례가 없습니다.</div>';
+      return;
+    }
+    $('worstn').textContent = '(' + total + '건, FN = 놓친 GT / FP = 오검출)';
+    $('worstbody').innerHTML = html.join('');
+  }
+
+  // ================= 다시 채점 =================
+  function rescore(){
+    if (polling) return;
+    setBusy(true);
+    say('채점을 시작합니다...');
+    api('/api/gt/eval', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // 계약서 2.9 요청 스키마. weights null = 현재 서비스 모델
+      body: JSON.stringify({ parts: PARTS, iou: 0.5, report_conf: 0.70, weights: null })
+    }).then(function(d){
+      if (!d || d.error){
+        setBusy(false);
+        say((d && d.error) || '채점 시작 응답이 비었습니다.', true);
+        return;
+      }
+      if (!d.job){
+        setBusy(false);
+        say('job 번호를 받지 못했습니다.', true);
+        return;
+      }
+      poll(d.job, 0);
+    }).catch(function(e){
+      setBusy(false);
+      say('채점 요청 실패: ' + e.message, true);
+    });
+  }
+
+  function poll(job, tick){
+    polling = setTimeout(function(){
+      api('/api/sam2/status?job=' + encodeURIComponent(job)).then(function(j){
+        if (!j || j.error){
+          polling = null; setBusy(false);
+          say('채점 실패: ' + ((j && j.error) || '상태를 받지 못했습니다.'), true);
+          return;
+        }
+        var pos = (j.total ? (' ' + num(j.done) + '/' + j.total) : '');
+        say('채점 중' + pos + (j.note ? ' · ' + j.note : ''));
+        if (j.stage === 'done'){
+          polling = null; setBusy(false);
+          if (j.result){
+            // 완료 job 에는 runs 가 없다. 드롭다운을 최신으로 맞추려고 결과를 다시 조회한다
+            render(j.result);
+            api('/api/gt/eval/result').then(function(d){
+              fillRuns(d && d.runs, (d && d.run) || j.run);
+            }).catch(function(){ fillRuns([j.run], j.run); });
+            say('채점 완료: ' + esc(j.run || ''));
+          } else {
+            load(j.run || '');
+          }
+          return;
+        }
+        if (j.running === false && j.stage !== 'done'){
+          polling = null; setBusy(false);
+          say('채점이 끝나지 않은 채 멈췄습니다' + (j.note ? ': ' + j.note : '.'), true);
+          return;
+        }
+        poll(job, tick + 1);
+      }).catch(function(e){
+        polling = null; setBusy(false);
+        say('진행률 조회 실패: ' + e.message, true);
+      });
+    }, tick === 0 ? 300 : 1200);
+  }
+
+  function setBusy(b){
+    $('rescore').disabled = b;
+    $('rescore2').disabled = b;
+    $('runsel').disabled = b || $('runsel').options.length === 0;
+    $('rescore').textContent = b ? '채점 중...' : '다시 채점';
+  }
+
+  $('rescore').addEventListener('click', rescore);
+  $('rescore2').addEventListener('click', rescore);
+  $('runsel').addEventListener('change', function(){ if (this.value) load(this.value); });
+
+  showEmpty('');   // 응답이 오기 전에도 화면이 성립해야 한다
+  load('');
+})();
+</script>
+</body>
+</html>

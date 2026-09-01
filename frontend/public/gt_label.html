@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>GT 만들기 (시나리오1)</title>
+<!--
+  시험 시나리오1(mAP@0.5) 전용 GT 제작 화면. 일회용이다.
+
+  설계 조건(2026-09-01 확정)
+    1. 영상을 고르지 않는다. 평가영상 폴더에 있는 것을 전부 본다
+    2. 심사 기준과 같은 conf 0.70 으로만 탐지한다. 임계값 조절 UI 를 두지 않는다
+    3. 5종 각각 10컷씩 자동으로 모은다
+    4. 종 선택은 드롭다운, 프레임 이동은 좌우 화살표
+    5. 이미지를 탭하면 SAM2 입력마스크로 박스를 만들어 보여주고, 저장하면 그 박스가 GT 가 된다
+    6. 그 박스를 사람이 끌어서 이동·크기조절할 수 있다. 빈 곳을 끌면 직접 새로 그린다
+
+  박스는 서버가 이미지에 그려 보내지 않는다. 좌표만 받아 화면이 SVG 로 그린다.
+  그래야 끌어 옮기는 동안 그림과 좌표가 어긋나지 않는다.
+
+  외부 의존 없음(단일 파일). 색은 대시보드(app.css) 토큰을 그대로 옮겼다.
+-->
+<style>
+  :root{
+    --bg:#f1f5f9; --surface:#fff; --surface-2:#f8fafc; --surface-3:#f1f5f9;
+    --line:#e2e8f0; --line-strong:#cbd5e1;
+    --ink-strong:#0f172a; --ink:#1e293b; --muted:#64748b; --faint:#94a3b8;
+    --accent:#4f46e5; --accent-ink:#4338ca; --accent-bg:#eef2ff; --accent-line:#c7d2fe;
+    --success:#16a34a; --success-ink:#15803d; --success-line:#86efac; --success-bg:#dcfce7;
+    --warn:#b45309; --warn-line:#fde68a; --warn-bg:#fffbeb;
+    --danger:#dc2626; --danger-ink:#b91c1c; --danger-line:#fecaca; --danger-bg:#fee2e2;
+    --r-sm:6px; --r-md:10px; --r-lg:14px;
+    --font:'Noto Sans KR','Malgun Gothic',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.5;
+       display:flex;flex-direction:column}
+  button{font:inherit;color:inherit;cursor:pointer}
+  [hidden]{display:none !important}
+
+  header{flex:none;background:var(--surface);border-bottom:1px solid var(--line);
+         padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  h1{margin:0;font-size:17px;color:var(--ink-strong);white-space:nowrap}
+  .sub{color:var(--muted);font-size:12px}
+  .spacer{flex:1}
+
+  .btn{min-height:36px;padding:0 14px;border-radius:var(--r-md);border:1px solid var(--line-strong);
+       background:var(--surface);font-weight:600}
+  .btn:hover:not(:disabled){border-color:var(--accent-line);background:var(--accent-bg)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover:not(:disabled){background:var(--accent-ink)}
+  .btn.ghost{background:transparent;border-color:var(--line)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.wide{min-width:96px}
+
+  select{min-height:36px;padding:0 10px;border-radius:var(--r-md);border:1px solid var(--line-strong);
+         background:var(--surface);font:inherit;font-weight:600;min-width:190px}
+
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;
+        border:1px solid var(--line);background:var(--surface-2);font-size:12px;cursor:pointer}
+  .chip b{font-variant-numeric:tabular-nums}
+  .chip.on{border-color:var(--accent-line);background:var(--accent-bg);color:var(--accent-ink)}
+  .chip.full{border-color:var(--success-line);background:var(--success-bg);color:var(--success-ink)}
+
+  main{flex:1 1 0;min-height:0;display:flex;flex-direction:column;padding:12px 16px;gap:10px}
+
+  /* 이미지 무대. min-height 를 반드시 준다. flex:1 만 주면 부모 높이가 내용에서 나와 0 으로 붕괴한다 */
+  .stagewrap{flex:1 1 auto;min-height:0;display:flex;align-items:center;gap:10px}
+  .arrow{flex:none;width:52px;height:96px;border-radius:var(--r-md);border:1px solid var(--line-strong);
+         background:var(--surface);font-size:22px;font-weight:700;color:var(--muted)}
+  .arrow:hover:not(:disabled){background:var(--accent-bg);border-color:var(--accent-line);color:var(--accent-ink)}
+  .arrow:disabled{opacity:.35;cursor:not-allowed}
+  .stage{flex:1 1 0;min-width:0;min-height:56vh;position:relative;background:#0b1020;
+         border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden}
+  .stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
+  /* SVG 를 이미지와 똑같이 겹친다. viewBox 를 원본 픽셀로 두고 preserveAspectRatio 를
+     object-fit:contain 과 같게 맞추면 좌표 변환을 따로 하지 않아도 정확히 겹친다. */
+  .stage svg{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-action:none}
+  .bx{fill:rgba(79,70,229,.10);stroke:#fb923c;vector-effect:non-scaling-stroke}
+  .hd{fill:#fff;stroke:#fb923c;vector-effect:non-scaling-stroke}
+  .hd:hover{fill:#fb923c}
+  .badge{position:absolute;left:10px;top:10px;z-index:3;padding:4px 10px;border-radius:999px;
+         background:rgba(15,23,42,.78);color:#fff;font-size:12px;pointer-events:none;white-space:nowrap}
+  .badge.err{background:rgba(185,28,28,.92)}
+  .badge.ok{background:rgba(22,101,52,.9)}
+  .msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#cbd5e1;text-align:center}
+
+  .bar{flex:none;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+       background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px}
+  .pos{font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink-strong)}
+  .fn{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+  .hint{color:var(--muted);font-size:12px}
+  .box-val{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--accent-ink);
+           background:var(--accent-bg);border:1px solid var(--accent-line);border-radius:var(--r-sm);
+           padding:2px 8px;font-variant-numeric:tabular-nums}
+  .saved-tag{color:var(--success-ink);background:var(--success-bg);border:1px solid var(--success-line);
+             border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600}
+  .err{color:var(--danger-ink);background:var(--danger-bg);border:1px solid var(--danger-line);
+       border-radius:var(--r-sm);padding:8px 10px;font-size:13px}
+
+  .setup{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+         background:var(--surface);border:1px dashed var(--line-strong);border-radius:var(--r-lg);padding:30px}
+  .setup h2{margin:0;font-size:18px;color:var(--ink-strong)}
+  .setup p{margin:0;color:var(--muted);text-align:center;max-width:560px}
+  .prog{width:min(560px,90%);height:8px;border-radius:999px;background:var(--surface-3);overflow:hidden}
+  .prog i{display:block;height:100%;background:var(--accent);width:0}
+  kbd{border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:4px;padding:1px 6px;
+      background:var(--surface-2);font-family:inherit;font-size:11px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>GT 만들기</h1>
+  <span class="sub">시나리오1 · IoU 0.5 · conf 0.70 기준 · 종별 10컷</span>
+  <span class="chips" id="chips"></span>
+  <span class="spacer"></span>
+  <button class="btn ghost" id="btn-recollect" hidden>다시 수집</button>
+</header>
+
+<main>
+  <section class="setup" id="setup">
+    <h2>평가 프레임을 모읍니다</h2>
+    <p>평가영상 폴더의 모든 영상을 <b>conf 0.70</b> 으로 훑어
+       <b>5종 각각 10컷</b> 을 자동으로 고릅니다. 영상을 따로 고르지 않습니다.</p>
+    <div class="prog" hidden id="prog"><i id="progbar"></i></div>
+    <div class="fn" id="setup-note"></div>
+    <button class="btn primary" id="btn-collect">수집 시작</button>
+    <div class="err" id="setup-err" hidden></div>
+  </section>
+
+  <section id="work" hidden style="flex:1;min-height:0;display:flex;flex-direction:column;gap:10px">
+    <div class="bar">
+      <select id="part"></select>
+      <span class="pos" id="pos">-</span>
+      <span class="fn" id="fname"></span>
+      <span id="savedtag" class="saved-tag" hidden>저장됨</span>
+      <span class="spacer"></span>
+      <span class="box-val" id="boxval" hidden></span>
+      <button class="btn" id="btn-reset" disabled>되돌리기 <kbd>Z</kbd></button>
+      <button class="btn primary wide" id="btn-save" disabled>저장 <kbd>S</kbd></button>
+    </div>
+
+    <div class="stagewrap">
+      <button class="arrow" id="btn-prev" title="이전 프레임 (←)">&#8249;</button>
+      <div class="stage" id="stage">
+        <img id="shot" alt="" hidden />
+        <svg id="ov" hidden preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="badge" id="badge" hidden></div>
+        <div class="msg" id="msg">프레임 없음</div>
+      </div>
+      <button class="arrow" id="btn-next" title="다음 프레임 (→)">&#8250;</button>
+    </div>
+
+    <div class="bar">
+      <span class="hint">
+        <b>클릭</b> 물체 잡기(SAM2) · <b>우클릭</b> 제외점 · <b>빈 곳 끌기</b> 박스 직접 그리기 ·
+        <b>박스 안 끌기</b> 이동 · <b>모서리 끌기</b> 크기조절
+        &nbsp;|&nbsp; <kbd>←</kbd><kbd>→</kbd> 프레임 · <kbd>S</kbd> 저장 · <kbd>Z</kbd> 되돌리기
+      </span>
+    </div>
+    <div class="err" id="err" hidden></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  var PARTS = [], data = null, part = null, idx = 0;
+  var pts = [];        // SAM2 에 넘긴 점 [{rx,ry,lab}]
+  var box = null;      // 현재 박스 (원본 픽셀 x1,y1,x2,y2). 저장 직전에 정규화한다
+  var natW = 0, natH = 0;
+  var busy = false, drag = null;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var hide = function (el, v) { if (v) el.setAttribute('hidden', ''); else el.removeAttribute('hidden'); };
+  var clamp = function (v, a, b) { return v < a ? a : (v > b ? b : v); };
+
+  function showErr(el, m) {
+    if (!m) { hide(el, true); el.textContent = ''; return; }
+    el.textContent = m; hide(el, false);
+  }
+
+  // 실패도 HTTP 200 + error 키로 오는 레포 규약. error 를 먼저 본다
+  function api(path, opt) {
+    return fetch(path, opt).then(function (r) {
+      var ct = r.headers.get('content-type') || '';
+      if (ct.indexOf('json') < 0) throw new Error('서버 응답 형식 오류 (' + r.status + ')');
+      return r.json();
+    }).then(function (d) { if (d && d.error) throw new Error(d.error); return d; });
+  }
+
+  // ================= 수집 =================
+  function collect() {
+    showErr($('setup-err'), '');
+    $('btn-collect').disabled = true;
+    hide($('prog'), false);
+    api('/api/gt/collect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      .then(function (d) { return poll(d.job); })
+      .then(function () { return load(); })
+      .catch(function (e) {
+        showErr($('setup-err'), e.message);
+        $('btn-collect').disabled = false; hide($('prog'), true);
+      });
+  }
+
+  function poll(job) {
+    return new Promise(function (resolve, reject) {
+      var tick = function () {
+        fetch('/api/sam2/status?job=' + encodeURIComponent(job)).then(function (r) { return r.json(); })
+          .then(function (j) {
+            var tot = j.total || 0, done = j.done || 0;
+            $('progbar').style.width = tot ? Math.round(done / tot * 100) + '%' : '0%';
+            $('setup-note').textContent = (j.stage || '') + ' ' + (tot ? done + '/' + tot : '') + ' ' + (j.note || '');
+            if (j.stage === 'done') return resolve(j);
+            if (j.stage === 'error') return reject(new Error(j.error || '수집 실패'));
+            setTimeout(tick, 1500);
+          }).catch(reject);
+      };
+      tick();
+    });
+  }
+
+  function load() {
+    return api('/api/gt/collect/result').then(function (d) {
+      data = d;
+      PARTS = Object.keys(d.picked || {});
+      if (!PARTS.length) throw new Error('고른 프레임이 없습니다.');
+      var sel = $('part'); sel.innerHTML = '';
+      PARTS.forEach(function (p) {
+        var o = document.createElement('option'); o.value = p; o.textContent = p; sel.appendChild(o);
+      });
+      part = PARTS[0]; sel.value = part; idx = 0;
+      hide($('setup'), true); hide($('work'), false); hide($('btn-recollect'), false);
+      chips(); show();
+    });
+  }
+
+  var listOf = function (p) { return (data && data.picked && data.picked[p]) || []; };
+  var savedOf = function (p) { return (data && data.saved && data.saved[p]) || []; };
+  var nameOf = function (it) { return it ? it.stem + '_' + String(it.idx).padStart(5, '0') : ''; };
+  var cur = function () { return listOf(part)[idx]; };
+
+  function chips() {
+    var c = $('chips'); c.innerHTML = '';
+    PARTS.forEach(function (p) {
+      var n = savedOf(p).length, tot = listOf(p).length;
+      var el = document.createElement('span');
+      el.className = 'chip' + (p === part ? ' on' : '') + (tot && n >= tot ? ' full' : '');
+      el.innerHTML = p + ' <b>' + n + '/' + tot + '</b>';
+      el.onclick = function () { part = p; idx = 0; $('part').value = p; chips(); show(); };
+      c.appendChild(el);
+    });
+  }
+
+  // ================= 프레임 표시 =================
+  function show() {
+    var arr = listOf(part), it = arr[idx];
+    pts = []; box = null; drag = null;
+    hide($('boxval'), true); hide($('badge'), true); hide($('ov'), true);
+    showErr($('err'), '');
+    $('btn-save').disabled = true; $('btn-reset').disabled = true;
+    $('pos').textContent = arr.length ? (idx + 1) + ' / ' + arr.length : '0 / 0';
+    $('fname').textContent = it ? nameOf(it) + ' · 모델 ' + Math.round(it.conf * 100) + '%' : '';
+    hide($('savedtag'), !(it && savedOf(part).indexOf(nameOf(it)) >= 0));
+    $('btn-prev').disabled = idx <= 0;
+    $('btn-next').disabled = idx >= arr.length - 1;
+
+    var img = $('shot');
+    if (!it) { hide(img, true); $('msg').textContent = '이 종은 고른 프레임이 없습니다.'; hide($('msg'), false); return; }
+    hide($('msg'), true);
+    img.onload = function () {
+      natW = img.naturalWidth; natH = img.naturalHeight;
+      $('ov').setAttribute('viewBox', '0 0 ' + natW + ' ' + natH);
+      hide($('ov'), false);
+      // 모델이 찾아둔 박스를 시작점으로 올려 준다. 대개 이것만 살짝 고치면 끝난다
+      if (it.bbox && it.bbox.length === 4) { box = it.bbox.slice(); paint(); mark('ok', '모델 박스입니다. 끌어서 고치거나 클릭으로 다시 잡으세요'); }
+      else render();
+    };
+    img.src = '/api/gt/frame?stem=' + encodeURIComponent(it.stem) + '&idx=' + it.idx;
+    hide(img, false);
+  }
+
+  function mark(kind, msg) {
+    var b = $('badge');
+    b.className = 'badge' + (kind ? ' ' + kind : '');
+    b.textContent = msg; hide(b, !msg);
+  }
+
+  // ================= 박스 그리기(SVG) =================
+  var HD = 9;   // 손잡이 반지름(원본 픽셀 기준이 아니라 화면에서 일정하게 보이도록 스케일 보정)
+
+  function paint() {
+    var ov = $('ov');
+    ov.innerHTML = '';
+    // 점 표시(서버가 그린 것과 별개로, 지운 뒤에도 남게)
+    pts.forEach(function (p) {
+      var c = document.createElementNS(SVGNS, 'circle');
+      c.setAttribute('cx', p.rx * natW); c.setAttribute('cy', p.ry * natH);
+      c.setAttribute('r', Math.max(4, natW / 220));
+      c.setAttribute('fill', p.lab ? '#2563eb' : '#dc2626');
+      c.setAttribute('stroke', '#fff'); c.setAttribute('stroke-width', Math.max(1, natW / 900));
+      c.setAttribute('pointer-events', 'none');
+      ov.appendChild(c);
+    });
+    if (!box) { render(); return; }
+    var x1 = Math.min(box[0], box[2]), y1 = Math.min(box[1], box[3]);
+    var x2 = Math.max(box[0], box[2]), y2 = Math.max(box[1], box[3]);
+    var r = document.createElementNS(SVGNS, 'rect');
+    r.setAttribute('class', 'bx');
+    r.setAttribute('x', x1); r.setAttribute('y', y1);
+    r.setAttribute('width', x2 - x1); r.setAttribute('height', y2 - y1);
+    r.setAttribute('stroke-width', 2);
+    r.dataset.role = 'move';
+    ov.appendChild(r);
+    // 손잡이 8개. 화면에서 일정한 크기로 보이게 viewBox 배율을 되돌린다
+    var k = natW / ($('ov').getBoundingClientRect().width || natW);
+    var rad = HD * k;
+    var hs = [['nw', x1, y1], ['n', (x1 + x2) / 2, y1], ['ne', x2, y1],
+              ['e', x2, (y1 + y2) / 2], ['se', x2, y2], ['s', (x1 + x2) / 2, y2],
+              ['sw', x1, y2], ['w', x1, (y1 + y2) / 2]];
+    hs.forEach(function (h) {
+      var c = document.createElementNS(SVGNS, 'circle');
+      c.setAttribute('class', 'hd');
+      c.setAttribute('cx', h[1]); c.setAttribute('cy', h[2]); c.setAttribute('r', rad);
+      c.setAttribute('stroke-width', 2);
+      c.dataset.role = h[0];
+      c.style.cursor = (h[0] === 'n' || h[0] === 's') ? 'ns-resize'
+                     : (h[0] === 'e' || h[0] === 'w') ? 'ew-resize'
+                     : (h[0] === 'nw' || h[0] === 'se') ? 'nwse-resize' : 'nesw-resize';
+      ov.appendChild(c);
+    });
+    render();
+  }
+
+  function render() {
+    if (!box) { hide($('boxval'), true); $('btn-save').disabled = true; return; }
+    var n = norm(box);
+    $('boxval').textContent = n.map(function (v) { return v.toFixed(4); }).join(' ');
+    hide($('boxval'), false);
+    $('btn-save').disabled = false;
+    $('btn-reset').disabled = false;
+  }
+
+  // 원본 픽셀 x1y1x2y2 -> 정규화 cx cy w h (YOLO 규약)
+  function norm(b) {
+    var x1 = clamp(Math.min(b[0], b[2]), 0, natW), y1 = clamp(Math.min(b[1], b[3]), 0, natH);
+    var x2 = clamp(Math.max(b[0], b[2]), 0, natW), y2 = clamp(Math.max(b[1], b[3]), 0, natH);
+    return [ (x1 + x2) / 2 / natW, (y1 + y2) / 2 / natH, (x2 - x1) / natW, (y2 - y1) / natH ];
+  }
+
+  // 마우스 -> 원본 픽셀. SVG 의 CTM 역행렬을 쓰면 레터박스 여백을 직접 계산할 필요가 없다
+  function toPix(ev) {
+    var ov = $('ov');
+    var p = ov.createSVGPoint();
+    p.x = ev.clientX; p.y = ev.clientY;
+    var m = ov.getScreenCTM();
+    if (!m) return null;
+    var q = p.matrixTransform(m.inverse());
+    return { x: q.x, y: q.y };
+  }
+
+  // ================= 입력 =================
+  var DRAG_MIN = 4;   // 이보다 적게 움직이면 클릭으로 본다
+
+  $('ov').addEventListener('pointerdown', function (ev) {
+    if (busy || !cur()) return;
+    var p = toPix(ev); if (!p) return;
+    ev.preventDefault();
+    $('ov').setPointerCapture(ev.pointerId);
+    var role = (ev.target && ev.target.dataset && ev.target.dataset.role) || null;
+    drag = { role: role, sx: p.x, sy: p.y, moved: 0, btn: ev.button,
+             orig: box ? box.slice() : null };
+    if (!role && ev.button === 0) drag.role = 'new';       // 빈 곳에서 시작 = 새로 그리기 후보
+  });
+
+  $('ov').addEventListener('pointermove', function (ev) {
+    if (!drag) return;
+    var p = toPix(ev); if (!p) return;
+    var dx = p.x - drag.sx, dy = p.y - drag.sy;
+    drag.moved = Math.max(drag.moved, Math.abs(dx) + Math.abs(dy));
+    if (drag.moved < DRAG_MIN) return;
+    if (drag.role === 'new') {
+      box = [drag.sx, drag.sy, p.x, p.y];
+    } else if (drag.role === 'move' && drag.orig) {
+      var w = drag.orig[2] - drag.orig[0], h = drag.orig[3] - drag.orig[1];
+      var nx = clamp(drag.orig[0] + dx, 0, natW - Math.abs(w));
+      var ny = clamp(drag.orig[1] + dy, 0, natH - Math.abs(h));
+      box = [nx, ny, nx + w, ny + h];
+    } else if (drag.orig) {
+      var b = drag.orig.slice(), r = drag.role;
+      if (r.indexOf('n') >= 0) b[1] = clamp(drag.orig[1] + dy, 0, natH);
+      if (r.indexOf('s') >= 0) b[3] = clamp(drag.orig[3] + dy, 0, natH);
+      if (r.indexOf('w') >= 0) b[0] = clamp(drag.orig[0] + dx, 0, natW);
+      if (r.indexOf('e') >= 0) b[2] = clamp(drag.orig[2] + dx, 0, natW);
+      box = b;
+    }
+    paint();
+  });
+
+  $('ov').addEventListener('pointerup', function (ev) {
+    if (!drag) return;
+    var d = drag; drag = null;
+    try { $('ov').releasePointerCapture(ev.pointerId); } catch (e) { /* 이미 풀렸으면 무시 */ }
+    if (d.moved >= DRAG_MIN) {          // 끌었다 = 박스 조작. 여기서 끝
+      mark('ok', '박스를 직접 조정했습니다. 저장(S)');
+      paint(); return;
+    }
+    // 안 끌었다 = 클릭. SAM2 로 물체를 잡는다
+    var p = toPix(ev); if (!p) return;
+    var rx = clamp(p.x / natW, 0, 1), ry = clamp(p.y / natH, 0, 1);
+    pts.push({ rx: +rx.toFixed(4), ry: +ry.toFixed(4), lab: d.btn === 2 ? 0 : 1 });
+    runMask();
+  });
+
+  $('ov').addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
+
+  function runMask() {
+    var it = cur(); if (!it) return;
+    busy = true;
+    mark('', '물체 잡는 중...');
+    api('/api/gt/tap', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stem: it.stem, idx: it.idx,
+                             points: pts.map(function (q) { return [q.rx, q.ry, q.lab]; }) })
+    }).then(function (d) {
+      $('shot').src = d.combo;            // 마스크가 칠해진 그림(박스는 안 그려져 있다)
+      box = d.bbox.slice();
+      paint();
+      if (d.verdict === 'over') mark('err', '너무 넓게 잡혔습니다. 우클릭으로 제외점을 찍거나 모서리를 끌어 줄이세요');
+      else mark('ok', '박스 준비됨. 끌어서 고칠 수 있습니다. 저장(S)');
+    }).catch(function (e) {
+      mark('err', e.message);
+    }).then(function () { busy = false; });
+  }
+
+  function reset() {
+    var it = cur(); if (!it) return;
+    pts = [];
+    box = (it.bbox && it.bbox.length === 4) ? it.bbox.slice() : null;
+    $('shot').src = '/api/gt/frame?stem=' + encodeURIComponent(it.stem) + '&idx=' + it.idx;
+    paint();
+    mark('', box ? '모델 박스로 되돌렸습니다' : '');
+  }
+
+  // ================= 저장 =================
+  function save() {
+    if (!box || busy) return;
+    var it = cur(), n = norm(box);
+    if (n[2] < 0.005 || n[3] < 0.005) { showErr($('err'), '박스가 너무 작습니다.'); return; }
+    busy = true; $('btn-save').disabled = true;
+    api('/api/gt/commit', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ part: part, stem: it.stem, idx: it.idx, boxes: [n] })
+    }).then(function () {
+      var nm = nameOf(it), arr = savedOf(part);
+      if (arr.indexOf(nm) < 0) arr.push(nm);
+      data.saved[part] = arr; chips();
+      if (idx < listOf(part).length - 1) { idx++; show(); }
+      else { hide($('savedtag'), false); mark('ok', '이 종의 마지막 컷입니다'); }
+    }).catch(function (e) {
+      showErr($('err'), '저장 실패: ' + e.message);
+      $('btn-save').disabled = false;
+    }).then(function () { busy = false; });
+  }
+
+  // ================= 이벤트 =================
+  $('btn-collect').onclick = collect;
+  $('btn-recollect').onclick = function () {
+    if (!confirm('프레임을 다시 고릅니다. 이미 저장한 GT 는 지워지지 않습니다.')) return;
+    hide($('work'), true); hide($('setup'), false);
+    $('btn-collect').disabled = false; collect();
+  };
+  $('part').onchange = function () { part = this.value; idx = 0; chips(); show(); };
+  $('btn-prev').onclick = function () { if (idx > 0) { idx--; show(); } };
+  $('btn-next').onclick = function () { if (idx < listOf(part).length - 1) { idx++; show(); } };
+  $('btn-save').onclick = save;
+  $('btn-reset').onclick = reset;
+  window.addEventListener('resize', function () { if (box) paint(); });
+
+  window.addEventListener('keydown', function (e) {
+    if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); $('btn-prev').click(); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); $('btn-next').click(); }
+    else if (e.key === 's' || e.key === 'S') { e.preventDefault(); save(); }
+    else if (e.key === 'z' || e.key === 'Z') { e.preventDefault(); reset(); }
+  });
+
+  // 좌표 변환 자체 점검. 여기가 틀리면 GT 전량이 못 쓰게 되므로 로드할 때 한 번 확인한다.
+  (function selfcheck() {
+    natW = 1920; natH = 1080;
+    var cases = [[0, 0, 100, 100], [960, 540, 1920, 1080], [1900, 1070, 1910, 1075]];
+    var worst = 0;
+    cases.forEach(function (b) {
+      var n = norm(b);
+      var x1 = (n[0] - n[2] / 2) * natW, y1 = (n[1] - n[3] / 2) * natH;
+      var x2 = (n[0] + n[2] / 2) * natW, y2 = (n[1] + n[3] / 2) * natH;
+      worst = Math.max(worst, Math.abs(x1 - b[0]), Math.abs(y1 - b[1]),
+                              Math.abs(x2 - b[2]), Math.abs(y2 - b[3]));
+    });
+    natW = natH = 0;
+    console.log('[GT] 박스 왕복 변환 오차 ' + worst.toExponential(1) + 'px (0 이어야 정상)');
+  })();
+
+  load().catch(function () { /* 수집 기록이 없으면 안내 화면 그대로 */ });
+})();
+</script>
+</body>
+</html>

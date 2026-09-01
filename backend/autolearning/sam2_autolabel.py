@@ -18,6 +18,7 @@ import gc
 import json
 import logging
 import logging.handlers
+import os
 import re
 import shutil
 import sys
@@ -91,6 +92,12 @@ EPOCHS = 100
 
 _IMG = {}          # SAM2 이미지 예측기 캐시(마스크 확인용)
 _LOCK = threading.Lock()
+# 위 예측기는 하나를 돌려 쓴다. 그런데 set_image 로 이미지를 넣어 두고 predict 로 꺼내는 구조라
+# 요청이 겹치면 뒤 요청의 set_image 가 앞 요청의 상태를 덮어써서
+# "An image must be set with .set_image(...) before mask prediction" 로 터진다.
+# FastAPI 는 동기 함수를 스레드풀에서 돌리므로 실제로 겹친다(탭할 때마다 마스크를 부르게 한 뒤 드러났다).
+# 한 번에 하나만 쓰게 막는다. 한 번 호출이 0.4초 수준이라 줄 세워도 체감 차이가 없다.
+_MASK_LOCK = threading.Lock()
 JOBS = {}
 _BUSY = {"on": False}
 
@@ -147,12 +154,14 @@ def mask_preview(src, frame_idx, points):
     # 화면 좌표는 0~1 비율이다. 범위를 벗어난 값이 그대로 SAM2 로 가면 이미지 밖을 가리킨다.
     points = [[min(max(float(x), 0.0), 1.0), min(max(float(y), 0.0), 1.0), int(l)] for x, y, l in points]
     im = _rd(fs[frame_idx]); h, w = im.shape[:2]
-    pred = _img_predictor()
-    with torch.inference_mode(), torch.autocast(DEV, dtype=torch.bfloat16):
-        pred.set_image(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))
-        pts = np.array([[rx * w, ry * h] for rx, ry, _ in points], dtype=np.float32)
-        lbls = np.array([int(lab) for *_, lab in points], dtype=np.int32)
-        masks, scores, _ = pred.predict(point_coords=pts, point_labels=lbls, multimask_output=True)
+    # set_image 로 넣고 predict 로 꺼내는 사이에 다른 요청이 끼어들면 안 된다(_MASK_LOCK 설명 참고).
+    with _MASK_LOCK:
+        pred = _img_predictor()
+        with torch.inference_mode(), torch.autocast(DEV, dtype=torch.bfloat16):
+            pred.set_image(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))
+            pts = np.array([[rx * w, ry * h] for rx, ry, _ in points], dtype=np.float32)
+            lbls = np.array([int(lab) for *_, lab in points], dtype=np.int32)
+            masks, scores, _ = pred.predict(point_coords=pts, point_labels=lbls, multimask_output=True)
     m = masks[int(np.argmax(scores))].astype(bool)
     bb = _bbox(m)
     # 한 이미지에 전부: 마스크(초록 오버레이) + 박스(주황) + 포인트(초록=부품/빨강=제외)
@@ -177,7 +186,9 @@ def mask_preview(src, frame_idx, points):
     return {"combo": _b64(vis), "area_frac": round(float(m.sum()) / (w * h), 4), "bbox": bb, "verdict": verdict}
 
 def free_sam2():
-    _IMG.clear()
+    # 마스크를 만드는 도중에 예측기를 치우면 그 요청이 터진다. 끝날 때까지 기다렸다 비운다.
+    with _MASK_LOCK:
+        _IMG.clear()
     gc.collect(); torch.cuda.empty_cache()
 
 # ==================== (2) 영상 전파 → 라벨 생성 ====================
@@ -883,19 +894,37 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
                        encoding="utf-8")
 
         # 1.5) (opt-in) 배경 합성 증강: 누끼 → 실배경 copy-paste 로 학습셋 보강(배경 과적합 완화)
+        #
+        # 장수는 실촬에 비례시킨다. 예전에는 함수 기본값 400 장이 그대로 쓰여서, 실촬이 9천 장이든
+        # 300 장이든 항상 400 장만 만들었다. 그래서 대시보드 학습으로는 지금 서비스 중인 모델
+        # (실촬 9,083 + 합성 26,820 = 실촬의 3배)과 같은 레시피를 재현할 수 없었다.
+        # 비율은 config.SYNTH_MULT 로 바꾼다. 0 이면 합성을 건너뛴다.
         n_aug = 0
         if augment:
-            j.update(note="배경 합성 증강 생성 중")
-            n_aug = _synth_augment(oi, ol, logln, cancelled=lambda: bool(j.get("cancel"))) or 0
+            mult = float(os.environ.get("XR_SYNTH_MULT", getattr(config, "SYNTH_MULT", 3.0)))
+            n_syn = int(round(n_img * mult))
+            if n_syn > 0:
+                j.update(note=f"배경 합성 증강 생성 중 (실촬 {n_img}장 x {mult:g} = {n_syn}장)")
+                logln(f"배경 합성 증강 목표 {n_syn}장 (실촬 {n_img} x {mult:g})", "info")
+                n_aug = _synth_augment(oi, ol, logln, n_syn=n_syn,
+                                       cancelled=lambda: bool(j.get("cancel"))) or 0
+            else:
+                logln("합성 배수가 0 이라 배경 합성 증강을 건너뛴다", "info")
 
         # 2) 학습
         from ultralytics import YOLO
         j.update(stage="train", note=f"{n_img}장 / {len(per)}클래스", n_images=n_img,
                  n_augmented=n_aug, n_classes=len(per), epoch=0, total_epochs=epochs)
-        logln(f"YOLO 학습 시작 (epochs={epochs}, imgsz=640, batch=8, device=0)", "info")
+        # 배치 크기는 GPU VRAM 에 맞춰 조절해야 한다. 코드에 8 로 박혀 있으면
+        # 8GB 카드에서 11m 을 돌릴 때 OOM 이 나도 손댈 곳이 없다. 설정으로 뺀다.
+        #   RTX 5090(32GB) + 11m : 32 까지 됨      RTX 4060(8GB) + 11m : 4 권장
+        #   config.TRAIN_BATCH 로 조절하고, 환경변수 XR_TRAIN_BATCH 가 있으면 그게 우선한다.
+        batch = int(os.environ.get("XR_TRAIN_BATCH", getattr(config, "TRAIN_BATCH", 8)))
+        logln(f"YOLO 학습 시작 (model={config.PRETRAINED}, epochs={epochs}, imgsz=640, "
+              f"batch={batch}, device=0)", "info")
         model_dir = sess / "model"
         model = YOLO(config.PRETRAINED)
-        bpe = max(1, (n_img + 7) // 8)      # 에폭당 배치 수(batch=8)
+        bpe = max(1, (n_img + batch - 1) // batch)      # 에폭당 배치 수(진행바 계산용)
         total_batches = bpe * epochs
         _bcount = {"n": 0}
 
@@ -943,7 +972,7 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
         _watcher = threading.Thread(target=_watch_csv, args=(runs_dir, _stop), daemon=True)
         _watcher.start()
         try:
-            model.train(data=str(yml), epochs=epochs, imgsz=640, batch=8, device=0, workers=0,
+            model.train(data=str(yml), epochs=epochs, imgsz=640, batch=batch, device=0, workers=0,
                         project=str(runs_dir), name="model", exist_ok=True, verbose=False,
                         plots=False, degrees=15.0)   # workers=0: 윈도우 spawn 크래시(pickle truncated) 회피
         except _Cancelled:
