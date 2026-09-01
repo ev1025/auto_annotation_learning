@@ -70,6 +70,17 @@
   .pill.warn{background:var(--warn-bg);border-color:var(--warn-line);color:var(--warn)}
   .pill.bad{background:var(--danger-bg);border-color:var(--danger-line);color:var(--danger-ink)}
 
+
+  /* --- 접근성·상호작용 공통 (UI 검수 반영) --- */
+  /* 키보드 사용자에게 보이는 포커스 표시. 마우스 클릭에는 나타나지 않는다(:focus-visible) */
+  :where(button, select, a, [tabindex]):focus-visible{
+    outline:3px solid var(--accent); outline-offset:2px; border-radius:var(--r-sm)}
+  .btn, .tabs button, .card, .fr{transition:background-color .15s ease, border-color .15s ease,
+    box-shadow .15s ease, color .15s ease}
+  /* 모션을 줄이도록 설정한 사용자에게는 전환·부드러운 스크롤을 끈다 */
+  @media (prefers-reduced-motion: reduce){
+    *{transition:none !important; animation:none !important; scroll-behavior:auto !important}
+  }
   main{flex:1;min-height:0;overflow:auto;padding:14px 16px 24px}
   .msg{margin:12px 0;padding:12px 14px;border-radius:var(--r-md);background:var(--warn-bg);
        border:1px solid var(--warn-line);color:var(--warn);font-weight:600}
@@ -88,7 +99,7 @@
   .card .wrap{position:relative;background:#0f172a;aspect-ratio:16/9}
   .card img{width:100%;height:100%;object-fit:contain;display:block}
   .card .wrap svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-  .card .meta{padding:6px 8px;font-size:11px;color:var(--muted);display:flex;gap:6px;
+  .card .meta{padding:6px 8px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;display:flex;gap:6px;
               justify-content:space-between;align-items:center}
   .card .meta b{color:var(--ink);font-weight:700}
   .card .no{position:absolute;top:6px;left:6px;background:rgba(15,23,42,.78);color:#fff;
@@ -140,10 +151,10 @@
 <header>
   <h1>GT 만들기</h1>
   <div class="tabs">
-    <button id="tabPick" class="on">1. 고르기</button>
-    <button id="tabLab">2. 라벨</button>
+    <button id="tabPick" class="on" aria-pressed="true">1. 고르기</button>
+    <button id="tabLab" aria-pressed="false">2. 라벨</button>
   </div>
-  <select id="partSel"></select>
+  <select id="partSel" aria-label="부품 선택"></select>
   <span class="pill" id="cntFound">후보 -</span>
   <span class="pill" id="cntSel">선택 -</span>
   <span class="pill" id="cntSaved">GT -</span>
@@ -155,7 +166,7 @@
 </header>
 
 <main>
-  <div class="msg" id="msg" hidden></div>
+  <div class="msg" id="msg" role="status" aria-live="polite" hidden></div>
 
   <section id="viewPick">
     <div class="grid" id="grid"></div>
@@ -163,13 +174,13 @@
 
   <section id="viewLab" hidden>
     <div class="bar">
-      <button class="btn" id="btnPrev">◀ 이전</button>
+      <button class="btn" id="btnPrev" aria-label="이전 프레임">◀ 이전</button>
       <span class="pill" id="labPos">-</span>
-      <button class="btn" id="btnNext">다음 ▶</button>
+      <button class="btn" id="btnNext" aria-label="다음 프레임">다음 ▶</button>
     </div>
     <div class="stage" id="stage">
       <div class="holder">
-        <img id="im" alt="" />
+        <img id="im" alt="선택한 평가 프레임" />
         <div id="ov"></div>
       </div>
     </div>
@@ -280,6 +291,8 @@ function render() {
 function renderPick() {
   $("viewPick").hidden = false; $("viewLab").hidden = true;
   $("tabPick").className = "on"; $("tabLab").className = "";
+  $("tabPick").setAttribute("aria-pressed", "true");
+  $("tabLab").setAttribute("aria-pressed", "false");
   const cands = (S.data.cands || {})[S.part] || [];
   const saved = new Set((S.data.saved || {})[S.part] || []);
   const g = $("grid");
@@ -293,6 +306,11 @@ function renderPick() {
     const on = S.sel[S.part].has(k);
     const el = document.createElement("div");
     el.className = "card" + (on ? " on" : "");
+    el.tabIndex = 0;                       // 키보드로도 고를 수 있게(격자가 주 작업이다)
+    el.setAttribute("role", "button");
+    el.setAttribute("aria-pressed", on ? "true" : "false");
+    el.setAttribute("aria-label", (n + 1) + "번 후보 · conf " + c.conf.toFixed(2) +
+                                  (on ? " · 선택됨" : ""));
     let ref = "";
     if (c.bbox && c.wh) {          // 모델이 잡은 박스(참고용, GT 아님)
       const b = c.bbox, w = c.wh[0], h = c.wh[1];
@@ -307,19 +325,30 @@ function renderPick() {
           : saved.has(savedName(c)) ? '<span class="tag saved">GT 있음</span>' : "") +
       '</div><div class="meta"><span>conf ' + c.conf.toFixed(2) +
       "</span></div>";
-    el.onclick = () => {
-      const s = S.sel[S.part];
-      if (s.has(k)) { s.delete(k); } else { s.add(k); }
+    const toggle = () => {
+      const set = S.sel[S.part];
+      if (set.has(k)) { set.delete(k); } else { set.add(k); }
       renderPick(); counters();
+      const again = g.children[n];        // 다시 그린 뒤에도 초점을 그 카드에 둔다
+      if (again) { again.focus(); }
+    };
+    el.onclick = toggle;
+    el.onkeydown = (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(); }
     };
     g.appendChild(el);
   });
 }
 
 async function saveSel() {
+  const b = $("btnSaveSel");
+  b.disabled = true; b.textContent = "저장 중…";     // 반응이 없으면 사람은 다시 누른다
   const r = await post("/api/gt/select",
                        { run: S.data.run, part: S.part, keys: Array.from(S.sel[S.part]) });
-  if (r.error) { say(r.error); return; }
+  b.disabled = false;
+  if (r.error) { b.textContent = "선택 저장"; say(r.error); return; }
+  b.textContent = "저장됨";
+  setTimeout(() => { b.textContent = "선택 저장"; }, 1500);
 }
 
 /* ---------------- 2. 라벨 ---------------- */
@@ -332,6 +361,8 @@ function selList() {
 async function renderLab() {
   $("viewPick").hidden = true; $("viewLab").hidden = false;
   $("tabPick").className = ""; $("tabLab").className = "on";
+  $("tabPick").setAttribute("aria-pressed", "false");
+  $("tabLab").setAttribute("aria-pressed", "true");
   S.list = selList();
   if (!S.list.length) {
     $("labPos").textContent = "-";

@@ -61,6 +61,17 @@
   .score.fail b{color:var(--danger-ink)}
   .verdict{font-weight:800}
 
+
+  /* --- 접근성·상호작용 공통 (UI 검수 반영) --- */
+  /* 키보드 사용자에게 보이는 포커스 표시. 마우스 클릭에는 나타나지 않는다(:focus-visible) */
+  :where(button, select, a, [tabindex]):focus-visible{
+    outline:3px solid var(--accent); outline-offset:2px; border-radius:var(--r-sm)}
+  .btn, .tabs button, .card, .fr{transition:background-color .15s ease, border-color .15s ease,
+    box-shadow .15s ease, color .15s ease}
+  /* 모션을 줄이도록 설정한 사용자에게는 전환·부드러운 스크롤을 끈다 */
+  @media (prefers-reduced-motion: reduce){
+    *{transition:none !important; animation:none !important; scroll-behavior:auto !important}
+  }
   main{flex:1;min-height:0;overflow:auto;padding:14px 16px 28px}
   .msg{margin:0 0 12px;padding:11px 14px;border-radius:var(--r-md);background:var(--warn-bg);
        border:1px solid var(--warn-line);color:var(--warn);font-weight:600}
@@ -83,6 +94,11 @@
   th:first-child,td:first-child{text-align:left}
   thead th{background:var(--surface-2);color:var(--muted);font-size:12px;font-weight:700}
   tbody tr:hover{background:var(--surface-2)}
+  #tblParts tbody tr, #tblSeries tbody tr{cursor:pointer}
+  thead th[data-sort]{cursor:pointer;user-select:none}
+  thead th[data-sort]:hover{color:var(--ink-strong)}
+  thead th[aria-sort]::after{content:"\25be";margin-left:4px;color:var(--accent)}
+  thead th[aria-sort="ascending"]::after{content:"\25b4"}
   tr.sel{background:var(--accent-bg)}
   .num{font-family:var(--mono)}
   .ok{color:var(--success-ink);font-weight:700}
@@ -115,14 +131,14 @@
 <header>
   <h1>mAP 채점</h1>
   <button class="btn primary" id="btnRun">채점 시작</button>
-  <select id="runSel" title="지난 채점"></select>
+  <select id="runSel" title="지난 채점" aria-label="지난 채점 기록"></select>
   <span class="score" id="score"><span>mAP@0.5</span><b>-</b><span class="verdict"></span></span>
   <span class="spacer"></span>
   <span class="num" id="modelLabel" style="font-size:12px;color:var(--muted)"></span>
 </header>
 
 <main>
-  <div class="msg" id="msg" hidden></div>
+  <div class="msg" id="msg" role="status" aria-live="polite" hidden></div>
 
   <div class="steps" id="steps"></div>
 
@@ -131,8 +147,11 @@
     <div class="scroll" style="max-height:none">
       <table id="tblParts">
         <thead><tr>
-          <th>부품</th><th>GT 프레임</th><th>GT 박스</th><th>검출</th>
-          <th>TP</th><th>FP</th><th>FN</th><th>정밀도</th><th>재현율</th><th>AP@0.5</th>
+          <th data-sort="part">부품</th><th data-sort="n_images">GT 프레임</th>
+          <th data-sort="n_gt">GT 박스</th><th data-sort="det">검출</th>
+          <th data-sort="tp">TP</th><th data-sort="fp">FP</th><th data-sort="fn">FN</th>
+          <th data-sort="precision">정밀도</th><th data-sort="recall">재현율</th>
+          <th data-sort="ap" aria-sort="descending">AP@0.5</th>
         </tr></thead>
         <tbody></tbody>
         <tfoot></tfoot>
@@ -200,7 +219,7 @@ const f2 = (v) => (v == null ? "-" : Number(v).toFixed(2));
 const f3 = (v) => (v == null ? "-" : Number(v).toFixed(3));
 const pct = (v) => (v == null ? "-" : (Number(v) * 100).toFixed(1) + "%");
 
-const S = { res: null, part: null, series: null, det: null, job: null };
+const S = { sortKey: "ap", sortAsc: false, res: null, part: null, series: null, det: null, job: null };
 
 /* ---------------- 단계 카드 ---------------- */
 function steps(res, prog) {
@@ -269,11 +288,33 @@ function renderResult(res) {
     '<span class="ap">' + f3(c.ap) + "</span></button>").join("");
   $("tabs").querySelectorAll("button").forEach((b) => {
     b.onclick = () => pick(b.dataset.part);
+    b.setAttribute("aria-pressed", b.dataset.part === S.part ? "true" : "false");
+  });
+  // 부품 표 정렬. 어느 부품이 점수를 끌어내리는지 바로 보려면 정렬이 필요하다.
+  $("tblParts").querySelectorAll("thead th[data-sort]").forEach((th) => {
+    th.onclick = () => sortBy(th.dataset.sort);
+  });
+  $("tblParts").querySelectorAll("thead th[data-sort]").forEach((th) => {
+    if (th.dataset.sort === S.sortKey) {
+      th.setAttribute("aria-sort", S.sortAsc ? "ascending" : "descending");
+    } else { th.removeAttribute("aria-sort"); }
   });
   const runs = res.runs || [];
   $("runSel").innerHTML = runs.map((r) =>
     '<option value="' + r + '"' + (r === res.run ? " selected" : "") + ">" + r + "</option>").join("");
   if ((res.classes || []).length) { pick(res.part || res.classes[0].part); }
+}
+
+function sortBy(key) {
+  const asc = S.sortKey === key ? !S.sortAsc : (key === "part");
+  S.sortKey = key; S.sortAsc = asc;
+  const val = (c) => (key === "det" ? (c.tp || 0) + (c.fp || 0) : c[key]);
+  (S.res.classes || []).sort((a, b) => {
+    const x = val(a), y = val(b);
+    if (typeof x === "string") { return asc ? x.localeCompare(y) : y.localeCompare(x); }
+    return asc ? x - y : y - x;
+  });
+  renderResult(Object.assign({}, S.res, { part: S.part }));
 }
 
 /* ---------------- 부품 상세 ---------------- */
@@ -328,7 +369,9 @@ function drawPR(c) {
             '" font-size="10" fill="#94a3b8" text-anchor="end">' + g.toFixed(2) + "</text>";
   }
   $("prBox").innerHTML =
-    '<svg viewBox="0 0 ' + W + " " + H + '" style="width:100%;height:auto;max-height:320px">' + grid +
+    '<svg role="img" aria-label="' + (c.part || "") + " PR 곡선. AP " + f3(c.ap) +
+    ". 같은 내용이 아래 누적 계열 표에 숫자로 있습니다." + '" viewBox="0 0 ' + W + " " + H +
+    '" style="width:100%;height:auto;max-height:320px">' + grid +
     (path ? '<path d="' + path + '" fill="rgba(79,70,229,.12)" stroke="#4f46e5" stroke-width="2"/>' : "") +
     rec.map((r, i) => '<circle cx="' + x(r) + '" cy="' + y(pre[i]) + '" r="2.5" fill="#4f46e5"/>').join("") +
     '<text x="' + (W - 10) + '" y="' + (m - 14) + '" font-size="12" fill="#0f172a" text-anchor="end" font-weight="700">AP ' +
@@ -388,7 +431,9 @@ function card(n) {
   const tp = preds.filter((p) => p[6]).length;
   const fp = preds.length - tp;
   const fn = Math.max(0, (v.gt || []).length - tp);
-  return '<div class="fr" id="fr_' + n + '"><img loading="lazy" src="/api/gt/eval/frame?run=' +
+  return '<div class="fr" id="fr_' + n + '"><img loading="lazy" alt="' + n + " 프레임 GT " +
+         (v.gt || []).length + " TP " + tp + " FP " + fp +
+         '" src="/api/gt/eval/frame?run=' +
          encodeURIComponent(S.res.run) + "&part=" + encodeURIComponent(S.part) +
          "&name=" + encodeURIComponent(n) + '&w=640"><div class="cap"><span>' + n +
          "</span><span>GT " + (v.gt || []).length + " · TP " + tp + " · FP " + fp +
