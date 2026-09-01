@@ -69,7 +69,9 @@ MIXUP = 0.2
 # 있어서, 남은 램이 빠듯하면 XR_TRAIN_CACHE=none 으로 띄운다.
 TRAIN_CACHE = "ram"
 # 데이터 적재 워커 수(서버 16). 0 은 적재를 학습 스레드가 직접 해서 GPU 가 굶는다.
-# 윈도우에서는 spawn 이 pickle truncated 로 죽어 0 을 강제한다(코드에서 처리).
+# 이 값은 x86 서버에서만 쓰인다. 윈도우와 Jetson(토르)은 코드에서 0 으로 내린다.
+#   윈도우: spawn 이 pickle truncated 로 죽는다.
+#   Jetson: CUDA 를 올린 프로세스가 워커를 포크하면 교착 - 에포크 뒤 학습이 멈춘다(실측).
 TRAIN_WORKERS = 16
 
 

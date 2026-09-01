@@ -1085,9 +1085,14 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
             # 실제 성능은 사람 GT 로만 잰다(mAP_Test.html). 마지막 에폭 한 번은 남는다 -
             # ultralytics 가 best.pt 를 고르는 근거로 쓰기 때문이다(trainer.py 의 final_epoch 조건).
             # 워커·캐시·mixup 은 서비스 모델 학습(서버 260824_retrain3x)과 같은 값을 쓴다.
-            # 윈도우만 워커 0 을 강제한다(spawn 이 pickle truncated 로 죽는다).
-            workers = 0 if os.name == "nt" else int(
-                os.environ.get("XR_TRAIN_WORKERS", getattr(config, "TRAIN_WORKERS", 8)))
+            # 워커는 기기에 따라 0 으로 내린다. 둘 다 실제로 겪은 고장이다.
+            #   윈도우: spawn 이 pickle truncated 로 죽는다.
+            #   Jetson(aarch64, 토르): CUDA 를 올린 프로세스가 워커를 포크하면 교착에 빠진다.
+            #     1 에포크(48초)가 끝난 뒤 워커 14개가 do_sys_poll 로 멈춰 GPU 가 유휴로 놀았다.
+            #     토르에서 정상 종료한 학습은 모두 workers=0 이던 때였다.
+            import platform
+            _dflt = 0 if (os.name == "nt" or platform.machine() in ("aarch64", "arm64"))                 else int(getattr(config, "TRAIN_WORKERS", 8))
+            workers = int(os.environ.get("XR_TRAIN_WORKERS", _dflt))
             cache = os.environ.get("XR_TRAIN_CACHE", getattr(config, "TRAIN_CACHE", "ram"))
             if str(cache).lower() in ("none", "false", "0", ""):
                 cache = False
