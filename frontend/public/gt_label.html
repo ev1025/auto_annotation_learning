@@ -138,6 +138,10 @@
   .hd[data-h="ne"],.hd[data-h="sw"]{cursor:nesw-resize}
   .hd[data-h="n"],.hd[data-h="s"]{cursor:ns-resize}
   .hd[data-h="w"],.hd[data-h="e"]{cursor:ew-resize}
+  /* 모델이 잡은 박스 = 참고용. 점선이고 잡히지 않는다(GT 는 사람이 그린다) */
+  .refbox{position:absolute;border:2px dashed #38bdf8;pointer-events:none;border-radius:2px}
+  .refbox::after{content:'모델';position:absolute;left:0;top:-18px;font-size:11px;
+    font-weight:700;color:#0284c7;background:rgba(255,255,255,.85);padding:0 4px;border-radius:3px}
   .tip{position:absolute;top:-24px;left:0;background:rgba(15,23,42,.86);color:#fff;
        font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;white-space:nowrap;
        pointer-events:none}
@@ -177,6 +181,7 @@
       <button class="btn" id="btnPrev" aria-label="이전 프레임">◀ 이전</button>
       <span class="pill" id="labPos">-</span>
       <button class="btn" id="btnNext" aria-label="다음 프레임">다음 ▶</button>
+      <label class="chk"><input type="checkbox" id="showModel" checked /> 모델 박스</label>
     </div>
     <div class="stage" id="stage">
       <div class="holder">
@@ -375,12 +380,6 @@ async function renderLab() {
   const g = await api("/api/gt/label?part=" + encodeURIComponent(S.part) +
                       "&stem=" + encodeURIComponent(c.stem) + "&idx=" + c.idx);
   S.boxes = (g.boxes || []).map((b) => b.slice());
-  if (!S.boxes.length && c.bbox && c.wh) {
-    // 저장한 GT 가 없으면 모델이 잡은 박스를 초깃값으로 넣는다. 사람이 끌어서 고친다.
-    const b = c.bbox, w = c.wh[0], h = c.wh[1];
-    S.boxes = [[(b[0] + b[2]) / 2 / w, (b[1] + b[3]) / 2 / h,
-                (b[2] - b[0]) / w, (b[3] - b[1]) / h]];
-  }
   S.act = S.boxes.length ? 0 : -1;
   S.dirty = false;
   drawBoxes();
@@ -389,6 +388,15 @@ async function renderLab() {
 function drawBoxes() {
   const ov = $("ov");
   let h = "";
+  // 모델이 잡은 박스는 참고로만 겹쳐 보여 준다. GT 로 쓰지 않는다 - 예측을 그대로 GT 로
+  // 삼으면 채점이 자기 답을 자기가 맞히는 셈이 된다.
+  const c = S.list[S.i];
+  if (c && c.bbox && c.wh && $("showModel") && $("showModel").checked) {
+    const b = c.bbox, w = c.wh[0], hh2 = c.wh[1];
+    h += '<div class="refbox" style="left:' + (b[0] / w * 100) + "%;top:" + (b[1] / hh2 * 100) +
+         "%;width:" + ((b[2] - b[0]) / w * 100) + "%;height:" + ((b[3] - b[1]) / hh2 * 100) +
+         '%"></div>';
+  }
   S.boxes.forEach((b, n) => {
     const on = n === S.act;
     const x = (b[0] - b[2] / 2) * 100, y = (b[1] - b[3] / 2) * 100;
@@ -532,6 +540,7 @@ $("btnClear").onclick = () => { S.sel[S.part].clear(); renderPick(); counters();
 $("btnSaveSel").onclick = saveSel;
 $("btnPrev").onclick = () => { if (S.i > 0) { S.i -= 1; renderLab(); } };
 $("btnNext").onclick = () => { if (S.i < S.list.length - 1) { S.i += 1; renderLab(); } };
+$("showModel").onchange = drawBoxes;
 $("btnSave").onclick = saveGT;
 $("btnDel").onclick = delGT;
 document.addEventListener("keydown", (e) => {

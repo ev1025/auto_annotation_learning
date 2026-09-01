@@ -916,13 +916,27 @@ def eval_frame(run=None, part=None, name=None, w=900):
         return None
     H, W = im.shape[:2]
     _r, bt, _e = sa._ov_sizes(W, H)
+
+    def dashed(img, p1, p2, color, th, dash=18, gap=12):
+        """점선 사각형. 검출을 실선으로 그리면 GT 와 거의 겹칠 때(IoU 0.99) 초록이
+        완전히 가려져 평가자가 GT 를 볼 수 없다. 점선 사이로 GT 가 보이게 한다."""
+        (x1, y1), (x2, y2) = p1, p2
+        for xa in range(x1, x2, dash + gap):
+            xb = min(xa + dash, x2)
+            cv2.line(img, (xa, y1), (xb, y1), color, th)
+            cv2.line(img, (xa, y2), (xb, y2), color, th)
+        for ya in range(y1, y2, dash + gap):
+            yb = min(ya + dash, y2)
+            cv2.line(img, (x1, ya), (x1, yb), color, th)
+            cv2.line(img, (x2, ya), (x2, yb), color, th)
+
     for b in d.get("gt", []):
-        cv2.rectangle(im, (b[0], b[1]), (b[2], b[3]), (0, 200, 0), bt)      # GT 초록
+        cv2.rectangle(im, (b[0], b[1]), (b[2], b[3]), (0, 200, 0), bt + 1)   # GT 초록 실선(굵게)
     for b in d.get("pred", []):
         if b[4] < 0.05:                # 곡선용 저신뢰 검출까지 다 그리면 화면이 못 읽는다
             continue
         col = (255, 140, 0) if b[6] else (0, 60, 255)                        # TP 파랑 / FP 빨강
-        cv2.rectangle(im, (b[0], b[1]), (b[2], b[3]), col, bt)
+        dashed(im, (b[0], b[1]), (b[2], b[3]), col, bt)                      # 검출은 점선
         cv2.putText(im, "%.2f iou %.2f" % (b[4], b[5]), (b[0], max(b[1] - 6, 16)),
                     cv2.FONT_HERSHEY_SIMPLEX, max(0.4, W / 2400), col, max(1, bt - 1))
     w = max(64, min(int(w or 900), 4096))
