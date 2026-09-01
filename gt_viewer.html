@@ -38,7 +38,45 @@
  table.sum td.best{background:#14361f;color:#c8f7d4;font-weight:700}
  table.sum td.na{color:#3d4762}
  table.sum .sub{color:var(--muted);font-weight:400}
+ table.rec{border-collapse:collapse;margin:8px 14px 6px;font-size:12px;font-variant-numeric:tabular-nums}
+ table.rec th,table.rec td{border:1px solid var(--line);padding:5px 9px;text-align:right}
+ table.rec th{background:var(--panel);color:var(--muted);font-weight:600}
+ table.rec td:first-child,table.rec th:first-child{text-align:left}
+ table.rec td.win{background:#14361f;color:#c8f7d4;font-weight:700}
+ table.rec td.lose{background:#3a1620;color:#ffc9d2;font-weight:700}
+ .note{margin:0 14px 18px;color:var(--muted);font-size:12px;max-width:900px}
+ .note b{color:var(--ink)}
 </style>
+<h2 class="sec">gearbox GT 40장 채점 기록</h2>
+<table class="rec">
+ <tr><th>모델</th><th>클래스</th><th>conf 0.25</th><th>conf 0.70</th>
+     <th>test1</th><th>test2</th><th>test3</th><th>test4</th></tr>
+ <tr><td>배포 260824_retrain3x 11m</td><td>36</td>
+     <td>29/40</td><td class="win">20/40</td>
+     <td>5/10</td><td>7/10</td><td class="win">5/10</td><td class="win">3/10</td></tr>
+ <tr><td>신규 260901_181828 11m</td><td>35</td>
+     <td>26/40</td><td class="lose">13/40</td>
+     <td>6/10</td><td>7/10</td><td class="lose">0/10</td><td class="lose">0/10</td></tr>
+</table>
+<p class="note">
+ 2026-09-02 측정. 구간 수치는 conf 0.70 기준이다. 채점 규칙은 <b>gearbox 클래스만</b> 보고
+ GT 박스와 <b>IoU ≥ 0.5</b> 로 맞으면 그 사진을 맞춘 것으로 센다(imgsz 960, GT 40장 = test1~4 각 10장).
+ 스크립트는 <b>scripts/experiments/server_bench/gt40_new.py</b>.
+ <br><br>
+ <b>결론: 신규 모델을 배포하지 않았다.</b> conf 0.70 에서 20 → 13 으로 떨어졌고, 기체에 장착된
+ 구간(test3·test4)이 5·3 → 0·0 으로 전멸했다. 공인시험에서 실제로 문제되는 구간이 이 둘이다.
+ <br><br>
+ 두 모델의 레시피는 같다(yolo11m · 100 epoch · batch 32 · imgsz 640 · mixup 0.2 · 합성 3배).
+ 다른 것은 두 가지다. ① 클래스 36종 → 35종(a_test·medicine 제외)으로 실촬이 9,083 → 8,793장으로
+ 줄었다. ② 배포 모델은 서버의 8월 스냅샷(benchset_occl8)으로, 신규는 9/1 로컬 라벨에서 새로 만든
+ 데이터로 학습했다. 학습 중 지표(in-sample mAP50)는 0.994 / 0.995 로 사실상 같아서, 이 표가 없으면
+ 나빠진 것을 알 수 없었다.
+ <br><br>
+ 다음 확인 순서: 같은 데이터(benchset_occl8)로 다시 학습해 배포 모델 수치가 재현되는지 먼저 본다.
+ 재현되면 데이터 차이가 원인이고, 재현되지 않으면 시드·환경 차이다. 그 기준이 생긴 뒤에
+ 클래스 구성·톤매핑 같은 변경의 효과를 판단한다.
+</p>
+
 <h2 class="sec">실험 결과 표</h2>
 <table class="sum" id="sum"></table>
 <h2 class="sec">실제 예측 박스</h2>
