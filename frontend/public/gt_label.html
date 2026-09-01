@@ -118,7 +118,6 @@
 <body>
 <header>
   <h1>GT 만들기</h1>
-  <span class="sub" id="runInfo">불러오는 중…</span>
   <div class="tabs">
     <button id="tabPick" class="on">1. 고르기</button>
     <button id="tabLab">2. 라벨</button>
@@ -127,9 +126,6 @@
   <span class="pill" id="cntFound">후보 -</span>
   <span class="pill" id="cntSel">선택 -</span>
   <span class="pill" id="cntSaved">GT -</span>
-  <span class="spacer"></span>
-  <button class="btn ghost" id="btnReload">다시 읽기</button>
-  <button class="btn ghost" id="btnCollect">새로 수집</button>
 </header>
 
 <main>
@@ -137,7 +133,6 @@
 
   <section id="viewPick">
     <div class="bar">
-      <span class="hint" id="pickHint"></span>
       <span class="spacer"></span>
       <button class="btn" id="btnClear">선택 비우기</button>
       <button class="btn primary" id="btnSaveSel">선택 저장</button>
@@ -205,7 +200,7 @@ const S = {
 
 async function load(keepPart) {
   const d = await api("/api/gt/collect/result");
-  if (d.error) { say(d.error); $("runInfo").textContent = "-"; return; }
+  if (d.error) { say(d.error); return; }
   S.data = d;
   S.sel = {};
   const parts = Object.keys(d.cands || {});
@@ -214,7 +209,6 @@ async function load(keepPart) {
   sel.innerHTML = parts.map((p) => '<option value="' + p + '">' + p + "</option>").join("");
   S.part = (keepPart && parts.indexOf(keepPart) >= 0) ? keepPart : parts[0];
   sel.value = S.part;
-  $("runInfo").textContent = "수집 " + d.run + " · conf " + d.conf + " · " + (d.label || "");
   say("");
   render();
 }
@@ -244,11 +238,6 @@ function renderPick() {
   $("tabPick").className = "on"; $("tabLab").className = "";
   const cands = (S.data.cands || {})[S.part] || [];
   const saved = new Set((S.data.saved || {})[S.part] || []);
-  const byStem = {};
-  cands.forEach((c) => { byStem[c.stem] = (byStem[c.stem] || 0) + 1; });
-  $("pickHint").textContent = "영상 " + Object.keys(byStem).length + "개에서 탐지 · 후보 " +
-    cands.length + "장 · 서로 다른 장면을 고르세요";
-
   const g = $("grid");
   g.innerHTML = "";
   if (!cands.length) {
@@ -454,17 +443,10 @@ $("tabLab").onclick = () => { S.mode = "label"; S.i = 0; render(); };
 $("partSel").onchange = (e) => { S.part = e.target.value; S.i = 0; render(); };
 $("btnClear").onclick = () => { S.sel[S.part].clear(); renderPick(); counters(); };
 $("btnSaveSel").onclick = saveSel;
-$("btnReload").onclick = () => load(S.part);
 $("btnPrev").onclick = () => { if (S.i > 0) { S.i -= 1; renderLab(); } };
 $("btnNext").onclick = () => { if (S.i < S.list.length - 1) { S.i += 1; renderLab(); } };
 $("btnSave").onclick = saveGT;
 $("btnDel").onclick = delGT;
-$("btnCollect").onclick = async () => {
-  if (!confirm("평가영상 전체를 다시 훑습니다(수 분). 진행할까요?")) { return; }
-  const r = await post("/api/gt/collect", { step: 15 });
-  if (r.error) { say(r.error); return; }
-  say("수집을 시작했습니다. 끝나면 '다시 읽기' 를 누르세요.", "ok");
-};
 document.addEventListener("keydown", (e) => {
   if (S.mode !== "label") { return; }
   if (e.key === "ArrowLeft" || e.key === "a") { $("btnPrev").click(); }
