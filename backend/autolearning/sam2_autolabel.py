@@ -608,30 +608,36 @@ def _synth_augment(oi, ol, logln, n_syn=400, cancelled=None, class_weights=None)
         if pred is None:                   # 캐시 미스가 하나라도 있을 때만 SAM2 를 올린다
             pred = _img_predictor()
         im = _rd(ip); h, w = im.shape[:2]
-        try:
-            pred.set_image(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))
-        except Exception:
-            continue
-        for line in lp.read_text(encoding="utf-8").splitlines():
-            f = line.split()
-            if len(f) != 5:
-                continue
-            cx, cy, bw, bh = map(float, f[1:])
-            box = np.array([(cx - bw / 2) * w, (cy - bh / 2) * h, (cx + bw / 2) * w, (cy + bh / 2) * h], np.float32)
+        # 이미지 예측기는 전역에 하나뿐이라 set_image 와 predict 사이에 다른 요청이 끼어들면
+        # 서로의 이미지를 덮어쓴다. 실제로 이 합성이 도는 동안 GT 화면의 탭이
+        # "An image must be set" 로 죽거나, 세로 영상의 마스크(1920행)를 가로 프레임(1080행)에
+        # 씌우려다 IndexError 로 죽었다. 이미지 한 장 단위로 잠근다 - 탭은 장 사이에 들어온다.
+        with _MASK_LOCK:
             try:
-                with torch.inference_mode(), torch.autocast(DEV, dtype=torch.bfloat16):
-                    masks, _, _ = pred.predict(box=box, multimask_output=False)
-                m = masks[0]; m = (m[0] if m.ndim == 3 else m) > 0.0
+                pred.set_image(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))
             except Exception:
                 continue
-            bb = _bbox(m)
-            if not bb or bb[2] - bb[0] < 12 or bb[3] - bb[1] < 12:
-                continue
-            xa, ya, xb, yb = bb
-            a = cv2.GaussianBlur(m[ya:yb + 1, xa:xb + 1].astype(np.uint8) * 255, (3, 3), 0)
-            rgba = np.dstack([im[ya:yb + 1, xa:xb + 1], a])
-            cuts.append((rgba, int(f[0]))); miss += 1
-            cv2.imwrite(str(cache), rgba)   # 다음 학습에서 재사용
+            for line in lp.read_text(encoding="utf-8").splitlines():
+                f = line.split()
+                if len(f) != 5:
+                    continue
+                cx, cy, bw, bh = map(float, f[1:])
+                box = np.array([(cx - bw / 2) * w, (cy - bh / 2) * h,
+                                (cx + bw / 2) * w, (cy + bh / 2) * h], np.float32)
+                try:
+                    with torch.inference_mode(), torch.autocast(DEV, dtype=torch.bfloat16):
+                        masks, _, _ = pred.predict(box=box, multimask_output=False)
+                    m = masks[0]; m = (m[0] if m.ndim == 3 else m) > 0.0
+                except Exception:
+                    continue
+                bb = _bbox(m)
+                if not bb or bb[2] - bb[0] < 12 or bb[3] - bb[1] < 12:
+                    continue
+                xa, ya, xb, yb = bb
+                a = cv2.GaussianBlur(m[ya:yb + 1, xa:xb + 1].astype(np.uint8) * 255, (3, 3), 0)
+                rgba = np.dstack([im[ya:yb + 1, xa:xb + 1], a])
+                cuts.append((rgba, int(f[0]))); miss += 1
+                cv2.imwrite(str(cache), rgba)   # 다음 학습에서 재사용
     if pred is not None:
         free_sam2()
     if not cuts:

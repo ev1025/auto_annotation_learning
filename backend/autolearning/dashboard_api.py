@@ -560,6 +560,18 @@ def api_gt_collect_result(run: str = None):
     return ge.collect_result(run)
 
 
+@app.get("/api/gt/label")
+def api_gt_label(part: str, stem: str, idx: int):
+    """저장된 GT 박스 조회(고치러 다시 열 때 쓴다)."""
+    return _gt(ge.label_of, part, stem, idx)
+
+
+@app.post("/api/gt/select")
+def api_gt_select(payload: dict = Body(...)):
+    """부품별로 사람이 고른 프레임 목록 저장. 화면이 그 부품의 전체 목록을 보내온다."""
+    return ge.set_select(payload.get("run"), payload.get("part"), payload.get("keys") or [])
+
+
 @app.post("/api/gt/tap")
 def api_gt_tap(payload: dict = Body(...)):
     """탭한 점 -> SAM2 마스크 -> 박스. 실패해도 500 대신 error 를 돌려준다."""

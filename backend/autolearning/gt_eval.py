@@ -848,33 +848,6 @@ PICK_CONF = REPORT_CONF        # 0.70. 심사 기준과 같은 값으로 프레�
 PICK_PER_PART = 10             # 종별 10컷
 
 
-def _spread(items, k):
-    """후보에서 k 개를 고르게 뽑는다. 앞쪽만 쓰면 같은 장면이 몰려 표본이 사실상 1개가 된다.
-    영상이 다르면 먼저 갈라 담고, 그 안에서는 시간 간격을 벌린다."""
-    if len(items) <= k:
-        return list(items)
-    by_vid = {}
-    for it in items:
-        by_vid.setdefault(it["stem"], []).append(it)
-    for v in by_vid.values():
-        v.sort(key=lambda x: x["idx"])
-    out = []
-    vids = sorted(by_vid, key=lambda v: -len(by_vid[v]))
-    quota = {v: max(1, round(k * len(by_vid[v]) / len(items))) for v in vids}
-    for v in vids:
-        arr = by_vid[v]
-        q = min(quota[v], k - len(out))
-        if q <= 0:
-            continue
-        step = max(1, len(arr) // q)
-        out += [arr[i] for i in range(0, len(arr), step)][:q]
-    if len(out) < k:                     # 반올림 때문에 모자랄 수 있다
-        rest = [x for x in items if x not in out]
-        rest.sort(key=lambda x: -x["conf"])
-        out += rest[: k - len(out)]
-    return sorted(out[:k], key=lambda x: (x["stem"], x["idx"]))
-
-
 def _run_collect(job_id, step):
     """평가영상 전체를 conf 0.70 으로 훑어 5종별 10컷을 고른다.
     사람이 영상을 고르지 않는다. 있는 영상을 전부 본다."""
@@ -914,26 +887,30 @@ def _run_collect(job_id, step):
                     continue
                 cf = float(cf)
                 if nm not in best or cf > best[nm]["conf"]:
+                    ih, iw = im.shape[:2]
                     best[nm] = {"stem": s, "idx": int(p.stem), "conf": round(cf, 4),
-                                "bbox": [int(v) for v in b]}
+                                "bbox": [int(v) for v in b], "wh": [int(iw), int(ih)]}
             for nm, d in best.items():
                 cand[nm].append(d)
             if k % 5 == 0 or k == total:
                 j.update(done=k, note=str(k) + "/" + str(total) + " · " + s)
 
-        picked = {nm: _spread(v, PICK_PER_PART) for nm, v in cand.items()}
+        # 후보를 추려서 주지 않는다. 사람이 전부 보고 고른다.
+        # 자동 선정(_spread) 을 쓰다 폐기했다: 모델이 shim 과 r-ring 을 같은 물체에 겹쳐
+        # 잡아 놓은 것도 그대로 10장에 들어갔고, 뽑힌 장면이 서로 비슷해 다양성도 낮았다.
+        for v in cand.values():
+            v.sort(key=lambda x: (x["stem"], x["idx"]))
         run = datetime.now().strftime("%y%m%d_%H%M%S")
         out = SCAN_ROOT / run
         out.mkdir(parents=True, exist_ok=True)
         payload = {"run": run, "weights": str(w), "label": label, "conf": PICK_CONF,
                    "step": step, "per_part": PICK_PER_PART, "stems": stems,
                    "found": {nm: len(v) for nm, v in cand.items()},
-                   "picked": picked}
+                   "cands": cand}
         (out / "collect.json").write_text(json.dumps(payload, ensure_ascii=False, indent=1),
                                           encoding="utf-8")
         j.update(stage="done", running=False, run=run,
-                 found=payload["found"], picked={k2: len(v) for k2, v in picked.items()},
-                 note="수집 완료")
+                 found=payload["found"], note="수집 완료")
     except Exception as e:   # noqa: BLE001 - 서버가 죽지 않게 하고 원인은 화면에 띄운다
         sa.logger.exception("gt collect 오류")
         j.update(stage="error", running=False, error=(type(e).__name__ + ": " + str(e))[:300])
@@ -977,7 +954,69 @@ def collect_result(run=None):
         gi, gl = _gt_dirs(part)
         saved[part] = sorted(p.stem for p in gl.glob("*.txt")) if gl.exists() else []
     d["saved"] = saved
+    d["sel"] = _load_select(run)
     return d
+
+
+def label_of(part, stem, idx):
+    """저장한 GT 한 장의 박스(정규화 cx cy w h). 화면이 다시 열어 고칠 수 있게 한다."""
+    part, stem = _safe_name(part), _safe_name(stem)
+    if part not in GT_PARTS or not stem:
+        return {"error": "part / stem 이 올바르지 않습니다."}
+    try:
+        idx = int(idx)
+    except (TypeError, ValueError):
+        return {"error": "idx 가 정수가 아닙니다."}
+    lp = _gt_dirs(part)[1] / f"{stem}_{idx:05d}.txt"
+    if not lp.exists():
+        return {"boxes": []}
+    boxes = []
+    for ln in lp.read_text(encoding="utf-8").splitlines():
+        t = ln.split()
+        if len(t) >= 5:
+            try:
+                boxes.append([float(t[1]), float(t[2]), float(t[3]), float(t[4])])
+            except ValueError:
+                continue
+    return {"boxes": boxes}
+
+
+def _select_path(run):
+    return SCAN_ROOT / _safe_name(run) / "select.json"
+
+
+def _load_select(run):
+    """부품별로 사람이 고른 프레임 목록. 키는 "<stem>|<프레임번호>"."""
+    f = _select_path(run)
+    if not f.exists():
+        return {}
+    try:
+        d = json.loads(f.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return {}
+    return {k: list(v) for k, v in d.items() if isinstance(v, list)}
+
+
+def set_select(run, part, keys):
+    """한 부품의 선택 목록을 통째로 덮어쓴다(화면이 항상 전체를 보내온다)."""
+    run = _safe_name(run)
+    if not (SCAN_ROOT / run).is_dir():
+        return {"error": "없는 실행입니다: " + str(run)}
+    if part not in GT_PARTS:
+        return {"error": "모르는 부품입니다: " + str(part)}
+    if not isinstance(keys, list):
+        return {"error": "선택 목록이 배열이 아닙니다."}
+    ok = []
+    for k in keys[:400]:            # 화면 실수로 수천 개가 와도 파일이 부풀지 않게 한다
+        if isinstance(k, str) and "|" in k:
+            stem, _, idx = k.partition("|")
+            if _safe_name(stem) and idx.isdigit():
+                ok.append(_safe_name(stem) + "|" + str(int(idx)))
+    sel = _load_select(run)
+    sel[part] = sorted(set(ok))
+    _select_path(run).write_text(json.dumps(sel, ensure_ascii=False, indent=1),
+                                 encoding="utf-8")
+    return {"ok": True, "part": part, "n": len(sel[part])}
 
 
 def tap_box(stem, idx, points):
