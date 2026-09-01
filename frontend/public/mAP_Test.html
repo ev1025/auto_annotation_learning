@@ -157,10 +157,7 @@
         <tfoot></tfoot>
       </table>
     </div>
-    <div class="legend" style="margin-top:8px">
-      TP·FP·FN·정밀도·재현율은 운영 임계 <b id="rcTxt">conf 0.70</b> 한 지점의 값입니다.
-      AP 는 conf 0.001 이상 전 구간을 적분한 값이라 근거가 다릅니다.
-    </div>
+    <div class="legend" style="margin-top:8px">TP·FP·FN·정밀도·재현율 = <b id="rcTxt">conf 0.70</b></div>
   </div>
 
   <div class="tabs" id="tabs"></div>
@@ -168,33 +165,28 @@
   <div id="detail" hidden>
     <div class="grid2">
       <div class="card">
-        <h2>① ~ ⑤ 이 부품의 숫자</h2>
+        <h2>수치</h2>
         <div class="kv" id="partKv"></div>
         <div class="calc" id="partCalc" style="margin-top:10px"></div>
       </div>
       <div class="card">
-        <h2>PR 곡선 (AP = 이 곡선 아래 면적)</h2>
+        <h2>PR 곡선</h2>
         <div id="prBox"></div>
-        <div class="legend"><span>가로 재현율 · 세로 정밀도 · 점은 conf 내림차순 누적 지점</span></div>
+        <div class="legend"><span>가로 재현율 · 세로 정밀도</span></div>
       </div>
     </div>
 
     <div class="card">
-      <h2>AP 를 만든 누적 계열 <span class="num" id="serTitle" style="color:var(--muted);font-weight:400"></span></h2>
-      <div class="legend">
-        한 줄이 검출 1건입니다. conf 내림차순으로 누적하며 정밀도·재현율을 갱신하고,
-        재현율 증가분 × 정밀도를 더한 값이 AP 입니다. 줄을 누르면 그 프레임을 아래에 띄웁니다.
-      </div>
+      <h2>누적 계열 <span class="num" id="serTitle" style="color:var(--muted);font-weight:400"></span></h2>
       <div class="scroll"><table id="tblSeries"><thead></thead><tbody></tbody></table></div>
     </div>
 
     <div class="card">
-      <h2>프레임 근거</h2>
+      <h2>프레임</h2>
       <div class="legend">
-        <span><i style="background:#00c800"></i>GT(사람이 그린 것)</span>
-        <span><i style="background:#008cff"></i>TP 검출</span>
-        <span><i style="background:#ff3c00"></i>FP 검출</span>
-        <span>숫자는 conf 와 GT 와의 IoU</span>
+        <span><i style="background:#00c800"></i>GT</span>
+        <span><i style="background:#008cff"></i>TP</span>
+        <span><i style="background:#ff3c00"></i>FP</span>
       </div>
       <div class="frames" id="frames"></div>
     </div>
@@ -231,23 +223,18 @@ function steps(res, prog) {
   const fp = cls.reduce((a, c) => a + (c.fp || 0), 0);
   const fn = cls.reduce((a, c) => a + (c.fn || 0), 0);
   const items = [
-    ["①", "GT 확인", res ? nImg + "장 · 박스 " + nGt + "개" : (prog || "-"),
-     "사람이 그린 정답. 라벨 없는 프레임은 제외"],
-    ["②", "재예측", res ? "부품 " + cls.length + "종 · conf 0.001 이상 전부"
-                        : (prog || "-"),
-     "모델 박스를 미리 넣지 않고 이 자리에서 다시 추론"],
-    ["③", "매칭 IoU " + (res ? res.iou : "0.5"),
-     res ? "TP " + tp + " · FP " + fp + " · FN " + fn : "-",
-     "conf 높은 검출부터, GT 하나는 한 번만"],
-    ["④", "AP 적분", res ? cls.map((c) => c.part.slice(0, 8) + " " + f3(c.ap)).join("\n") : "-",
-     "all-point interpolation (COCO 정의)"],
-    ["⑤", "판정", res ? res.map50_pct + " / 기준 " + res.pass_threshold : "-",
-     res ? (res.verdict === "pass" ? "합격" : "불합격") : "AP 산술평균 = mAP"]
+    ["①", "GT", res ? nImg + "장 · 박스 " + nGt + "개" : (prog || "-")],
+    ["②", "재예측", res ? "부품 " + cls.length + "종 · conf 0.001" : (prog || "-")],
+    ["③", "IoU " + (res ? res.iou : "0.5"),
+     res ? "TP " + tp + " · FP " + fp + " · FN " + fn : "-"],
+    ["④", "AP", res ? cls.map((c) => c.part.slice(0, 8) + " " + f3(c.ap)).join("\n") : "-"],
+    ["⑤", "판정", res ? res.map50_pct + " / " + res.pass_threshold +
+                       (res.verdict === "pass" ? " 합격" : " 불합격") : "-"]
   ];
   $("steps").innerHTML = items.map((it, i) => {
     const on = res ? "done" : (prog && i < 2 ? "on" : "");
     return '<div class="step ' + on + '"><div class="no">' + it[0] + "</div><div class=\"ti\">" +
-           it[1] + '</div><div class="va">' + it[2] + '</div><div class="fo">' + it[3] + "</div></div>";
+           it[1] + '</div><div class="va">' + it[2] + "</div></div>";
   }).join("");
 }
 
@@ -332,20 +319,20 @@ async function pick(part) {
 
   $("partKv").innerHTML = [
     ["GT 프레임 / 박스", c.n_images + "장 / " + c.n_gt + "개"],
-    ["검출(운영 임계 " + f2(S.res.report_conf) + ")", (c.tp + c.fp) + "건"],
+    ["검출 (conf " + f2(S.res.report_conf) + ")", (c.tp + c.fp) + "건"],
     ["TP / FP / FN", c.tp + " / " + c.fp + " / " + c.fn],
     ["정밀도 = TP/(TP+FP)", pct(c.precision)],
     ["재현율 = TP/(TP+FN)", pct(c.recall)],
     ["F1", f3(c.f1)],
-    ["AP@0.5 (전 구간 적분)", f3(c.ap)],
-    ["모델이 아는 부품인가", c.in_model ? "예" : "아니오 (검출 0 → 전부 FN)"]
+    ["AP@0.5", f3(c.ap)],
+    ["모델 포함", c.in_model ? "예" : "아니오"]
   ].map((r) => "<div>" + r[0] + "</div><div>" + r[1] + "</div>").join("");
 
   $("partCalc").textContent =
     "정밀도 = " + c.tp + " / (" + c.tp + " + " + c.fp + ") = " + f3(c.precision) + "\n" +
     "재현율 = " + c.tp + " / (" + c.tp + " + " + c.fn + ") = " + f3(c.recall) + "\n" +
-    "AP = Σ (재현율 증가분 × 정밀도 포락선) = " + f3(c.ap) + "\n" +
-    "mAP = 부품 " + (S.res.classes || []).length + "종 AP 의 산술평균 = " + f3(S.res.map50);
+    "AP = Σ (ΔR × P) = " + f3(c.ap) + "\n" +
+    "mAP = " + (S.res.classes || []).length + "종 평균 = " + f3(S.res.map50);
 
   drawPR(c);
   await loadSeries(part);
@@ -466,7 +453,7 @@ async function run() {
   const st = await api("/api/gt/status");
   const have = ((st.parts || []).filter((p) => p.labels > 0));
   if (!have.length) {
-    say("GT 가 없습니다. GT 만들기 화면에서 먼저 라벨을 저장하세요.");
+    say("GT 없음");
     $("btnRun").disabled = false; return;
   }
   steps(null, have.reduce((a, p) => a + p.labels, 0) + "장 준비");
