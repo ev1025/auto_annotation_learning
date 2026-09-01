@@ -972,9 +972,24 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
         _watcher = threading.Thread(target=_watch_csv, args=(runs_dir, _stop), daemon=True)
         _watcher.start()
         try:
-            model.train(data=str(yml), epochs=epochs, imgsz=640, batch=batch, device=0, workers=0,
+            # val=False: 검증셋이 학습셋과 같은 폴더라(위 data.yaml) 에폭마다 자기가 외운 것을
+            # 다시 재는 값이 나온다. 그 한 번에 35,288장 8분이 들어 학습 시간이 1.3배가 됐다.
+            # 실제 성능은 사람 GT 로만 잰다(mAP_Test.html). 마지막 에폭 한 번은 남는다 -
+            # ultralytics 가 best.pt 를 고르는 근거로 쓰기 때문이다(trainer.py 의 final_epoch 조건).
+            # 워커·캐시·mixup 은 서비스 모델 학습(서버 260824_retrain3x)과 같은 값을 쓴다.
+            # 윈도우만 워커 0 을 강제한다(spawn 이 pickle truncated 로 죽는다).
+            workers = 0 if os.name == "nt" else int(
+                os.environ.get("XR_TRAIN_WORKERS", getattr(config, "TRAIN_WORKERS", 8)))
+            cache = os.environ.get("XR_TRAIN_CACHE", getattr(config, "TRAIN_CACHE", "ram"))
+            if str(cache).lower() in ("none", "false", "0", ""):
+                cache = False
+            mixup = float(os.environ.get("XR_MIXUP", getattr(config, "MIXUP", 0.2)))
+            logln(f"학습 조건: batch {batch} · workers {workers} · cache {cache} · "
+                  f"mixup {mixup} · degrees 15 (서비스 모델과 동일)", "info")
+            model.train(data=str(yml), epochs=epochs, imgsz=640, batch=batch, device=0,
+                        workers=workers, cache=cache, mixup=mixup, degrees=15.0,
                         project=str(runs_dir), name="model", exist_ok=True, verbose=False,
-                        plots=False, degrees=15.0)   # workers=0: 윈도우 spawn 크래시(pickle truncated) 회피
+                        plots=False, val=False)
         except _Cancelled:
             pass                 # 아래 cancel 분기에서 정리한다
         finally:
