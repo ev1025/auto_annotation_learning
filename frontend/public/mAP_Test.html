@@ -157,7 +157,9 @@
         <tfoot></tfoot>
       </table>
     </div>
-    <div class="legend" style="margin-top:8px">TP·FP·FN·정밀도·재현율 = <b id="rcTxt">conf 0.70</b></div>
+    <div class="legend" style="margin-top:8px">
+      TP·FP·FN·정밀도·재현율 = <b id="rcTxt">conf 0.70</b> 한 지점 · AP = conf 0.001 이상 전 구간 적분
+    </div>
   </div>
 
   <div class="tabs" id="tabs"></div>
@@ -170,7 +172,7 @@
         <div class="calc" id="partCalc" style="margin-top:10px"></div>
       </div>
       <div class="card">
-        <h2>PR 곡선</h2>
+        <h2>PR 곡선 · AP = 곡선 아래 면적</h2>
         <div id="prBox"></div>
         <div class="legend"><span>가로 재현율 · 세로 정밀도</span></div>
       </div>
@@ -178,6 +180,7 @@
 
     <div class="card">
       <h2>누적 계열 <span class="num" id="serTitle" style="color:var(--muted);font-weight:400"></span></h2>
+      <div class="legend">한 줄 = 검출 1건 · conf 내림차순 누적 · AP = Σ(재현율 증가분 × 정밀도)</div>
       <div class="scroll"><table id="tblSeries"><thead></thead><tbody></tbody></table></div>
     </div>
 
@@ -187,6 +190,7 @@
         <span><i style="background:#00c800"></i>GT</span>
         <span><i style="background:#008cff"></i>TP</span>
         <span><i style="background:#ff3c00"></i>FP</span>
+        <span>숫자 = conf · IoU</span>
       </div>
       <div class="frames" id="frames"></div>
     </div>
@@ -223,18 +227,24 @@ function steps(res, prog) {
   const fp = cls.reduce((a, c) => a + (c.fp || 0), 0);
   const fn = cls.reduce((a, c) => a + (c.fn || 0), 0);
   const items = [
-    ["①", "GT", res ? nImg + "장 · 박스 " + nGt + "개" : (prog || "-")],
-    ["②", "재예측", res ? "부품 " + cls.length + "종 · conf 0.001" : (prog || "-")],
+    ["①", "GT", res ? nImg + "장 · 박스 " + nGt + "개" : (prog || "-"),
+     "라벨 없는 프레임 제외"],
+    ["②", "재예측", res ? "부품 " + cls.length + "종 · conf 0.001" : (prog || "-"),
+     "매번 새로 추론"],
     ["③", "IoU " + (res ? res.iou : "0.5"),
-     res ? "TP " + tp + " · FP " + fp + " · FN " + fn : "-"],
-    ["④", "AP", res ? cls.map((c) => c.part.slice(0, 8) + " " + f3(c.ap)).join("\n") : "-"],
+     res ? "TP " + tp + " · FP " + fp + " · FN " + fn : "-",
+     "conf 높은 검출부터 · GT 하나는 한 번만"],
+    ["④", "AP", res ? cls.map((c) => c.part.slice(0, 8) + " " + f3(c.ap)).join("\n") : "-",
+     "all-point interpolation (COCO)"],
     ["⑤", "판정", res ? res.map50_pct + " / " + res.pass_threshold +
-                       (res.verdict === "pass" ? " 합격" : " 불합격") : "-"]
+                       (res.verdict === "pass" ? " 합격" : " 불합격") : "-",
+     "mAP = AP 산술평균"]
   ];
   $("steps").innerHTML = items.map((it, i) => {
     const on = res ? "done" : (prog && i < 2 ? "on" : "");
     return '<div class="step ' + on + '"><div class="no">' + it[0] + "</div><div class=\"ti\">" +
-           it[1] + '</div><div class="va">' + it[2] + "</div></div>";
+           it[1] + '</div><div class="va">' + it[2] + '</div><div class="fo">' + it[3] +
+           "</div></div>";
   }).join("");
 }
 
@@ -324,8 +334,8 @@ async function pick(part) {
     ["정밀도 = TP/(TP+FP)", pct(c.precision)],
     ["재현율 = TP/(TP+FN)", pct(c.recall)],
     ["F1", f3(c.f1)],
-    ["AP@0.5", f3(c.ap)],
-    ["모델 포함", c.in_model ? "예" : "아니오"]
+    ["AP@0.5 (전 구간)", f3(c.ap)],
+    ["모델 포함", c.in_model ? "예" : "아니오 (검출 0 → 전부 FN)"]
   ].map((r) => "<div>" + r[0] + "</div><div>" + r[1] + "</div>").join("");
 
   $("partCalc").textContent =
