@@ -708,6 +708,7 @@ def _run_eval(job_id, parts, iou, report_conf, weights):
         done = 0
         classes, missing = [], []
         series = {}          # 부품 -> AP 를 만든 누적 계열 원자료(CSV 로 남긴다)
+        detail = {}          # 부품 -> 프레임별 GT·검출 원자료(화면이 근거로 그린다)
         for part in parts:
             gts = gt_by_part[part]
             if not gts:
@@ -742,6 +743,22 @@ def _run_eval(job_id, parts, iou, report_conf, weights):
                     j.update(done=done, note=f"{done}/{total} · {part}")
 
             flags = _match(dets, gt_map, iou)
+            # 프레임별 근거: GT 박스와 검출 박스(신뢰도·TP 여부·IoU)를 그대로 남긴다.
+            # 표의 숫자만 보여 주면 "왜 FP 인지"를 확인할 방법이 없다.
+            tp_key = set()
+            for cf, img, ok in flags:
+                if ok:
+                    tp_key.add((img, round(cf, 6)))
+            imgs_detail = {}
+            for nm, boxes in gt_map.items():
+                imgs_detail[nm] = {"gt": [[int(v) for v in b] for b in boxes], "pred": []}
+            for cf, img, box in sorted(dets, key=lambda d: -d[0]):
+                best = max((_iou(box, g) for g in gt_map.get(img, [])), default=0.0)
+                imgs_detail.setdefault(img, {"gt": [], "pred": []})["pred"].append(
+                    [int(box[0]), int(box[1]), int(box[2]), int(box[3]),
+                     round(float(cf), 4), round(float(best), 4),
+                     1 if (img, round(float(cf), 6)) in tp_key else 0])
+            detail[part] = imgs_detail
             ap, rec, pre = _ap(flags, n_gt)
             tp, fp, fn, p, r, f1 = _at_conf(flags, n_gt, report_conf)
             # 심사원이 AP 적분을 직접 검산하겠다고 하면 이 계열을 보여준다.
@@ -793,6 +810,8 @@ def _run_eval(job_id, parts, iou, report_conf, weights):
         (out / "summary.json").write_text(json.dumps(result, ensure_ascii=False, indent=1),
                                           encoding="utf-8")
         _dump_series(out, series, report_conf)
+        (out / "detail.json").write_text(json.dumps(detail, ensure_ascii=False),
+                                         encoding="utf-8")
         j.update(stage="done", running=False, run=run, result=result,
                  note=f"mAP@0.5 = {result['map50_pct']}")
     except Exception as e:   # noqa: BLE001
@@ -840,6 +859,79 @@ def eval_result(run=None):
     return d
 
 
+def eval_detail(run=None, part=None):
+    """채점의 프레임별 근거. {이름: {gt:[XYXY], pred:[[XYXY, conf, iou, tp]]}}"""
+    runs = _eval_runs()
+    if not runs:
+        return {"error": "채점 기록이 없습니다."}
+    run = _safe_name(run) or runs[0]
+    fp = EVAL_ROOT / run / "detail.json"
+    if not fp.exists():
+        return {"error": "이 채점에는 근거 파일이 없습니다(예전 실행). 다시 채점하세요."}
+    d = json.loads(fp.read_text(encoding="utf-8"))
+    if part:
+        part = _safe_name(part)
+        return {"run": run, "part": part, "images": d.get(part, {})}
+    return {"run": run, "parts": {k: len(v) for k, v in d.items()}}
+
+
+def eval_series(run=None, part=None, limit=400):
+    """AP 를 만든 누적 계열(CSV 원자료)을 표로 줄 수 있게 읽어 온다."""
+    runs = _eval_runs()
+    if not runs:
+        return {"error": "채점 기록이 없습니다."}
+    run = _safe_name(run) or runs[0]
+    part = _safe_name(part or "")
+    fp = EVAL_ROOT / run / ("curve_%s.csv" % part)
+    if not fp.exists():
+        return {"error": "계열 파일이 없습니다: " + fp.name}
+    lines = [x for x in fp.read_text(encoding="utf-8-sig").splitlines() if x.strip()]
+    head, rows, foot = None, [], []
+    for ln in lines:
+        if ln.startswith("#"):
+            foot.append(ln.lstrip("# ")); continue
+        if head is None:
+            head = ln.split(","); continue
+        rows.append(ln.split(","))
+    return {"run": run, "part": part, "head": head or [], "rows": rows[:int(limit)],
+            "n_rows": len(rows), "foot": foot}
+
+
+def eval_frame(run=None, part=None, name=None, w=900):
+    """GT(초록)와 검출(주황·TP는 파랑)을 한 장에 겹쳐 그린 이미지. 근거 확인용."""
+    runs = _eval_runs()
+    if not runs:
+        return None
+    run = _safe_name(run) or runs[0]
+    part, name = _safe_name(part or ""), _safe_name(name or "")
+    fp = EVAL_ROOT / run / "detail.json"
+    if not (fp.exists() and part and name):
+        return None
+    d = json.loads(fp.read_text(encoding="utf-8")).get(part, {}).get(name)
+    if not d:
+        return None
+    ip = _gt_dirs(part)[0] / (name + ".jpg")
+    im = _rd(ip)
+    if im is None:
+        return None
+    H, W = im.shape[:2]
+    _r, bt, _e = sa._ov_sizes(W, H)
+    for b in d.get("gt", []):
+        cv2.rectangle(im, (b[0], b[1]), (b[2], b[3]), (0, 200, 0), bt)      # GT 초록
+    for b in d.get("pred", []):
+        if b[4] < 0.05:                # 곡선용 저신뢰 검출까지 다 그리면 화면이 못 읽는다
+            continue
+        col = (255, 140, 0) if b[6] else (0, 60, 255)                        # TP 파랑 / FP 빨강
+        cv2.rectangle(im, (b[0], b[1]), (b[2], b[3]), col, bt)
+        cv2.putText(im, "%.2f iou %.2f" % (b[4], b[5]), (b[0], max(b[1] - 6, 16)),
+                    cv2.FONT_HERSHEY_SIMPLEX, max(0.4, W / 2400), col, max(1, bt - 1))
+    w = max(64, min(int(w or 900), 4096))
+    if W > w:
+        im = cv2.resize(im, (w, int(H * w / W)))
+    ok, buf = cv2.imencode(".jpg", im, [cv2.IMWRITE_JPEG_QUALITY, 88])
+    return buf.tobytes() if ok else None
+
+
 # ==================== 자체 검사 ====================
 # ==================== 시나리오1 전용: 5종 x 10컷 수집 + 탭 마스크 ====================
 # 이 화면은 일회용이다. 영상을 고르거나 임계값을 만지는 기능을 두지 않는다.
@@ -873,22 +965,22 @@ def _run_collect(job_id, step):
             raise RuntimeError("자른 프레임이 없습니다.")
         j.update(stage="collect", total=total, done=0, note="탐지 시작")
 
-        cand = {p: [] for p in GT_PARTS}          # 종별 후보 프레임
+        cand = {}                                 # 부품 -> 후보 프레임(탐지된 클래스 전부)
         for k, (s, p) in enumerate(todo, 1):
             im = _rd(p)
             if im is None:
                 continue
             r = model.predict(source=im, conf=PICK_CONF, imgsz=EVAL_IMGSZ, verbose=False)[0]
+            # 프레임당 부품별로 신뢰도 최고 한 개만 남긴다(사용자 지시).
+            ih, iw = im.shape[:2]
             best = {}
             for b, cf, cl in zip(r.boxes.xyxy.cpu().numpy(), r.boxes.conf.cpu().numpy(),
                                  r.boxes.cls.cpu().numpy()):
                 nm = names[int(cl)] if int(cl) in names else str(int(cl))
-                if nm not in cand:
-                    continue
-                cf = float(cf)
+                cand.setdefault(nm, [])           # 5종만 받지 않는다. 잡힌 것은 다 후보로 둔다
+                cf = round(float(cf), 4)
                 if nm not in best or cf > best[nm]["conf"]:
-                    ih, iw = im.shape[:2]
-                    best[nm] = {"stem": s, "idx": int(p.stem), "conf": round(cf, 4),
+                    best[nm] = {"stem": s, "idx": int(p.stem), "conf": cf,
                                 "bbox": [int(v) for v in b], "wh": [int(iw), int(ih)]}
             for nm, d in best.items():
                 cand[nm].append(d)
@@ -900,6 +992,8 @@ def _run_collect(job_id, step):
         # 잡아 놓은 것도 그대로 10장에 들어갔고, 뽑힌 장면이 서로 비슷해 다양성도 낮았다.
         for v in cand.values():
             v.sort(key=lambda x: (x["stem"], x["idx"]))
+        order = [p for p in GT_PARTS if p in cand] +                 sorted((p for p in cand if p not in GT_PARTS), key=lambda p: -len(cand[p]))
+        cand = {p: cand[p] for p in order}        # 화면 드롭다운 순서 = 이 순서
         run = datetime.now().strftime("%y%m%d_%H%M%S")
         out = SCAN_ROOT / run
         out.mkdir(parents=True, exist_ok=True)
@@ -950,7 +1044,7 @@ def collect_result(run=None):
     d = json.loads(f.read_text(encoding="utf-8"))
     d["runs"] = runs
     saved = {}
-    for part in GT_PARTS:
+    for part in (d.get("cands") or {}):
         gi, gl = _gt_dirs(part)
         saved[part] = sorted(p.stem for p in gl.glob("*.txt")) if gl.exists() else []
     d["saved"] = saved
@@ -961,7 +1055,7 @@ def collect_result(run=None):
 def label_of(part, stem, idx):
     """저장한 GT 한 장의 박스(정규화 cx cy w h). 화면이 다시 열어 고칠 수 있게 한다."""
     part, stem = _safe_name(part), _safe_name(stem)
-    if part not in GT_PARTS or not stem:
+    if part not in _known_parts() or not stem:
         return {"error": "part / stem 이 올바르지 않습니다."}
     try:
         idx = int(idx)
@@ -979,6 +1073,20 @@ def label_of(part, stem, idx):
             except ValueError:
                 continue
     return {"boxes": boxes}
+
+
+def _known_parts():
+    """화면에 뜨는 부품 = 최근 수집에서 실제로 탐지된 클래스. GT_PARTS 는 순서·기본값용이다."""
+    runs = _collect_runs()
+    if runs:
+        try:
+            d = json.loads((SCAN_ROOT / runs[0] / "collect.json").read_text(encoding="utf-8"))
+            ks = list((d.get("cands") or {}).keys())
+            if ks:
+                return ks
+        except (ValueError, OSError):
+            pass
+    return list(GT_PARTS)
 
 
 def _select_path(run):
@@ -1002,7 +1110,7 @@ def set_select(run, part, keys):
     run = _safe_name(run)
     if not (SCAN_ROOT / run).is_dir():
         return {"error": "없는 실행입니다: " + str(run)}
-    if part not in GT_PARTS:
+    if part not in _known_parts():
         return {"error": "모르는 부품입니다: " + str(part)}
     if not isinstance(keys, list):
         return {"error": "선택 목록이 배열이 아닙니다."}

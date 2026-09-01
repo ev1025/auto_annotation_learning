@@ -583,6 +583,30 @@ def api_gt_tap(payload: dict = Body(...)):
         return {"error": f"{type(e).__name__}: {e}"[:200]}
 
 
+@app.get("/api/gt/eval/detail")
+def api_gt_eval_detail(run: str = None, part: str = None):
+    """채점의 프레임별 근거(GT·검출·IoU·TP)."""
+    return _gt(ge.eval_detail, run, part)
+
+
+@app.get("/api/gt/eval/series")
+def api_gt_eval_series(run: str = None, part: str = None, limit: int = 400):
+    """AP 를 만든 누적 계열(표로 보여 주는 원자료)."""
+    return _gt(ge.eval_series, run, part, limit)
+
+
+@app.get("/api/gt/eval/frame")
+def api_gt_eval_frame(run: str = None, part: str = None, name: str = None, w: int = 900):
+    """GT 와 검출을 겹쳐 그린 프레임 이미지."""
+    b = _gt(ge.eval_frame, run, part, name, w)
+    if isinstance(b, dict):
+        return JSONResponse(b, status_code=200)
+    if b is None:
+        return JSONResponse({"error": "frame not found"}, status_code=404)
+    return Response(content=b, media_type="image/jpeg",
+                    headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/gt/eval/result")
 def api_gt_eval_result(run: str = None):
     return _gt(ge.eval_result, run)

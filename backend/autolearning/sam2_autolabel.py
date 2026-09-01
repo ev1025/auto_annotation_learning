@@ -1073,7 +1073,12 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
                     logln("  ".join(seg), "info")
                 seen = len(rows)
 
+        def _on_val_batch(_v):    # 검증 배치마다 중단 확인(검증은 1부품도 40초, 전체는 8분이다)
+            if j.get("cancel"):
+                raise _Cancelled
+
         model.add_callback("on_train_batch_end", _on_batch)
+        model.add_callback("on_val_batch_end", _on_val_batch)
         runs_dir = model_dir / "runs"
         runs_dir.mkdir(parents=True, exist_ok=True)
         _stop = threading.Event()
@@ -1098,7 +1103,7 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
                 cache = False
             mixup = float(os.environ.get("XR_MIXUP", getattr(config, "MIXUP", 0.2)))
             logln(f"학습 조건: batch {batch} · workers {workers} · cache {cache} · "
-                  f"mixup {mixup} · degrees 15 (서비스 모델과 동일)", "info")
+                  f"mixup {mixup} · degrees 15", "info")
             model.train(data=str(yml), epochs=epochs, imgsz=640, batch=batch, device=0,
                         workers=workers, cache=cache, mixup=mixup, degrees=15.0,
                         project=str(runs_dir), name="model", exist_ok=True, verbose=False,
@@ -1121,6 +1126,8 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
         w1 = Path(model.trainer.best)
         logln("학습 완료", "ok")
         onnx_src = None
+        if j.get("cancel"):
+            raise _Cancelled
         try:   # XR 배포용 ONNX 자동 변환(onnx 미설치 등 실패 시 건너뜀)
             onnx_src = Path(model.export(format="onnx", imgsz=640))
         except Exception as e:
@@ -1143,7 +1150,9 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
                 outd = sess / "pred" / part
                 outd.mkdir(parents=True, exist_ok=True)
                 hit, confs, cls_cnt = 0, [], {}
-                for p in fs:
+                for _fi, p in enumerate(fs):
+                    if _fi % 10 == 0 and j.get("cancel"):
+                        raise _Cancelled
                     im = _rd(p)
                     r = det.predict(source=im, conf=VAL_CONF, imgsz=640, verbose=False)[0]
                     if len(r.boxes):
@@ -1254,7 +1263,12 @@ def cancel_multiclass(job=None):
     if not j:
         return {"error": "진행 중인 학습이 없습니다."}
     j["cancel"] = True
-    return {"ok": True, "job": job, "stage": j.get("stage")}
+    # 어느 단계에서 멈출 수 있는지 알려준다. 즉시 멈추는 단계와, 진행 중인 한 덩어리가
+    # 끝나야 멈추는 단계가 다르다(데이터셋 스캔·램 캐싱·모델 저장은 중간에 못 끊는다).
+    st = j.get("stage")
+    when = {"build": "다음 파일 처리에서", "train": "다음 배치에서",
+            "eval": "다음 프레임 묶음에서"}.get(st, "현재 단계가 끝나면")
+    return {"ok": True, "job": job, "stage": st, "note": when + " 멈춥니다"}
 
 # ==================== 3단계: 모델 평가·적용 (A/B 비교 → 서비스 적용/롤백) ====================
 def weights_of(runid):

@@ -105,10 +105,31 @@
      1248px svg). 이미지 크기만큼만 차지하는 holder 안에 두어 둘을 정확히 겹친다. */
   .holder{position:relative;display:inline-block;line-height:0;max-width:100%}
   .holder img{display:block;max-width:100%;max-height:78vh}
-  .holder svg{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
-  .bx{fill:rgba(251,191,36,.10);stroke:#fbbf24;stroke-width:3;vector-effect:non-scaling-stroke}
-  .bx.on{stroke:#4f46e5;fill:rgba(79,70,229,.20)}
-  .hd{fill:#fff;stroke:#4f46e5;stroke-width:2;vector-effect:non-scaling-stroke;cursor:grab}
+  /* 박스 조작은 SVG 대신 HTML 요소로 그린다. viewBox 안에서는 핸들 크기가 이미지 배율에
+     따라 커지고 커서 모양도 방향별로 줄 수 없어 쓰기 불편했다. */
+  #ov{position:absolute;inset:0;touch-action:none;cursor:crosshair}
+  .bx{position:absolute;border:2px solid rgba(255,255,255,.85);border-radius:2px;cursor:move;
+      box-shadow:0 0 0 1px rgba(15,23,42,.6), inset 0 0 0 1px rgba(15,23,42,.45)}
+  .bx.on{border-color:#4f46e5;background:rgba(79,70,229,.12);
+         box-shadow:0 0 0 1px rgba(255,255,255,.9), 0 2px 10px rgba(15,23,42,.35)}
+  /* 핸들은 보이는 크기(10px)보다 잡히는 범위(26px)를 크게 둔다. 작아서 못 잡는 게 제일 불편했다. */
+  .hd{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;display:grid;place-items:center}
+  .hd::after{content:"";width:10px;height:10px;background:#fff;border:2px solid #4f46e5;
+             border-radius:50%;box-shadow:0 1px 4px rgba(15,23,42,.45)}
+  .hd:hover::after{width:14px;height:14px}
+  /* 변을 그대로 끌어도 크기가 바뀐다(모서리를 정확히 집을 필요가 없다) */
+  .eg{position:absolute}
+  .eg[data-h="n"],.eg[data-h="s"]{left:8%;width:84%;height:14px;cursor:ns-resize}
+  .eg[data-h="w"],.eg[data-h="e"]{top:8%;height:84%;width:14px;cursor:ew-resize}
+  .eg[data-h="n"]{top:-7px} .eg[data-h="s"]{bottom:-7px}
+  .eg[data-h="w"]{left:-7px} .eg[data-h="e"]{right:-7px}
+  .hd[data-h="nw"],.hd[data-h="se"]{cursor:nwse-resize}
+  .hd[data-h="ne"],.hd[data-h="sw"]{cursor:nesw-resize}
+  .hd[data-h="n"],.hd[data-h="s"]{cursor:ns-resize}
+  .hd[data-h="w"],.hd[data-h="e"]{cursor:ew-resize}
+  .tip{position:absolute;top:-24px;left:0;background:rgba(15,23,42,.86);color:#fff;
+       font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;white-space:nowrap;
+       pointer-events:none}
   .refbx{fill:none;stroke:#38bdf8;stroke-width:2;stroke-dasharray:6 4;vector-effect:non-scaling-stroke}
   .foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
   kbd{background:var(--surface-3);border:1px solid var(--line-strong);border-bottom-width:2px;
@@ -126,17 +147,17 @@
   <span class="pill" id="cntFound">후보 -</span>
   <span class="pill" id="cntSel">선택 -</span>
   <span class="pill" id="cntSaved">GT -</span>
+  <span class="spacer"></span>
+  <button class="btn" id="btnClear">선택 비우기</button>
+  <button class="btn primary" id="btnSaveSel">선택 저장</button>
+  <button class="btn danger" id="btnDel" hidden>GT 삭제</button>
+  <button class="btn primary" id="btnSave" hidden>GT 저장</button>
 </header>
 
 <main>
   <div class="msg" id="msg" hidden></div>
 
   <section id="viewPick">
-    <div class="bar">
-      <span class="spacer"></span>
-      <button class="btn" id="btnClear">선택 비우기</button>
-      <button class="btn primary" id="btnSaveSel">선택 저장</button>
-    </div>
     <div class="grid" id="grid"></div>
   </section>
 
@@ -145,22 +166,19 @@
       <button class="btn" id="btnPrev">◀ 이전</button>
       <span class="pill" id="labPos">-</span>
       <button class="btn" id="btnNext">다음 ▶</button>
-      <span class="pill" id="labInfo">-</span>
-      <span class="spacer"></span>
-      <button class="btn danger" id="btnDel">이 프레임 GT 삭제</button>
-      <button class="btn primary" id="btnSave">GT 저장</button>
     </div>
     <div class="stage" id="stage">
       <div class="holder">
         <img id="im" alt="" />
-        <svg id="svg" viewBox="0 0 1000 1000" preserveAspectRatio="none"></svg>
+        <div id="ov"></div>
       </div>
     </div>
     <div class="foot">
       <span class="hint">
-        빈 곳을 <b>한 번 누르면</b> 그 지점의 SAM2 마스크로 박스가 생깁니다 ·
-        <b>끌면</b> 직접 그립니다 · 박스를 눌러 고르고 모서리를 끌어 크기 조절 ·
-        <kbd>Del</kbd> 고른 박스 삭제 · <kbd>S</kbd> 저장 · <kbd>←</kbd><kbd>→</kbd> 이동
+        박스 안쪽 끌기 = 이동 · 모서리·변 끌기 = 크기 · 빈 곳 한 번 누르기 = SAM2 마스크로 새 박스 ·
+        빈 곳 끌기 = 직접 그리기 · <kbd>Shift</kbd>+방향키 미세이동 · <kbd>Alt</kbd>+방향키 미세크기 ·
+        <kbd>Ctrl</kbd>+<kbd>Z</kbd> 되돌리기 · <kbd>Del</kbd> 삭제 · <kbd>S</kbd> 저장 ·
+        <kbd>←</kbd><kbd>→</kbd> 프레임 이동
       </span>
     </div>
   </section>
@@ -191,6 +209,7 @@ const savedName = (c) => c.stem + "_" + String(c.idx).padStart(5, "0");
 const clamp01 = (v) => Math.min(Math.max(v, 0), 1);
 
 const S = {
+  tip: null, undo: [],
   data: null, part: null, mode: "pick",
   sel: {},              // 부품 -> Set(key)
   list: [], i: 0,       // 라벨 대상(사람이 고른 프레임)
@@ -203,17 +222,31 @@ async function load(keepPart) {
   if (d.error) { say(d.error); return; }
   S.data = d;
   S.sel = {};
-  const parts = Object.keys(d.cands || {});
-  parts.forEach((p) => { S.sel[p] = new Set((d.sel && d.sel[p]) || []); });
-  const sel = $("partSel");
-  sel.innerHTML = parts.map((p) => '<option value="' + p + '">' + p + "</option>").join("");
-  S.part = (keepPart && parts.indexOf(keepPart) >= 0) ? keepPart : parts[0];
-  sel.value = S.part;
-  say("");
+  Object.keys(d.cands || {}).forEach((p) => {
+    S.sel[p] = new Set((d.sel && d.sel[p]) || []);
+  });
+  fillParts(keepPart);
   render();
 }
 
+function partList() {
+  // 고르기는 잡힌 부품 전부, 라벨은 고른 것이 있는 부품만.
+  const all = Object.keys((S.data || {}).cands || {});
+  return S.mode === "pick" ? all : all.filter((p) => (S.sel[p] || new Set()).size > 0);
+}
+
+function fillParts(keepPart) {
+  const parts = partList();
+  const sel = $("partSel");
+  sel.innerHTML = parts.map((p) => '<option value="' + p + '">' + p + "</option>").join("");
+  const want = keepPart || S.part;
+  S.part = (want && parts.indexOf(want) >= 0) ? want : parts[0];
+  if (S.part) { sel.value = S.part; }
+  return parts.length;
+}
+
 function counters() {
+  if (!S.part) { return; }
   const cands = (S.data.cands || {})[S.part] || [];
   const per = S.data.per_part || 10;
   const nsel = S.sel[S.part].size;
@@ -228,8 +261,19 @@ function counters() {
 }
 
 function render() {
+  const n = fillParts();
+  const pick = S.mode === "pick";
+  $("btnClear").hidden = !pick;
+  $("btnSaveSel").hidden = !pick;
+  $("btnDel").hidden = pick;
+  $("btnSave").hidden = pick;
+  if (!n || !S.part) {                  // 라벨 모드인데 고른 부품이 없으면 빈 화면
+    $("viewPick").hidden = !pick; $("viewLab").hidden = pick;
+    if (pick) { $("grid").innerHTML = ""; } else { $("im").removeAttribute("src"); $("ov").innerHTML = ""; }
+    return;
+  }
   counters();
-  if (S.mode === "pick") { renderPick(); } else { renderLab(); }
+  if (pick) { renderPick(); } else { renderLab(); }
 }
 
 /* ---------------- 1. 고르기 ---------------- */
@@ -250,7 +294,7 @@ function renderPick() {
     const el = document.createElement("div");
     el.className = "card" + (on ? " on" : "");
     let ref = "";
-    if (c.bbox && c.wh) {          // 모델이 잡은 박스는 항상 겹쳐 보여준다(참고용, GT 아님)
+    if (c.bbox && c.wh) {          // 모델이 잡은 박스(참고용, GT 아님)
       const b = c.bbox, w = c.wh[0], h = c.wh[1];
       ref = '<svg viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="xMidYMid meet">' +
             '<rect class="refbx" x="' + b[0] + '" y="' + b[1] + '" width="' + (b[2] - b[0]) +
@@ -261,7 +305,8 @@ function renderPick() {
       '<span class="no">' + (n + 1) + "</span>" +
       (on ? '<span class="tag sel">선택</span>'
           : saved.has(savedName(c)) ? '<span class="tag saved">GT 있음</span>' : "") +
-      '</div><div class="meta"><span>conf ' + c.conf.toFixed(2) + "</span></div>";
+      '</div><div class="meta"><span>conf ' + c.conf.toFixed(2) +
+      "</span></div>";
     el.onclick = () => {
       const s = S.sel[S.part];
       if (s.has(k)) { s.delete(k); } else { s.add(k); }
@@ -275,7 +320,6 @@ async function saveSel() {
   const r = await post("/api/gt/select",
                        { run: S.data.run, part: S.part, keys: Array.from(S.sel[S.part]) });
   if (r.error) { say(r.error); return; }
-  say("선택 " + r.n + "장 저장했습니다. 상단 '2. 라벨' 로 넘어가세요.", "ok");
 }
 
 /* ---------------- 2. 라벨 ---------------- */
@@ -290,77 +334,93 @@ async function renderLab() {
   $("tabPick").className = ""; $("tabLab").className = "on";
   S.list = selList();
   if (!S.list.length) {
-    $("labPos").textContent = "-"; $("labInfo").textContent = "-";
-    $("im").removeAttribute("src"); $("svg").innerHTML = "";
-    say("고른 프레임이 없습니다. '1. 고르기' 에서 먼저 선택하세요.");
+    $("labPos").textContent = "-";
+    $("im").removeAttribute("src"); $("ov").innerHTML = "";
     return;
   }
-  say("");
   S.i = Math.min(Math.max(S.i, 0), S.list.length - 1);
   const c = S.list[S.i];
   $("labPos").textContent = (S.i + 1) + " / " + S.list.length;
-  $("labInfo").textContent = c.stem + " · " + String(c.idx).padStart(5, "0") +
-                             " · conf " + c.conf.toFixed(2);
   $("im").src = frameUrl(c, 0);
   const g = await api("/api/gt/label?part=" + encodeURIComponent(S.part) +
                       "&stem=" + encodeURIComponent(c.stem) + "&idx=" + c.idx);
   S.boxes = (g.boxes || []).map((b) => b.slice());
+  if (!S.boxes.length && c.bbox && c.wh) {
+    // 저장한 GT 가 없으면 모델이 잡은 박스를 초깃값으로 넣는다. 사람이 끌어서 고친다.
+    const b = c.bbox, w = c.wh[0], h = c.wh[1];
+    S.boxes = [[(b[0] + b[2]) / 2 / w, (b[1] + b[3]) / 2 / h,
+                (b[2] - b[0]) / w, (b[3] - b[1]) / h]];
+  }
   S.act = S.boxes.length ? 0 : -1;
   S.dirty = false;
   drawBoxes();
 }
 
 function drawBoxes() {
-  const V = 1000;
+  const ov = $("ov");
   let h = "";
   S.boxes.forEach((b, n) => {
-    const x = (b[0] - b[2] / 2) * V, y = (b[1] - b[3] / 2) * V, w = b[2] * V, hh = b[3] * V;
-    h += '<rect class="bx' + (n === S.act ? " on" : "") + '" data-i="' + n +
-         '" x="' + x + '" y="' + y + '" width="' + w + '" height="' + hh + '"/>';
-    if (n === S.act) {
-      const pts = [[x, y, "nw"], [x + w / 2, y, "n"], [x + w, y, "ne"], [x + w, y + hh / 2, "e"],
-                   [x + w, y + hh, "se"], [x + w / 2, y + hh, "s"], [x, y + hh, "sw"],
-                   [x, y + hh / 2, "w"]];
-      pts.forEach((p) => {
-        h += '<rect class="hd" data-h="' + p[2] + '" x="' + (p[0] - 9) + '" y="' + (p[1] - 9) +
-             '" width="18" height="18"/>';
-      });
+    const on = n === S.act;
+    const x = (b[0] - b[2] / 2) * 100, y = (b[1] - b[3] / 2) * 100;
+    h += '<div class="bx' + (on ? " on" : "") + '" data-i="' + n + '" style="left:' + x +
+         "%;top:" + y + "%;width:" + (b[2] * 100) + "%;height:" + (b[3] * 100) + '%">';
+    if (on) {
+      h += ["n", "s", "w", "e"].map((t) =>
+        '<div class="eg" data-h="' + t + '"></div>').join("");
+      h += ["nw", "ne", "se", "sw"].map((t) => {
+        const px = t.indexOf("w") >= 0 ? 0 : 100;
+        const py = t.indexOf("n") >= 0 ? 0 : 100;
+        return '<div class="hd" data-h="' + t + '" style="left:' + px + "%;top:" + py +
+               '%;cursor:' + ((t === "nw" || t === "se") ? "nwse" : "nesw") + '-resize"></div>';
+      }).join("");
+      if (S.tip) { h += '<div class="tip">' + S.tip + "</div>"; }
     }
+    h += "</div>";
   });
-  $("svg").innerHTML = h;
+  ov.innerHTML = h;
   $("btnSave").textContent = S.dirty ? "GT 저장 *" : "GT 저장";
 }
 
-/* 화면 좌표 -> 0..1. viewBox 를 거쳐 계산하므로 레터박스 보정이 필요 없다 */
+/* 화면 좌표 -> 0..1. 오버레이가 이미지와 정확히 겹쳐 있으므로 비율 계산만 하면 된다 */
 function toN(ev) {
-  const svg = $("svg");
-  const p = svg.createSVGPoint();
-  p.x = ev.clientX; p.y = ev.clientY;
-  const q = p.matrixTransform(svg.getScreenCTM().inverse());
-  return [clamp01(q.x / 1000), clamp01(q.y / 1000)];
+  const r = $("ov").getBoundingClientRect();
+  return [clamp01((ev.clientX - r.left) / r.width), clamp01((ev.clientY - r.top) / r.height)];
+}
+
+function sizeTip(b) {
+  const c = S.list[S.i];
+  if (!c || !c.wh) { return null; }
+  return Math.round(b[2] * c.wh[0]) + " x " + Math.round(b[3] * c.wh[1]);
 }
 
 let drag = null;
-$("svg").addEventListener("pointerdown", (ev) => {
+function snap() {            // 되돌리기용 직전 상태(20단계까지)
+  S.undo.push(JSON.stringify(S.boxes));
+  if (S.undo.length > 20) { S.undo.shift(); }
+}
+
+$("ov").addEventListener("pointerdown", (ev) => {
   if (!S.list.length) { return; }
   ev.preventDefault();
-  $("svg").setPointerCapture(ev.pointerId);
+  snap();
+  $("ov").setPointerCapture(ev.pointerId);
   const n = toN(ev);
   const t = ev.target;
-  if (t && t.dataset && t.dataset.h) {
+  if (t && t.dataset && t.dataset.h) {                       // 모서리·변 핸들
+    S.act = Number(t.parentElement.dataset.i);
     drag = { kind: "handle", tag: t.dataset.h, moved: false };
     return;
   }
-  if (t && t.dataset && t.dataset.i !== undefined) {
+  if (t && t.dataset && t.dataset.i !== undefined) {         // 박스 안쪽 = 이동
     S.act = Number(t.dataset.i);
     const b = S.boxes[S.act];
     drag = { kind: "move", ox: n[0] - b[0], oy: n[1] - b[1], moved: false };
     drawBoxes();
     return;
   }
-  drag = { kind: "new", x0: n[0], y0: n[1], moved: false };
+  drag = { kind: "new", x0: n[0], y0: n[1], moved: false };   // 빈 곳 = 새로 그리기
 });
-$("svg").addEventListener("pointermove", (ev) => {
+$("ov").addEventListener("pointermove", (ev) => {
   if (!drag) { return; }
   const n = toN(ev), nx = n[0], ny = n[1];
   drag.moved = true;
@@ -372,7 +432,7 @@ $("svg").addEventListener("pointermove", (ev) => {
       S.boxes.push([0, 0, 0, 0]); drag.made = S.boxes.length - 1; S.act = drag.made;
     }
     S.boxes[drag.made] = [x + w / 2, y + hh / 2, w, hh];
-    S.dirty = true; drawBoxes(); return;
+    S.dirty = true; S.tip = sizeTip(S.boxes[drag.made]); drawBoxes(); return;
   }
   const b = S.boxes[S.act];
   if (!b) { return; }
@@ -389,32 +449,31 @@ $("svg").addEventListener("pointermove", (ev) => {
     b[0] = (x1 + x2) / 2; b[1] = (y1 + y2) / 2;
     b[2] = Math.max(x2 - x1, 0.004); b[3] = Math.max(y2 - y1, 0.004);
   }
-  S.dirty = true; drawBoxes();
+  S.dirty = true; S.tip = sizeTip(b); drawBoxes();
 });
-$("svg").addEventListener("pointerup", async (ev) => {
+$("ov").addEventListener("pointerup", async (ev) => {
   const d = drag; drag = null;
+  S.tip = null;
   if (d && d.kind === "new" && !d.moved) {   // 끌지 않고 한 번 누름 = SAM2 마스크 요청
     const n = toN(ev);
     await tap(n[0], n[1]);
+  } else {
+    drawBoxes();
   }
 });
 
 async function tap(nx, ny) {
   const c = S.list[S.i];
   if (!c) { return; }
-  say("마스크 만드는 중…");
   const r = await post("/api/gt/tap", { stem: c.stem, idx: c.idx, points: [[nx, ny, 1]] });
   if (r.error) { say(r.error); return; }
-  say("");
   if (r.combo) { $("im").src = "data:image/jpeg;base64," + r.combo; }
   if (r.box) { S.boxes.push(r.box.slice()); S.act = S.boxes.length - 1; S.dirty = true; drawBoxes(); }
-  if (r.verdict === "over") { say("마스크가 화면 절반을 넘습니다. 부품 안쪽을 다시 눌러 보세요."); }
 }
 
 async function saveGT() {
   const c = S.list[S.i];
   if (!c) { return; }
-  if (!S.boxes.length) { say("박스가 없습니다. 부품을 눌러 박스를 먼저 만드세요."); return; }
   const r = await post("/api/gt/commit",
                        { part: S.part, stem: c.stem, idx: c.idx, boxes: S.boxes });
   if (r.error) { say(r.error); return; }
@@ -423,7 +482,6 @@ async function saveGT() {
   const sv = S.data.saved[S.part] || (S.data.saved[S.part] = []);
   if (sv.indexOf(savedName(c)) < 0) { sv.push(savedName(c)); }
   counters();
-  say("저장했습니다 · " + S.part + " GT " + (r.labels != null ? r.labels : sv.length) + "장", "ok");
   if (S.i < S.list.length - 1) { S.i += 1; renderLab(); } else { drawBoxes(); }
 }
 
@@ -435,7 +493,6 @@ async function delGT() {
   S.data.saved[S.part] = ((S.data.saved || {})[S.part] || []).filter((x) => x !== savedName(c));
   S.boxes = []; S.act = -1; S.dirty = false;
   counters(); drawBoxes();
-  say("이 프레임의 GT 를 지웠습니다.", "ok");
 }
 
 $("tabPick").onclick = () => { S.mode = "pick"; render(); };
@@ -449,9 +506,26 @@ $("btnSave").onclick = saveGT;
 $("btnDel").onclick = delGT;
 document.addEventListener("keydown", (e) => {
   if (S.mode !== "label") { return; }
+  const b = S.boxes[S.act];
+  // 방향키만 = 프레임 이동. Shift = 박스 이동, Alt = 박스 크기(마우스로 맞추기 어려운 1~2px 조정)
+  if (b && (e.shiftKey || e.altKey) && e.key.indexOf("Arrow") === 0) {
+    e.preventDefault();
+    const d = 0.002 * (e.ctrlKey ? 5 : 1);
+    const dx = e.key === "ArrowLeft" ? -d : e.key === "ArrowRight" ? d : 0;
+    const dy = e.key === "ArrowUp" ? -d : e.key === "ArrowDown" ? d : 0;
+    if (e.shiftKey) { b[0] = clamp01(b[0] + dx); b[1] = clamp01(b[1] + dy); }
+    else { b[2] = Math.max(0.004, b[2] + dx); b[3] = Math.max(0.004, b[3] + dy); }
+    S.dirty = true; S.tip = sizeTip(b); drawBoxes();
+    return;
+  }
   if (e.key === "ArrowLeft" || e.key === "a") { $("btnPrev").click(); }
   else if (e.key === "ArrowRight" || e.key === "d") { $("btnNext").click(); }
   else if (e.key === "s" || e.key === "S") { saveGT(); }
+  else if ((e.key === "z" || e.key === "Z") && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    const prev = S.undo.pop();
+    if (prev) { S.boxes = JSON.parse(prev); S.act = S.boxes.length ? 0 : -1; S.dirty = true; drawBoxes(); }
+  }
   else if (e.key === "Delete" || e.key === "Backspace") {
     if (S.act >= 0) {
       S.boxes.splice(S.act, 1);
