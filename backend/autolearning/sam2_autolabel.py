@@ -15,6 +15,7 @@
 """
 import base64
 import gc
+import hashlib
 import json
 import logging
 import logging.handlers
@@ -84,6 +85,11 @@ CKPT = config.BASE_DIR / "models" / "sam2" / "sam2.1_hiera_base_plus.pt"
 RESULTS = config.BASE_DIR / "results"
 CUTS_DIR = config.BASE_DIR / "results" / "autolabels" / "_cuts"   # 누끼 캐시(라벨이 그대로면 재사용)
 CUT_PER_CLASS = 60          # 부품당 누끼 상한. 인접 프레임은 사실상 같은 그림이라 더 뽑아도 다양성이 안 늘어난다
+# 합성 결과 보관소. 세션마다 26,000장을 새로 만들면 5분·7GB 가 매번 쌓이는데, 라벨이 그대로면
+# 만들어 두었던 그림을 그대로 쓰는 것이 맞다(세션 사이의 무작위성은 학습에 도움이 안 되고
+# 조건 비교만 흐린다). 세션에는 하드링크로 넣어 디스크를 두 번 쓰지 않는다.
+SYNTH_POOL = config.BASE_DIR / "results" / "autolabels" / "_synth_pool"
+NEWLINE = chr(10)
 VAL_CONF = 0.4
 # 비교 화면에서 한 프레임에 표시할 박스 상한(신뢰도 상위). 덜 학습된 모델이
 # 300개까지 뱉어 사진이 박스로 덮이는 것을 막는다. 전체 개수는 따로 표시한다.
@@ -528,7 +534,65 @@ OCCL_P = 0.5              # 합성 객체 중 절반은 판넬로 부분 가림(
 OCCL_FRAC = (0.35, 0.8)   # 가림 판넬 폭 = 부품 박스 폭의 35~80%
 
 
-def _synth_augment(oi, ol, logln, n_syn=400, cancelled=None, class_weights=None):
+def _pool_key(ol, n_syn, bgs, occs):
+    """합성 결과를 재사용해도 되는지 판단하는 지문.
+
+    합성 그림은 (오려낸 부품 = 라벨 박스, 배경, 가림 누끼, 장수)로 결정된다.
+    클래스 번호는 세션마다 다시 매기므로 지문에 넣지 않고, 라벨은 좌표만 본다.
+    """
+    h = hashlib.md5()
+    for lp in sorted(Path(ol).glob("*.txt")):
+        if lp.name.startswith("syn_"):
+            continue
+        h.update(lp.name.encode("utf-8"))
+        for line in lp.read_text(encoding="utf-8").splitlines():
+            f = line.split()
+            if len(f) == 5:
+                h.update((" ".join(f[1:])).encode("utf-8"))   # 클래스 번호 제외
+    h.update(("|%d|%d|%d|%s|%s" % (n_syn, len(bgs), CUT_PER_CLASS,
+                                   ",".join(sorted(Path(b).name for b in bgs)),
+                                   str(len(occs)))).encode("utf-8"))
+    return h.hexdigest()[:12]
+
+
+def _pool_reuse(pool, oi, ol, n_syn, name2idx, logln):
+    """보관소의 합성 그림을 세션에 하드링크로 넣고, 라벨만 이 세션의 클래스 번호로 다시 쓴다."""
+    meta = pool / "boxes.json"
+    if not meta.exists():
+        return 0
+    try:
+        boxes = json.loads(meta.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return 0
+    made = 0
+    for name, items in sorted(boxes.items()):
+        if made >= n_syn:
+            break
+        src = pool / (name + ".jpg")
+        if not src.exists():
+            continue
+        lines = []
+        for it in items:            # [클래스이름, cx, cy, w, h]
+            ci = name2idx.get(it[0])
+            if ci is None:          # 이 세션에서 안 배우는 부품이면 그 박스만 버린다
+                continue
+            lines.append("%d %.6f %.6f %.6f %.6f" % (ci, it[1], it[2], it[3], it[4]))
+        if not lines:
+            continue
+        dst = oi / (name + ".jpg")
+        try:
+            if not dst.exists():
+                os.link(src, dst)               # 하드링크: 같은 디스크면 용량이 늘지 않는다
+        except OSError:
+            shutil.copy(src, dst)               # 파일시스템이 다르면 복사로 내려온다
+        (ol / (name + ".txt")).write_text(NEWLINE.join(lines) + NEWLINE, encoding="utf-8")
+        made += 1
+    if made:
+        logln("배경 합성 재사용 · %d장 (보관소 %s)" % (made, pool.name), "ok")
+    return made
+
+
+def _synth_augment(oi, ol, logln, n_syn=400, cancelled=None, class_weights=None, names=None):
     """멀티클래스 학습셋(oi/ol)의 객체를 SAM2로 누끼 → 실배경에 copy-paste 합성 n_syn장 추가.
     배경 과적합을 줄이는 opt-in 증강. 라벨의 원래 클래스 idx를 유지한다. (run_augtrain 로직을 멀티클래스로 일반화)"""
     import random
@@ -547,6 +611,18 @@ def _synth_augment(oi, ol, logln, n_syn=400, cancelled=None, class_weights=None)
             occs.append(oi_img)
     if not bgs:
         logln("배경 이미지 없음(data/bell412/_synth/backgrounds) → 배경 합성 증강 생략", "info"); return 0
+
+    # 이미 만들어 둔 합성이 있으면 그것을 쓴다. 누끼(SAM2)보다 먼저 확인해서, 재사용되면
+    # SAM2 를 올리지도 않는다(누끼 12분 + 합성 5분이 통째로 사라진다).
+    name2idx = {n: i for i, n in enumerate(names or [])}
+    reuse = os.environ.get("XR_SYNTH_REUSE", "1").lower() not in ("0", "false", "no")
+    pool = None
+    if reuse and name2idx:
+        pool = SYNTH_POOL / _pool_key(ol, n_syn, bgs, occs)
+        if pool.is_dir():
+            made = _pool_reuse(pool, oi, ol, n_syn, name2idx, logln)
+            if made:
+                return made
 
     def _prep_bg(path):
         bg = _rd(path); h, w = bg.shape[:2]
@@ -600,8 +676,15 @@ def _synth_augment(oi, ol, logln, n_syn=400, cancelled=None, class_weights=None)
     for _k, (ip, lp, ci) in enumerate(picked):
         if cancelled and _k % 20 == 0 and cancelled():
             raise _Cancelled
-        cache = CUTS_DIR / f"{ip.stem}.png"
-        if cache.exists() and cache.stat().st_mtime >= lp.stat().st_mtime:
+        # 캐시 키에 박스 좌표의 해시를 붙인다. 전에는 파일 시각으로 무효화했는데(캐시가
+        # 라벨보다 새것이면 재사용), 여기 들어오는 lp 는 세션 폴더에 방금 복사된 사본이라
+        # 항상 캐시보다 새것이었다. 그래서 재사용이 언제나 0 이고 매 학습마다 2,100장을
+        # 다시 오려 11분을 썼다(로그 "캐시 재사용 0 · 신규 2096"). 프레임은 안 바뀌고
+        # 박스만 바뀌므로, 박스가 같으면 같은 누끼다.
+        box_txt = lp.read_text(encoding="utf-8")
+        key = hashlib.md5(box_txt.encode("utf-8")).hexdigest()[:8]
+        cache = CUTS_DIR / f"{ip.stem}__{key}.png"
+        if cache.exists():
             rgba = cv2.imread(str(cache), cv2.IMREAD_UNCHANGED)
             if rgba is not None and rgba.ndim == 3 and rgba.shape[2] == 4:
                 cuts.append((rgba, ci)); hit += 1; continue
@@ -617,7 +700,7 @@ def _synth_augment(oi, ol, logln, n_syn=400, cancelled=None, class_weights=None)
                 pred.set_image(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))
             except Exception:
                 continue
-            for line in lp.read_text(encoding="utf-8").splitlines():
+            for line in box_txt.splitlines():
                 f = line.split()
                 if len(f) != 5:
                     continue
@@ -650,10 +733,11 @@ def _synth_augment(oi, ol, logln, n_syn=400, cancelled=None, class_weights=None)
 
     # 2) 합성: 배경에 1~2개 랜덤 붙여넣기(회전·스케일), 멀티클래스 라벨 기록
     made = 0
+    pool_boxes = {}
     for k in range(n_syn):
         if cancelled and k % 50 == 0 and cancelled():
             raise _Cancelled
-        bg = _prep_bg(random.choice(bgs)); H, W = bg.shape[:2]; labels = []
+        bg = _prep_bg(random.choice(bgs)); H, W = bg.shape[:2]; labels = []; items = []
         for _ in range(1 if random.random() > 0.25 else 2):
             # 클래스 추첨: 기본 균등. class_weights(부품별 실촬 장수)를 주면 비례 추첨 —
             # 부품당 합성을 "실촬의 N배"로 맞출 때 쓴다(균등이면 라벨 많은 부품이 상대적으로 적게 받는다).
@@ -692,10 +776,27 @@ def _synth_augment(oi, ol, logln, n_syn=400, cancelled=None, class_weights=None)
                 _paste(bg, oc2, ox, oy)      # 라벨은 갱신하지 않는다
             cx = (bb[0] + bb[2]) / 2 / W; cy = (bb[1] + bb[3]) / 2 / H
             labels.append(f"{ci} {cx:.6f} {cy:.6f} {(bb[2] - bb[0]) / W:.6f} {(bb[3] - bb[1]) / H:.6f}")
+            items.append([names[ci] if names and ci < len(names) else str(ci),
+                          round(cx, 6), round(cy, 6),
+                          round((bb[2] - bb[0]) / W, 6), round((bb[3] - bb[1]) / H, 6)])
         if labels:
-            cv2.imwrite(str(oi / f"syn_{k:05d}.jpg"), bg)
-            (ol / f"syn_{k:05d}.txt").write_text("\n".join(labels) + "\n", encoding="utf-8")
+            nm = f"syn_{k:05d}"
+            if pool is not None:            # 보관소에 원본을 두고 세션에는 하드링크만 건다
+                pool.mkdir(parents=True, exist_ok=True)
+                cv2.imwrite(str(pool / (nm + ".jpg")), bg)
+                try:
+                    os.link(pool / (nm + ".jpg"), oi / (nm + ".jpg"))
+                except OSError:
+                    cv2.imwrite(str(oi / (nm + ".jpg")), bg)
+                pool_boxes[nm] = items
+            else:
+                cv2.imwrite(str(oi / (nm + ".jpg")), bg)
+            (ol / (nm + ".txt")).write_text(NEWLINE.join(labels) + NEWLINE, encoding="utf-8")
             made += 1
+    if pool is not None and pool_boxes:      # 다음 학습이 그대로 쓸 수 있게 좌표를 이름으로 남긴다
+        (pool / "boxes.json").write_text(json.dumps(pool_boxes, ensure_ascii=False),
+                                         encoding="utf-8")
+        logln(f"합성 보관소에 적립 · {pool.name} ({len(pool_boxes)}장)", "info")
     logln(f"배경 합성 증강 완료 · {made}장 추가"
           + (f" (판넬 가림 {len(occs)}종 적용)" if occs else " (가림 누끼 없음)"), "ok")
     return made
@@ -785,6 +886,7 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
         sess = RESULTS / runid
         sess.mkdir(parents=True, exist_ok=True)
         _runlog["path"] = sess / "train.log"
+        _runlog["sess"] = sess          # 취소·실패 정리에서 쓴다
         logln("학습 시작")
         logger.info(f"[multiclass:{job_id}] run {runid} 시작")   # run·job 은 서버 로그에만
         sys.path.insert(0, str(config.BASE_DIR / "scripts" / "experiments"))
@@ -912,7 +1014,7 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
             if n_syn > 0:
                 j.update(note=f"배경 합성 증강 생성 중 (실촬 {n_img}장 x {mult:g} = {n_syn}장)")
                 logln(f"배경 합성 증강 목표 {n_syn}장 (실촬 {n_img} x {mult:g})", "info")
-                n_aug = _synth_augment(oi, ol, logln, n_syn=n_syn,
+                n_aug = _synth_augment(oi, ol, logln, n_syn=n_syn, names=names,
                                        cancelled=lambda: bool(j.get("cancel"))) or 0
             else:
                 logln("합성 배수가 0 이라 배경 합성 증강을 건너뛴다", "info")
@@ -1009,10 +1111,8 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
             except Exception:   # noqa: BLE001
                 pass
         if j.get("cancel"):
-            logln("학습을 중단했습니다.", "err")
-            j.update(stage="cancelled", running=False)
             del model; gc.collect(); torch.cuda.empty_cache()
-            return
+            raise _Cancelled          # 정리(세션 폴더 삭제)는 아래 except 한 곳에서만 한다
         w1 = Path(model.trainer.best)
         logln("학습 완료", "ok")
         onnx_src = None
@@ -1102,10 +1202,22 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
     except _Cancelled:                # 중단은 오류가 아니다(라벨 산입·복사·학습 어느 단계든)
         logln("학습을 중단했습니다.", "err")
         j.update(stage="cancelled", running=False)
+        # 취소면 아무것도 남기지 않는다. 세션 폴더가 통째로 사라진다.
+        # 중단분은 재개하지 않고 처음부터 다시 도는데, 합성 26,000장(7GB)이 그대로 쌓여 있었다.
+        _sess = _runlog.get("sess")
+        if _sess is not None:
+            shutil.rmtree(_sess, ignore_errors=True)
+            logger.info(f"[multiclass:{job_id}] 취소 정리: {_sess} 삭제")
     except Exception as e:
         logln(f"오류: {type(e).__name__}: {e}", "err")
         logger.exception(f"[multiclass:{job_id}] 학습 실패 (session={session})")
         j.update(stage="error", error=f"{type(e).__name__}: {e}", running=False)
+        # 실패면 원인을 봐야 하니 train.log 만 남기고 데이터는 지운다.
+        _sess = _runlog.get("sess")
+        if _sess is not None:
+            for sub in ("train", "model", "pred"):
+                shutil.rmtree(_sess / sub, ignore_errors=True)
+            logger.info(f"[multiclass:{job_id}] 실패 정리: {_sess} 에서 train.log 만 남김")
     finally:
         _BUSY["on"] = False
         gc.collect(); torch.cuda.empty_cache()
