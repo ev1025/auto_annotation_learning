@@ -391,9 +391,9 @@ def api_multiclass(payload: dict = Body(...)):
     cls = payload.get("classes")
     if cls is not None and (not isinstance(cls, list) or not cls):
         return {"error": "학습할 부품을 선택하세요."}
-    # replay=true 로 보내면 서비스 모델의 기존 부품도 함께 학습한다(기본은 고른 것만).
-    return sa.start_multiclass(payload.get("session"), ep, cls, payload.get("augment", False),
-                               payload.get("replay", False))
+    # 고른 부품만 학습한다. replay(망각 방지)는 2026-09-02 에 없앴다 - 한 부품을 고른 학습이
+    # 서비스 모델 부품까지 끌어와 35종으로 불어났고, 고르는 의미가 사라졌다.
+    return sa.start_multiclass(payload.get("session"), ep, cls, payload.get("augment", False))
 
 
 @app.post("/api/sam2/cancel")

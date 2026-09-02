@@ -22,8 +22,10 @@ import logging.handlers
 import os
 import re
 import shutil
+import subprocess
 import sys
 import threading
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -266,7 +268,72 @@ def _propagate_into(video, shots, labels_dir, boxs_dir, progress=None):
         cv2.imwrite(str(boxs_dir / f"{stem}_{Path(fs[int(fi)]).stem}.jpg"), vis)
     return n, len(fs)
 
+# 학습은 대시보드와 다른 프로세스에서 돈다. 두 프로세스가 같은 job 을 보게 하는 방법은
+# 파일 하나다. 자식이 진행 상황을 <job>.json 으로 쓰고, 부모가 읽는다.
+# 중단은 반대 방향이라 <job>.cancel 파일로 알린다.
+#
+# 왜 나눴나: 예전에는 학습이 대시보드와 같은 프로세스의 스레드였다. 램 캐시가 35,276장을
+# 올리는 동안 프로세스가 I/O 대기(D 상태)로 멈춰 API 가 통째로 죽었고(정적 파일도 20초
+# 타임아웃), 그래서 중단 버튼을 눌러도 요청이 서버에 닿지 못했다.
+JOBS_DIR = RESULTS / "_jobs"
+_PROC = {}                      # job -> subprocess.Popen (부모만 씀)
+
+
+class JobIO(dict):
+    """자식이 쓰는 job 딕셔너리. 값이 바뀌면 파일로 흘리고, 중단은 파일에서 읽는다."""
+
+    def __init__(self, path, *a, **k):
+        super().__init__(*a, **k)
+        self._p = Path(path)
+        self._c = Path(str(path) + ".cancel")
+        self._t = 0.0
+
+    def update(self, *a, **k):
+        super().update(*a, **k)
+        self.flush()
+
+    def __setitem__(self, key, val):
+        super().__setitem__(key, val)
+        self.flush()
+
+    def get(self, key, default=None):
+        if key == "cancel" and self._c.exists():      # 부모가 만든 중단 표시
+            return True
+        return super().get(key, default)
+
+    def flush(self, force=False):
+        now = time.time()
+        if not force and now - self._t < 0.7:         # 배치마다 쓰면 디스크가 시달린다
+            return
+        self._t = now
+        try:
+            self._p.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self._p.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self, ensure_ascii=False, default=str), encoding="utf-8")
+            tmp.replace(self._p)                      # 읽는 쪽이 반쪽 파일을 보지 않게
+        except (OSError, TypeError):
+            pass
+
+
+def _job_file(jid):
+    return JOBS_DIR / (str(jid) + ".json")
+
+
 def job_status(jid):
+    """부모가 보는 상태. 자식 프로세스가 쓴 파일이 있으면 그것이 최신이다."""
+    f = _job_file(jid)
+    if f.exists():
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+            if _PROC.get(jid) is not None and _PROC[jid].poll() is not None and d.get("running"):
+                # 자식이 죽었는데 파일이 running 이면(강제 종료·크래시) 그대로 두지 않는다
+                d["running"] = False
+                d.setdefault("stage", "error")
+                d.setdefault("error", "학습 프로세스가 예기치 않게 끝났습니다.")
+            JOBS[jid] = d
+            return d
+        except (OSError, ValueError):
+            pass
     return JOBS.get(jid, {"error": "unknown job"})
 
 # ==================== 멀티클래스 부품 라벨링 (장비별 위저드) ====================
@@ -857,7 +924,7 @@ class _Cancelled(Exception):
     안 멈춘다) 배치 콜백에서 이 예외를 올려 학습 루프를 즉시 빠져나온다."""
 
 
-def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, replay_served=False):
+def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
     """세션에 누적된 per-part 라벨(class 0) → 영상명→부품→클래스 remap → YOLO 학습 → 검출 평가.
     only_classes 지정 시 그 클래스만 학습. augment=True면 학습 전 배경 합성 증강 추가."""
     j = JOBS[job_id]
@@ -871,6 +938,7 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
 
     def logln(msg, level="info"):
         j.setdefault("log", []).append({"level": level, "msg": msg})
+        j.update()          # JobIO 면 파일로 흘린다(리스트 안쪽 변경은 감지되지 않는다)
         logger.log(logging.ERROR if level == "err" else logging.INFO, f"[multiclass:{job_id}] {msg}")
         p = _runlog["path"]
         if p:
@@ -913,19 +981,15 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
         oi, ol = sess / "train" / "images", sess / "train" / "labels"
         oi.mkdir(parents=True, exist_ok=True); ol.mkdir(parents=True, exist_ok=True)
         sel = set(only_classes) if only_classes else None    # 선택한 클래스만 학습(없으면 전체)
-        # 고른 것만 학습한다. 화면에서 부품을 고르는 의미가 사라지면 안 된다(사용자 지시).
-        # 학습은 매번 from-scratch 라 고르지 않은 부품은 이 모델에서 사라진다. 그래서 경고만 남기고,
-        # 되넣기(리플레이)는 replay=True 로 요청할 때만 한다. 적용 전에 평가 화면이 비교로 잡는다.
-        replay = set()
+        # 고른 부품만 학습한다. 여기에 다른 부품을 자동으로 끼워 넣지 않는다.
+        # 예전에는 '망각 방지'로 서비스 모델의 부품을 자동 합쳤는데, 한 부품만 고른 학습이
+        # 35종 학습으로 불어나 25분씩 걸렸고 사용자가 고른 의미가 사라졌다(2026-09-02 제거).
+        # 학습은 매번 from-scratch 라 고르지 않은 부품은 이 모델에서 사라진다. 그 사실은
+        # 로그에만 남기고 학습 내용은 바꾸지 않는다. 적용 전 평가 화면이 수치로 다시 보여준다.
         if sel is not None:
             sv = served_model()
             gone = (set(sv.get("classes", [])) - sel) if sv else set()
-            if gone and replay_served:
-                replay = gone
-                sel = sel | replay
-                logln(f"망각 방지: 기존 서비스 모델 부품 {len(replay)}종을 학습에 자동 포함", "info")
-            elif gone:
-                # 화면에는 적지 않는다(적용 화면의 비교가 같은 사실을 수치로 보여준다)
+            if gone:
                 logger.info(f"[multiclass:{job_id}] 선택 {len(sel)}종만 학습 · 서비스 모델의 {len(gone)}종 제외")
         per, miss = {}, {}
         input_cnt = 0        # 선택한 클래스의 자동생성 라벨(입력 데이터) 총수
@@ -984,10 +1048,6 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
 
         names = train_names        # 이하 클래스 표기·인덱스는 모두 압축공간 기준(model.names·검출평가와 일치)
         n_img = sum(per.values())
-        if replay:
-            missing = sorted(replay - set(per))
-            if missing:
-                logln(f"주의: 기존 부품 {len(missing)}종은 이 세션에 라벨이 없어 재학습에서 제외됨(별도 세션 라벨 필요) → {missing[:8]}", "err")
         if n_img < 5:
             raise RuntimeError(f"통합 라벨 부족({n_img}). 부품을 더 탭하세요. 미매핑: {miss}")
         # 학습률(산입률) = 정상 산입 ÷ 입력 × 100
@@ -1098,7 +1158,12 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
             import platform
             _dflt = 0 if (os.name == "nt" or platform.machine() in ("aarch64", "arm64"))                 else int(getattr(config, "TRAIN_WORKERS", 8))
             workers = int(os.environ.get("XR_TRAIN_WORKERS", _dflt))
-            cache = os.environ.get("XR_TRAIN_CACHE", getattr(config, "TRAIN_CACHE", "ram"))
+            # 램 캐시도 기기를 본다. 토르에서 35,276장을 램에 올리는 동안 프로세스가 I/O 대기
+            # (D 상태)로 통째로 멈춰 대시보드 API 가 20초 타임아웃으로 죽었다. 학습이 이 프로세스의
+            # 스레드라서 같이 멈춘다. 워커 0(Jetson 교착 회피)과 겹치면 적재를 전부 이 프로세스가 한다.
+            _cdflt = ("none" if platform.machine() in ("aarch64", "arm64")
+                      else getattr(config, "TRAIN_CACHE", "ram"))
+            cache = os.environ.get("XR_TRAIN_CACHE", _cdflt)
             if str(cache).lower() in ("none", "false", "0", ""):
                 cache = False
             mixup = float(os.environ.get("XR_MIXUP", getattr(config, "MIXUP", 0.2)))
@@ -1236,18 +1301,80 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False, r
         _BUSY["on"] = False
         gc.collect(); torch.cuda.empty_cache()
 
-def start_multiclass(session, epochs, only_classes=None, augment=False, replay_served=False):
+def _running_child():
+    """다른 프로세스에서 학습이 도는지. 대시보드를 재시작해도 이 확인은 살아 있다.
+
+    예전에는 _BUSY 가 메모리에만 있어서, 재시작 뒤 두 번째 학습이 그대로 시작돼
+    같은 시각에 학습이 둘 돌았다(2026-09-02 08:29 / 08:48).
+    """
+    f = JOBS_DIR / "running.json"
+    if not f.exists():
+        return None
+    try:
+        d = json.loads(f.read_text(encoding="utf-8"))
+        os.kill(int(d["pid"]), 0)                  # 살아 있는지만 확인(신호 0)
+        return d
+    except (OSError, ValueError, KeyError, ProcessLookupError):
+        try:
+            f.unlink()
+        except OSError:
+            pass
+        return None
+
+
+def _reap(jid, proc):
+    """자식이 끝나면 잠금을 풀고 마지막 상태를 정리한다."""
+    rc = proc.wait()
+    d = job_status(jid)
+    if isinstance(d, dict) and d.get("running"):
+        d["running"] = False
+        if rc != 0:
+            d["stage"], d["error"] = "error", f"학습 프로세스 종료 코드 {rc}"
+        JOBS[jid] = d
+        try:
+            _job_file(jid).write_text(json.dumps(d, ensure_ascii=False, default=str),
+                                      encoding="utf-8")
+        except OSError:
+            pass
+    for f in (JOBS_DIR / "running.json", Path(str(_job_file(jid)) + ".cancel")):
+        try:
+            f.unlink()
+        except OSError:
+            pass
+    _BUSY["on"] = False
+    logger.info(f"[multiclass:{jid}] 학습 프로세스 종료(코드 {rc})")
+
+
+def start_multiclass(session, epochs, only_classes=None, augment=False):
+    live = _running_child()
+    if live:
+        return {"error": f"이미 실행 중입니다(job {live.get('job')})."}
     with _LOCK:
         if _BUSY["on"]:
             return {"error": "이미 실행 중입니다."}
         _BUSY["on"] = True
     session = PERSIST                              # 단일 영속 세션(입력=부품폴더, 출력=results/parts/autolabel)
     jid = uuid.uuid4().hex[:8]
+    JOBS_DIR.mkdir(parents=True, exist_ok=True)
+    spec = {"job": jid, "session": session, "epochs": int(epochs or EPOCHS),
+            "classes": list(only_classes) if only_classes else None,
+            "augment": bool(augment), "job_file": str(_job_file(jid))}
+    spec_f = JOBS_DIR / (jid + ".spec.json")
+    spec_f.write_text(json.dumps(spec, ensure_ascii=False), encoding="utf-8")
+    _job_file(jid).write_text(json.dumps(
+        {"stage": "start", "running": True, "error": None, "log": [], "curve": []},
+        ensure_ascii=False), encoding="utf-8")
+    runner = Path(__file__).resolve().parent / "train_proc.py"
+    log_f = open(JOBS_DIR / (jid + ".out"), "wb")
+    proc = subprocess.Popen([sys.executable, str(runner), str(spec_f)],
+                            cwd=str(config.BASE_DIR), stdout=log_f, stderr=log_f)
+    (JOBS_DIR / "running.json").write_text(
+        json.dumps({"job": jid, "pid": proc.pid}), encoding="utf-8")
+    _PROC[jid] = proc
     JOBS[jid] = {"stage": "start", "running": True, "error": None, "log": [], "curve": []}
     _ACTIVE.update(job=jid, kind="multiclass", session=session)
-    threading.Thread(target=_run_multiclass,
-                     args=(jid, session, int(epochs or EPOCHS), only_classes or None, bool(augment), bool(replay_served)),
-                     daemon=True).start()
+    threading.Thread(target=_reap, args=(jid, proc), daemon=True).start()
+    logger.info(f"[multiclass:{jid}] 학습 프로세스 시작 pid={proc.pid}")
     return {"job": jid}
 
 def cancel_multiclass(job=None):
@@ -1256,16 +1383,25 @@ def cancel_multiclass(job=None):
     화면을 새로 열거나 탭을 옮기면 프론트가 job id 를 잃는다. 그때도 멈춰야 하므로
     id 가 없거나 모르는 값이면 진행 중인 잡(_ACTIVE)을 대상으로 삼는다.
     """
+    if not job or job not in JOBS:
+        live = _running_child()
+        job = (live or {}).get("job") or _ACTIVE.get("job")
     j = JOBS.get(job)
-    if not j:
-        job = _ACTIVE.get("job")
-        j = JOBS.get(job)
-    if not j:
+    if not job:
         return {"error": "진행 중인 학습이 없습니다."}
-    j["cancel"] = True
+    # 자식 프로세스에 알리는 유일한 통로. 부모 메모리만 바꾸면 자식은 모른다.
+    try:
+        JOBS_DIR.mkdir(parents=True, exist_ok=True)
+        Path(str(_job_file(job)) + ".cancel").write_text("1", encoding="utf-8")
+    except OSError:
+        pass
+    if isinstance(j, dict):
+        j["cancel"] = True
+    else:
+        j = job_status(job)
     # 어느 단계에서 멈출 수 있는지 알려준다. 즉시 멈추는 단계와, 진행 중인 한 덩어리가
     # 끝나야 멈추는 단계가 다르다(데이터셋 스캔·램 캐싱·모델 저장은 중간에 못 끊는다).
-    st = j.get("stage")
+    st = (j or {}).get("stage")
     when = {"build": "다음 파일 처리에서", "train": "다음 배치에서",
             "eval": "다음 프레임 묶음에서"}.get(st, "현재 단계가 끝나면")
     return {"ok": True, "job": job, "stage": st, "note": when + " 멈춥니다"}
@@ -1287,7 +1423,7 @@ def active_job():
     a = _ACTIVE
     if not a.get("job"):
         return {}
-    j = JOBS.get(a["job"])
+    j = job_status(a["job"])            # 자식이 쓴 파일이 최신이다
     if not j or not j.get("running"):
         return {}
     return {"job": a["job"], "kind": a["kind"], "session": a.get("session"), **j}
