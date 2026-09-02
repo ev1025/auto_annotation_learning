@@ -295,14 +295,30 @@ def _save_negative(raw: bytes, dets: list) -> int:
     return len(list(NEG_DIR.glob("*.jpg")))
 
 
+# 추론 대상 두 곳. 브라우저에서 8001 을 직접 부르면 CORS 에 막히고 포트도 더 열어야 하므로
+# 대시보드가 중계한다. 같은 API 모양(POST /detect multipart · GET /health)이라 주소만 바꾼다.
+#   ours = 우리 추론서버(9412). 대시보드에서 모델을 적용하면 이쪽이 바로 바뀐다.
+#   xr   = 연동 서버(8001). models/model.pt 감시 유닛이 복사·reload 해 준다.
+#
+# 8001 은 토르 호스트에서 돌고 이 코드는 컨테이너 안에서 돈다. 그래서 127.0.0.1 로는 닿지
+# 않고(컨테이너 자기 자신을 가리킨다) 도커 브리지 게이트웨이로 나가야 한다. 실측으로
+# 172.17.0.1 만 닿았다(10.37.27.42·host.docker.internal 은 실패). 환경변수로 덮어쓸 수 있다.
+XR_DETECT_URL = os.environ.get("XR_DETECT_URL", "http://172.17.0.1:8001")
+DETECT_TARGETS = {"ours": YOLO_URL, "xr": XR_DETECT_URL}
+
+
+def _detect_url(target):
+    return DETECT_TARGETS.get((target or "ours").lower(), YOLO_URL)
+
+
 @app.post("/api/detect")
 async def api_detect(image: UploadFile = File(...), camera_id: str = Form("PHONE"),
-                     collect: str = Form("")):
+                     collect: str = Form(""), target: str = Form("ours")):
     raw = await image.read()
     if not raw:
         return JSONResponse(status_code=400, content={"error": "invalid_image"})
     try:
-        r = requests.post(f"{YOLO_URL}/detect",
+        r = requests.post(f"{_detect_url(target)}/detect",
                           files={"image": ("frame.jpg", raw, "image/jpeg")},
                           data={"camera_id": camera_id}, timeout=30)
         body = r.json()
@@ -315,10 +331,10 @@ async def api_detect(image: UploadFile = File(...), camera_id: str = Form("PHONE
 
 
 @app.get("/api/detect/health")
-def api_detect_health():
+def api_detect_health(target: str = "ours"):
     """페이지 상단에 '현재 모델·클래스'를 보여주기 위한 통과 조회."""
     try:
-        r = requests.get(f"{YOLO_URL}/health", timeout=10)
+        r = requests.get(f"{_detect_url(target)}/health", timeout=10)
         return JSONResponse(status_code=r.status_code, content=r.json())
     except Exception as e:   # noqa: BLE001
         return JSONResponse(status_code=502,
@@ -459,9 +475,28 @@ def api_sam2_active():
     return sa.active_job()
 
 
+@app.post("/api/sam2/model_pin")
+def api_sam2_model_pin(payload: dict = Body(...)):
+    """모델 고정·별칭. {"model_id": "...", "keep": true, "alias": "8월 기준"}
+
+    keep=true 면 자동 정리(최근 10개)에서 빠진다. 둘 중 보낸 것만 바뀐다.
+    """
+    # _read 는 DB 조회용 래퍼라 DB 가 없으면 503 을 낸다. 고정·별칭은 파일만 쓰므로 직접 부른다.
+    return sa.model_pin(payload.get("model_id") or payload.get("session"),
+                        payload.get("keep"), payload.get("alias"))
+
+
 @app.get("/api/sam2/models")
 def api_sam2_models():
-    return _read("list_models")
+    """모델 목록. 본문은 DB 에서 오고, 고정·별칭은 run 폴더의 pin.json 에서 합친다.
+    (pin 은 파일에만 있어서 DB 조회 결과에는 없다.)"""
+    d = _read("list_models")
+    if isinstance(d, dict) and isinstance(d.get("models"), list):
+        for m in d["models"]:
+            pin = sa._pin_of(m.get("model_id") or "")
+            m["keep"] = bool(pin.get("keep"))
+            m["alias"] = pin.get("alias", "")
+    return d
 
 
 @app.post("/api/sam2/rollback_to")

@@ -665,7 +665,7 @@ function fmtId(s) {
 
 // 모델 버전 카드(기존/신규 나란히 비교). highlightNew=신규 부품 뱃지 강조
 // 표시 항목은 3가지: ①모델 ID ②생성 일시 ③학습 부품 수. 인식률은 성립하지 않아 뺐다(아래 주석)
-function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, onApply, applied }) {
+function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, onApply, applied, onPin }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   useEffect(() => {                         // 팝업이 열려 있을 때만 바깥 클릭 감지 리스너 부착
@@ -676,7 +676,12 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
     document.addEventListener('keydown', onKey)
     return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
   }, [open])
-  const recent = (models || []).slice(0, 10)     // 최근 10개 버전만
+  // 목록을 둘로 나눈다. 저장(keep)한 모델은 자동 정리(최근 10개) 밖으로 밀려도 남는다.
+  // 비교 기준이 되는 모델이 학습을 몇 번 더 하면 사라지던 문제 때문에 나눴다.
+  const [tab, setTab] = useState('recent')
+  const all = models || []
+  const saved = all.filter(m => m.keep)
+  const recent = tab === 'saved' ? saved : all.filter(m => !m.keep).slice(0, 10)
   return (
     <div className={`rbmenu${onApply ? ' split' : ''}`} ref={ref}>
       {onApply ? (
@@ -698,7 +703,17 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
       )}
       {open && (
         <div className="rbmenu-pop" role="menu">
-          <div className="rbmenu-head">{onApply ? '다른 작업' : '저장된 모델 버전'}</div>
+          <div className="rbmenu-head">{onApply ? '다른 작업' : '모델 버전'}</div>
+          {!onApply && (
+            <div className="rbmenu-tabs">
+              <button className={tab === 'recent' ? 'on' : ''} onClick={() => setTab('recent')}>
+                최근 학습 {all.filter(m => !m.keep).length}
+              </button>
+              <button className={tab === 'saved' ? 'on' : ''} onClick={() => setTab('saved')}>
+                저장 모델 {saved.length}
+              </button>
+            </div>
+          )}
           {onKeep && (
             <button className="rbmenu-item keep" role="menuitem"
                     onClick={() => { setOpen(false); onKeep() }}>
@@ -709,7 +724,11 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
             </button>
           )}
           {onApply && <div className="rbmenu-sec">다른 버전으로 변경</div>}
-          {recent.length === 0 && <div className="rbmenu-empty">저장된 다른 버전이 없습니다.</div>}
+          {recent.length === 0 && (
+            <div className="rbmenu-empty">
+              {tab === 'saved' ? '저장한 모델이 없습니다. ☆ 를 눌러 고정하세요.' : '저장된 다른 버전이 없습니다.'}
+            </div>
+          )}
           {recent.map(m => {
             const active = m.is_active || m.model_id === servedId
             return (
@@ -720,16 +739,33 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
                      setOpen(false); onRollbackTo(m.model_id)   // 확인은 인앱 모달(부모 askRollbackTo)에서
                    }}>
                 <span className="rbmenu-main">
-                  <span className="rbmenu-t">{m.time || fmtId(m.model_id)}</span>
+                  <span className="rbmenu-t">
+                    {m.alias ? <b className="rbmenu-alias">{m.alias}</b> : null}
+                    {m.time || fmtId(m.model_id)}
+                  </span>
                   {/* 인식률(gen_rate·newp_rate)은 빼 두었다. 앞 12종 표본에 평가영상이 없으면
                       학습에 쓴 영상으로 재고 박스 위치(IoU)도 안 봐서, 성능처럼 읽히면 오해를 부른다.
                       실제 성능은 사람 GT 로만 잰다(scripts/experiments/gt_viewer.py). */}
                   <span className="rbmenu-s">· {m.n_classes}종</span>
                 </span>
-                {active
-                  ? <span className="rbmenu-cur">현재</span>
-                  : <button className="rbmenu-del" title="이 버전 삭제"
-                            onClick={(e) => { e.stopPropagation(); onDeleteModel(m.model_id) }}><IcX /></button>}
+                <span className="rbmenu-acts">
+                  {/* 고정: 자동 정리에서 빼 둔다. 별칭: 사람이 알아볼 이름 */}
+                  <button className={`rbmenu-pin${m.keep ? ' on' : ''}`}
+                          title={m.keep ? '고정 해제(자동 정리 대상이 된다)' : '저장 모델로 고정(자동 정리에서 제외)'}
+                          onClick={(e) => { e.stopPropagation(); onPin && onPin(m.model_id, { keep: !m.keep }) }}>
+                    {m.keep ? '★' : '☆'}
+                  </button>
+                  <button className="rbmenu-alias-btn" title="별칭 지정"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const v = window.prompt('이 모델의 별칭', m.alias || '')
+                            if (v !== null && onPin) onPin(m.model_id, { alias: v })
+                          }}>가</button>
+                  {active
+                    ? <span className="rbmenu-cur">현재</span>
+                    : <button className="rbmenu-del" title="이 버전 삭제"
+                              onClick={(e) => { e.stopPropagation(); onDeleteModel(m.model_id) }}><IcX /></button>}
+                </span>
               </div>
             )
           })}
@@ -950,6 +986,21 @@ function PartsApp({ onPrep, active }) {
 
   const notify = (message) =>   // 인앱 알림(네이티브 alert 대체)
     ask({ title: '알림', message, confirmLabel: '확인', alertOnly: true, onOk: () => {} })
+  // 모델 고정(자동 정리 제외) · 별칭 저장. 저장 후 목록을 다시 읽어 화면에 반영한다.
+  const pinModel = async (mid, patch) => {
+    try {
+      const r = await fetch('/api/sam2/model_pin', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_id: mid, ...patch })
+      }).then(x => x.json())
+      if (r?.error) { ask({ title: '실패', message: r.error, alertOnly: true }); return }
+      const d = await fetch('/api/sam2/models').then(x => x.json())
+      setModels(d?.models || [])
+    } catch (e) {
+      ask({ title: '실패', message: String(e), alertOnly: true })
+    }
+  }
+
   const askDeleteModel = (mid) =>   // 타임라인/히스토리에서 버전 삭제(현재 서비스 모델은 백엔드가 거부)
     ask({ title: '모델 삭제', message: `모델 #${mid} 을(를) 삭제할까요?
 되돌릴 수 없습니다.`,
@@ -1231,10 +1282,12 @@ function PartsApp({ onPrep, active }) {
                       {applied ? '✓ 적용됨' : '신규 모델 적용'}
                     </button>
                   )}
-                  {trainDone &&
+                  {/* 학습 직후에만 열 수 있으면 저장 모델(고정·별칭)을 평소에 관리할 수 없다.
+                      학습이 돌고 있지 않고 모델이 하나라도 있으면 항상 열 수 있게 한다. */}
+                  {(trainDone || (!running && (models || []).length > 0)) &&
                     <RollbackMenu models={models} servedId={served?.model_id}
                                   onRollbackTo={askRollbackTo} onDeleteModel={askDeleteModel}
-                                  onKeep={null} onApply={null} applied={applied} />}
+                                  onKeep={null} onApply={null} applied={applied} onPin={pinModel} />}
                 </div>
               </div>
               {/* 로그창 크기는 고정한다. 예전에는 학습 중 compact(120px) -> 완료 200px 로 바뀌어

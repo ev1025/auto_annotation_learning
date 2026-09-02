@@ -930,15 +930,52 @@ def eval_frame(run=None, part=None, name=None, w=900):
             cv2.line(img, (x1, ya), (x1, yb), color, th)
             cv2.line(img, (x2, ya), (x2, yb), color, th)
 
+    # 라벨은 선 색 바탕에 흰 글씨로 얹는다. 글씨만 그리면 배경 무늬(수건·바닥)에 묻혀
+    # 읽히지 않았다. 라벨끼리 겹치면 자리를 위·아래로 옮겨 서로 가리지 않게 한다.
+    FONT = cv2.FONT_HERSHEY_SIMPLEX
+    fs = max(0.45, W / 2200)
+    ft = max(1, bt - 1)
+    placed = []                        # 이미 놓인 라벨 영역 [x1, y1, x2, y2]
+
+    def hits(r):
+        for q in placed:
+            if r[0] < q[2] and q[0] < r[2] and r[1] < q[3] and q[1] < r[3]:
+                return True
+        return False
+
+    def label(text, x, y_above, y_below, color):
+        (tw, th), base = cv2.getTextSize(text, FONT, fs, ft)
+        pad, bh = 4, th + base + 8
+        x = min(max(x, 0), max(0, W - tw - pad * 2))
+        # 1순위 박스 위, 2순위 박스 아래. 그래도 겹치면 한 줄 높이씩 밀어 내린다.
+        for y in ([y_above - bh, y_below] +
+                  [y_below + k * (bh + 2) for k in range(1, 8)] +
+                  [y_above + k * (bh + 2) for k in range(1, 8)]):
+            if y < 0 or y + bh > H:
+                continue
+            r = [x, y, x + tw + pad * 2, y + bh]
+            if not hits(r):
+                placed.append(r)
+                cv2.rectangle(im, (r[0], r[1]), (r[2], r[3]), color, -1)
+                cv2.putText(im, text, (x + pad, y + th + 4), FONT, fs, (255, 255, 255), ft,
+                            cv2.LINE_AA)
+                return
+        # 자리를 못 찾으면 박스 안쪽 위에 그린다(가려도 값은 보여야 한다)
+        y = min(max(y_above, 0), H - bh)
+        cv2.rectangle(im, (x, y), (x + tw + pad * 2, y + bh), color, -1)
+        cv2.putText(im, text, (x + pad, y + th + 4), FONT, fs, (255, 255, 255), ft, cv2.LINE_AA)
+
     for b in d.get("gt", []):
         cv2.rectangle(im, (b[0], b[1]), (b[2], b[3]), (0, 200, 0), bt + 1)   # GT 초록 실선(굵게)
+    for b in d.get("gt", []):
+        label("GT", b[0], b[1] - 2, b[3] + 2, (0, 200, 0))
     for b in d.get("pred", []):
         if b[4] < 0.05:                # 곡선용 저신뢰 검출까지 다 그리면 화면이 못 읽는다
             continue
         col = (255, 140, 0) if b[6] else (0, 60, 255)                        # TP 파랑 / FP 빨강
         dashed(im, (b[0], b[1]), (b[2], b[3]), col, bt)                      # 검출은 점선
-        cv2.putText(im, "%.2f iou %.2f" % (b[4], b[5]), (b[0], max(b[1] - 6, 16)),
-                    cv2.FONT_HERSHEY_SIMPLEX, max(0.4, W / 2400), col, max(1, bt - 1))
+        label("%s %.2f iou %.2f" % ("TP" if b[6] else "FP", b[4], b[5]),
+              b[0], b[1] - 2, b[3] + 2, col)
     w = max(64, min(int(w or 900), 4096))
     if W > w:
         im = cv2.resize(im, (w, int(H * w / W)))

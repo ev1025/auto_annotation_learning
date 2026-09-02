@@ -93,6 +93,7 @@
 <body>
 
 <header>
+ <label>서버 <select id="srv"><option value="ours">우리 9412</option><option value="xr">연동 8001</option></select></label>
   <h1>부품 인식 테스트</h1>
   <div class="model" id="model">모델 확인 중...</div>
 </header>
@@ -121,6 +122,8 @@
 </div>
 
 <script>
+// 어느 추론서버를 볼지. ours = 우리 9412, xr = 연동 8001(이 화면에서 두 서버를 견줄 수 있다).
+const srv = () => (document.getElementById('srv') || {}).value || 'ours';
 (function () {
   const $ = (id) => document.getElementById(id);
   const stage = $('stage'), vid = $('vid'), shot = $('shot'), ov = $('ov');
@@ -131,7 +134,7 @@
   let stream = null, timer = null, busy = false, sent = 0, t0 = 0;
 
   // ---- 현재 서비스 모델 표시 ----
-  fetch('/api/detect/health').then(r => r.json()).then(d => {
+  const loadHealth = () => fetch('/api/detect/health?target=' + srv()).then(r => r.json()).then(d => {
     if (d && d.ok) {
       const cls = Object.values(d.classes || {});
       $('model').innerHTML = '<b>' + (d.model || 'model.pt') + '</b>' + cls.length + '종: '
@@ -140,6 +143,10 @@
       $('model').innerHTML = '<b>추론서버 응답 없음</b>' + ((d && d.error) || '');
     }
   }).catch(() => { $('model').innerHTML = '<b>추론서버 확인 실패</b>'; });
+  loadHealth();
+  // 서버를 바꾸면 상단의 '현재 모델'도 그 서버 것으로 다시 읽는다
+  const srvSel = document.getElementById('srv');
+  if (srvSel) { srvSel.onchange = loadHealth; }
 
   // 카메라 실시간은 보안 컨텍스트(HTTPS/localhost)에서만 허용된다
   if (!window.isSecureContext || !navigator.mediaDevices) {
@@ -220,6 +227,7 @@
     if ($('collect').checked) fd.append('collect', '1');   // 임시: 배경 수집
     const t = performance.now();
     try {
+      fd.append('target', srv());
       const r = await fetch('/api/detect', { method: 'POST', body: fd });
       const d = await r.json();
       if (d.collected != null) $('ccount').textContent = '· 저장 ' + d.collected + '장';   // 임시

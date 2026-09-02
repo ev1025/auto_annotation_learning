@@ -1517,11 +1517,58 @@ def _set_served(runid):
     _sync_served_files(runid)   # 현재 모델을 고정 경로(models/model.pt·onnx)로 동기화
     _db_sync_runs()             # is_active(현재 서비스 모델)까지 DB 에 반영
 
+def _pin_file(runid):
+    return RESULTS / str(runid) / "pin.json"
+
+
+def model_pin(runid, keep=None, alias=None):
+    """모델 고정·별칭 설정. keep=True 면 자동 정리(최근 10개) 대상에서 빼 준다.
+
+    왜 필요한가: 비교 기준이 되는 모델이 학습을 몇 번 더 하면 10개 밖으로 밀려 사라진다.
+    서비스 중인 모델만 보호하고 있었는데, 서비스에 올리지 않은 기준 모델도 남겨야 한다.
+    별칭은 "8월 기준", "톤매핑 실험" 처럼 사람이 알아볼 이름을 붙이는 칸이다.
+    """
+    runid = str(runid or "")
+    if not runid or not _run_meta(runid):
+        return {"error": "없는 모델입니다: " + runid}
+    f = _pin_file(runid)
+    cur = {}
+    if f.exists():
+        try:
+            cur = json.loads(f.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            cur = {}
+    if keep is not None:
+        cur["keep"] = bool(keep)
+    if alias is not None:
+        cur["alias"] = str(alias)[:60]        # 화면 한 줄에 들어가는 길이까지만
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(cur, ensure_ascii=False), encoding="utf-8")
+    except OSError as e:
+        return {"error": "저장 실패: %s" % e}
+    logger.info(f"[pin] {runid} keep={cur.get('keep')} alias={cur.get('alias')!r}")
+    return {"ok": True, "model_id": runid, **cur}
+
+
+def _pin_of(runid):
+    f = _pin_file(runid)
+    if not f.exists():
+        return {}
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return {}
+
+
 def _prune_runs(keep=10):
-    """오래된 run 폴더 정리. 현재 서비스(served) run 은 10개 밖이어도 보호."""
+    """오래된 run 폴더 정리. 서비스 중인 run 과 고정(pin.json keep=true)한 run 은 보호."""
     served = _served_runid()
     for d in _run_dirs()[keep:]:
         if d.name == served:
+            continue
+        if _pin_of(d.name).get("keep"):
+            logger.info(f"[prune] 고정된 run 보존: {d.name}")
             continue
         shutil.rmtree(d, ignore_errors=True)
         logger.info(f"[prune] 오래된 run 파기: {d.name}")
@@ -1546,7 +1593,9 @@ def list_models():
     for d in _run_dirs():
         info = _run_meta(d.name) or {}
         mid = info.get("model_id") or d.name
+        pin = _pin_of(d.name)
         out.append({"model_id": mid, "label": info.get("label", ""), "time": info.get("time", ""),
+                    "alias": pin.get("alias", ""), "keep": bool(pin.get("keep")),
                     "classes": info.get("classes", []),
                     "n_classes": info.get("n_classes", len(info.get("classes", []))),
                     "n_images": info.get("n_images"), "map50": _last_map50(info.get("curve")),
