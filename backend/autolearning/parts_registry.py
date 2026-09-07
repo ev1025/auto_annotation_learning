@@ -38,7 +38,14 @@ from db.session import SessionLocal, abspath, rel
 PARTS_ROOT = config.DATA_DIR / "bell412"
 VIDEO_EXT = {".mp4", ".mov", ".avi", ".mkv"}
 MODEL3D_EXT = {".glb", ".gltf", ".obj", ".stl", ".ply", ".fbx"}
-NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")   # 폴더명 겸 YOLO 클래스명
+# 폴더명 겸 YOLO 클래스명. 한글(가-힣)도 허용한다.
+# 막는 것은 경로 구분자·공백·점이다.
+#   구분자(/ \)와 .. 는 경로를 벗어나게 한다
+#   공백은 학습에서 클래스 이름을 맞출 때 밑줄로 바뀌어(정규화) 폴더명과 어긋난다
+# 한글이 안전한 근거: 프레임 읽기는 fromfile+imdecode 라 경로 인코딩을 타지 않고,
+# data.yaml·part_codes.json·라벨은 모두 UTF-8 로 쓴다. 학습 그림(plots)은 꺼 두었으므로
+# matplotlib 이 한글을 네모로 그리는 문제도 나지 않는다.
+NAME_RE = re.compile(r"^[A-Za-z0-9가-힣][A-Za-z0-9가-힣_\-]{0,63}$")
 
 JOBS: dict[str, dict] = {}   # 프레임 추출 진행상태 (job_id -> dict)
 
@@ -49,7 +56,7 @@ def _err(msg: str) -> dict:
 
 
 def valid_name(name: str) -> bool:
-    """부품명은 폴더명·YOLO 클래스명으로 동시에 쓰이므로 영문·숫자·_·- 만 허용."""
+    """부품명은 폴더명·YOLO 클래스명으로 동시에 쓰인다. 한글·영문·숫자·_·- 허용."""
     return bool(name and NAME_RE.match(name))
 
 
@@ -141,7 +148,7 @@ def create_part(name: str, category_id=None, description: str = "", code=None) -
     자동증가 id 와 별개인 이유: id 는 행을 지워도 번호가 되돌아오지 않아 기기마다 값이 갈린다."""
     name = (name or "").strip()
     if not valid_name(name):
-        return _err("부품 이름은 영문·숫자·_·- 만 쓸 수 있습니다(첫 글자는 영문/숫자).")
+        return _err("부품 이름은 한글·영문·숫자·_·- 만 쓸 수 있습니다(공백·/ 는 안 됩니다).")
     with SessionLocal() as s:
         if s.query(Part).filter_by(name=name).first():
             return _err(f"이미 등록된 부품입니다: {name}")
@@ -192,7 +199,7 @@ def update_part(pid: int, name=None, category_id="keep", description=None) -> di
         if name and name.strip() != p.name:
             new = name.strip()
             if not valid_name(new):
-                return _err("부품 이름은 영문·숫자·_·- 만 쓸 수 있습니다.")
+                return _err("부품 이름은 한글·영문·숫자·_·- 만 쓸 수 있습니다(공백·/ 는 안 됩니다).")
             if s.query(Part).filter(Part.name == new, Part.id != pid).first():
                 return _err(f"이미 등록된 부품입니다: {new}")
             old_dir, new_dir = PARTS_ROOT / p.name, PARTS_ROOT / new

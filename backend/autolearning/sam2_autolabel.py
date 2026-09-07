@@ -85,12 +85,12 @@ DEV = "cuda" if torch.cuda.is_available() else "cpu"
 CFG = "configs/sam2.1/sam2.1_hiera_b+.yaml"
 CKPT = config.BASE_DIR / "models" / "sam2" / "sam2.1_hiera_base_plus.pt"
 RESULTS = config.BASE_DIR / "results"
-CUTS_DIR = config.BASE_DIR / "results" / "autolabels" / "_cuts"   # 누끼 캐시(라벨이 그대로면 재사용)
+CUTS_DIR = autolabel.AUTOLABELS / "_cuts"          # 누끼 캐시(라벨이 그대로면 재사용, 트리별 분리)
 CUT_PER_CLASS = 60          # 부품당 누끼 상한. 인접 프레임은 사실상 같은 그림이라 더 뽑아도 다양성이 안 늘어난다
 # 합성 결과 보관소. 세션마다 26,000장을 새로 만들면 5분·7GB 가 매번 쌓이는데, 라벨이 그대로면
 # 만들어 두었던 그림을 그대로 쓰는 것이 맞다(세션 사이의 무작위성은 학습에 도움이 안 되고
 # 조건 비교만 흐린다). 세션에는 하드링크로 넣어 디스크를 두 번 쓰지 않는다.
-SYNTH_POOL = config.BASE_DIR / "results" / "autolabels" / "_synth_pool"
+SYNTH_POOL = autolabel.AUTOLABELS / "_synth_pool"  # 합성 결과 재사용 풀(트리별 분리)
 NEWLINE = chr(10)
 VAL_CONF = 0.4
 # 비교 화면에서 한 프레임에 표시할 박스 상한(신뢰도 상위). 덜 학습된 모델이
@@ -174,13 +174,14 @@ def mask_preview(src, frame_idx, points):
     bb = _bbox(m)
     # 한 이미지에 전부: 마스크(초록 오버레이) + 박스(주황) + 포인트(초록=부품/빨강=제외)
     # 점·박스는 원본 해상도라 화면 표시크기에 맞춰 이미지 폭에 비례(왼쪽 CSS 점 8px 과 통일감)
-    r, bt, ew = _ov_sizes(w, h)          # 점·박스·테두리 크기(긴 변 기준 공용 규칙)
+    # 탭 점은 여기서 굽지 않는다. 화면이 HTML 로 같은 점을 얹어 주는데, 두 기준이 달라
+    # 점 크기가 제각각이었다. gearbox 만 가로영상(1920x1080)이고 나머지는 세로(1080x1920)라
+    # 같은 계산에서도 폭 대비 지름이 1.77% / 3.15% 로 갈렸고, HTML 점은 2.40% 였다.
+    # 그리는 곳을 화면 한 군데로 모아 어느 부품에서도 같은 크기로 보이게 한다.
+    _r, bt, _ew = _ov_sizes(w, h)        # 박스 두께만 쓴다
     vis = _overlay(im, m)
     if bb:
         cv2.rectangle(vis, (bb[0], bb[1]), (bb[2], bb[3]), (0, 165, 255), bt)
-    for rx, ry, lab in points:   # 마스크가 초록이라 부품점은 파랑(BGR), 제외점은 빨강
-        cv2.circle(vis, (int(rx * w), int(ry * h)), r, (255, 60, 0) if lab else (0, 0, 255), -1)
-        cv2.circle(vis, (int(rx * w), int(ry * h)), r, (255, 255, 255), ew)
     # 과포착 판정: 마스크가 프레임의 절반 넘게 덮으면 배경까지 먹은 것. 탭 점 간격은 신뢰불가
     # (사람은 부품 안쪽에 점 몇 개만 가까이 찍으므로) → 프레임 대비 마스크 '면적'으로만 판단.
     area_frac = float(m.sum()) / (w * h)
@@ -191,7 +192,10 @@ def mask_preview(src, frame_idx, points):
     else:
         verdict = "ok"
     gc.collect(); torch.cuda.empty_cache()
-    return {"combo": _b64(vis), "area_frac": round(float(m.sum()) / (w * h), 4), "bbox": bb, "verdict": verdict}
+    # 화면은 프레임을 w=720 으로 받는다. 미리보기를 640 으로 주면 탭 프레임만 흐릿하게
+    # 보여, 프레임을 넘길 때 그림이 들썩이는 것처럼 읽혔다. 같은 폭으로 맞춘다.
+    return {"combo": _b64(vis, w=720), "area_frac": round(float(m.sum()) / (w * h), 4),
+            "bbox": bb, "verdict": verdict}
 
 def free_sam2():
     # 마스크를 만드는 도중에 예측기를 치우면 그 요청이 터진다. 끝날 때까지 기다렸다 비운다.
@@ -453,6 +457,58 @@ def _save_shots(video, shots):
     data[stem] = frames
     fp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
+def save_shot(video, frame, points):
+    """참조샷 한 프레임의 탭을 즉시 shots.json 에 저장.
+
+    왜 필요한가: 탭 저장이 전파 함수(_save_shots) 안에만 있어서, 탭을 고치고 라벨 생성을
+    돌리지 않으면 서버에 아무것도 남지 않았다. 화면은 새로고침 때 서버 값으로 통째
+    교체하므로(loadShots) 고친 탭이 조용히 옛 값으로 되돌아갔다.
+    삭제는 이미 즉시 저장(delete_shot)이라 추가·수정만 반대로 굴던 셈이다.
+    빈 목록을 보내면 그 프레임 키를 지운다(라벨 파일은 건드리지 않는다 - delete_shot 의 몫).
+    """
+    vp = autolabel.resolve_video(video)
+    if not vp:
+        return {"error": f"영상을 찾지 못함: {video}"}
+    try:
+        fi = str(int(frame))
+    except (TypeError, ValueError):
+        return {"error": "frame 이 정수가 아닙니다."}
+    pts = []
+    for q in (points or []):
+        if not isinstance(q, (list, tuple)) or len(q) < 3:
+            return {"error": f"점 형식이 잘못됐습니다: {q}"}
+        try:
+            rx, ry, lab = float(q[0]), float(q[1]), int(q[2])
+        except (TypeError, ValueError):
+            return {"error": f"점 값이 숫자가 아닙니다: {q}"}
+        if not (0.0 <= rx <= 1.0 and 0.0 <= ry <= 1.0):
+            return {"error": "점이 화면 밖입니다."}
+        pts.append([rx, ry, 1 if lab else 0])
+    store = _autolabel_store(video)
+    store["root"].mkdir(parents=True, exist_ok=True)
+    fp = store["root"] / "shots.json"
+    data = {}
+    if fp.exists():
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            data = {}
+    frames = dict(data.get(vp.stem) or {})
+    if pts:
+        frames[fi] = pts
+    else:
+        frames.pop(fi, None)
+    data[vp.stem] = frames
+    try:
+        fp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError as e:
+        return {"error": f"저장 실패: {e}"}
+    # 화면은 참조샷을 DB(load_shots)에서 되살린다. 파일만 쓰면 새로고침 때 안 보인다.
+    _db_sync_part(video)
+    return {"ok": True, "video": vp.stem, "frame": int(fi), "points": len(pts),
+            "frames": len(frames)}
+
+
 def delete_shot(video, frame):
     """참조샷 1개(그 프레임의 탭 포인트) 삭제 → shots.json 에 즉시 반영.
     화면에서만 지우면 새로고침 때 서버 값으로 되살아난다."""
@@ -655,7 +711,7 @@ def _pool_reuse(pool, oi, ol, n_syn, name2idx, logln):
         (ol / (name + ".txt")).write_text(NEWLINE.join(lines) + NEWLINE, encoding="utf-8")
         made += 1
     if made:
-        logln("배경 합성 재사용 · %d장 (보관소 %s)" % (made, pool.name), "ok")
+        logln("배경 합성 재사용 · %d장" % made, "ok")
     return made
 
 
@@ -997,7 +1053,7 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
         drop_empty = 0       # 빈 라벨(유효 박스 없음)로 산입 제외
         lbls = store_lbls
         if sel is not None:   # 선택한 부품만 산입 대상 → 진행바 분모도 선택분만
-            lbls = [p for p in store_lbls if re.sub(r"\s+", "_", _part_of_label(p).lower()) in sel]
+            lbls = [p for p in store_lbls if re.sub(r"\s+", "_", _part_of_label(p)) in sel]
         n_total = len(lbls)
         j.update(ingest_total=n_total, ingest_done=0)         # 산입 진행바(선택 부품 기준)
         # 1차 스캔: 부품별 라벨 수집. 부품 판정 = 라벨이 놓인 부품 폴더명(파일명 아님 → 안 꼬임).
@@ -1009,7 +1065,9 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
                 if j.get("cancel"):                           # 학습 전(라벨 산입) 단계에서도 중단이 먹게
                     raise _Cancelled
             part = _part_of_label(lp)
-            cls = re.sub(r"\s+", "_", part.lower())
+            cls = re.sub(r"\s+", "_", part)   # 2026-09-07 .lower() 제거: 폴더명이 코드표·클래스명과
+            # 글자 그대로 같아야 한다. 카테고리 접두(Igb_·Tailrotor_·Tools_)를 쓰면서
+            # 소문자로 바꾸면 코드표(part_codes.json)와 안 맞아 전량 miss 로 탈락했다.
             if sel is not None and cls not in sel:
                 continue
             input_cnt += 1
@@ -1078,6 +1136,10 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
                                        cancelled=lambda: bool(j.get("cancel"))) or 0
             else:
                 logln("합성 배수가 0 이라 배경 합성 증강을 건너뛴다", "info")
+
+        # 학습에 실제로 들어가는 총 장수를 한 줄로 명확히 남긴다(로그만 보고 총량을 알 수 있게).
+        # 예전엔 '합성 목표 684 / 재사용 681 / 배경 567' 이 따로 찍혀 총합을 사람이 더해야 했다.
+        logln(f"학습 이미지 총 {n_img + n_aug + n_bg:,}장 = 실촬 {n_img:,} + 합성 {n_aug:,} + 배경 {n_bg:,}", "ok")
 
         # 2) 학습
         from ultralytics import YOLO
@@ -1268,6 +1330,7 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
         eval_meta = [{k: r[k] for k in ("src", "frames", "detected", "rate", "mean_conf", "top_classes")} for r in eval_res]
         meta = {"run": True, "model_id": model_id, "label": label, "time": now.strftime("%Y-%m-%d %H:%M:%S"),
                 "session": runid, "classes": parts_list, "n_classes": len(per), "per_class": per,
+                "epochs": epochs,       # 학습 epoch 수. 없으면 mAP_Test '학습 상태'가 0 으로 뜬다
                 "n_images": n_img, "learn_rate": learn_rate, "input_total": input_cnt, "miss": miss,
                 "weights": str(reg_pt), "onnx": str(reg_onnx) if reg_onnx else None,
                 "curve": j.get("curve", []), "log": j.get("log", []), "eval": eval_meta}
@@ -1486,28 +1549,33 @@ def _sync_served_files(runid):
 
 
 def _deploy_to_yolo_server():
-    """현재 고정 모델(models/model.pt·onnx)을 YOLO 추론 서버(backend/yolo_server)로 복사 + 핫 리로드.
-    별도 배포 버튼 없이 '신규 모델 적용'만으로 운영 서버에 반영된다. 서버 미기동이면 파일만 배포(다음 기동 시 로드)."""
+    """현재 고정 모델(models/model.pt·onnx)을 YOLO 추론 서버로 반영: 같은 파일시스템이면 복사 + 핫 리로드.
+
+    복사와 리로드는 **서로 독립**이다. 예전에는 복사 실패 시 return 이라 리로드까지 못 갔다.
+    토르는 컨테이너가 나뉘어 코드 마운트가 읽기 전용이고, 추론 서버는 공유 볼륨의
+    /app/models/model.pt 를 직접 읽는다(SERVE_MODEL_FILE). 그래서 복사는 실패하는 게 정상인데
+    그 실패가 리로드를 막아, 적용해도 추론 서버는 옛 모델을 계속 물고 있었다(2026-09-08 발견,
+    9/5 하이픈 모델도 이 때문에 반영 안 됨). 리로드는 항상 시도한다."""
     dst = config.YOLO_SERVER_DIR
-    if not dst.exists():
-        return
-    try:
-        if config.NEW_MODEL_PT.exists():
-            shutil.copy(config.NEW_MODEL_PT, dst / "model.pt")
-        if config.NEW_MODEL_ONNX.exists():
-            shutil.copy(config.NEW_MODEL_ONNX, dst / "model.onnx")
-        elif (dst / "model.onnx").exists():
-            (dst / "model.onnx").unlink()   # pt 와 안 맞는 낡은 onnx 제거
-        logger.info(f"[deploy] YOLO 서버로 모델 배포: {dst}")
-    except Exception as e:
-        logger.warning(f"[deploy] YOLO 서버 파일 복사 실패: {e}")
-        return
-    try:   # 서버가 떠 있으면 핫 리로드
+    if dst.exists():
+        try:
+            if config.NEW_MODEL_PT.exists():
+                shutil.copy(config.NEW_MODEL_PT, dst / "model.pt")
+            if config.NEW_MODEL_ONNX.exists():
+                shutil.copy(config.NEW_MODEL_ONNX, dst / "model.onnx")
+            elif (dst / "model.onnx").exists():
+                (dst / "model.onnx").unlink()   # pt 와 안 맞는 낡은 onnx 제거
+            logger.info(f"[deploy] YOLO 서버로 모델 배포: {dst}")
+        except Exception as e:
+            # 읽기 전용 마운트면 여기로 온다. 공유 볼륨을 직접 읽는 구성에선 복사가 필요 없다.
+            logger.info(f"[deploy] YOLO 서버 파일 복사 생략({type(e).__name__}: {e})")
+    try:   # 서버가 떠 있으면 핫 리로드. GPU 모델 로드 + 워밍업이 있어 5초로는 부족했다.
         import urllib.request
-        urllib.request.urlopen(urllib.request.Request(config.YOLO_SERVER_URL + "/reload", method="POST"), timeout=5)
+        urllib.request.urlopen(urllib.request.Request(config.YOLO_SERVER_URL + "/reload", method="POST"), timeout=60)
         logger.info("[deploy] YOLO 서버 모델 리로드 완료")
     except Exception as e:
-        logger.info(f"[deploy] YOLO 서버 리로드 스킵(미기동?): {e}")
+        logger.warning(f"[deploy] YOLO 서버 리로드 실패({type(e).__name__}: {e}) "
+                       "— 추론 서버가 옛 모델을 계속 쓸 수 있다. POST /reload 로 직접 리로드할 것")
 
 
 def _set_served(runid):

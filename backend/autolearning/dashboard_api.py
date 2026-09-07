@@ -372,6 +372,15 @@ def api_parts_sessions():
     return _read("parts_sessions")
 
 
+@app.post("/api/sam2/save_shot")
+def api_sam2_save_shot(payload: dict = Body(...)):
+    """참조샷 한 프레임의 탭을 즉시 저장. 탭만 고치고 라벨 생성을 안 돌려도 남는다.
+
+    {"video": "...", "frame": 30, "points": [[rx, ry, 1], ...]}  빈 배열이면 그 프레임 삭제
+    """
+    return sa.save_shot(payload.get("video"), payload.get("frame"), payload.get("points") or [])
+
+
 @app.post("/api/sam2/delete_shot")
 def api_sam2_delete_shot(payload: dict = Body(...)):
     """참조샷 1개 삭제(화면에서 x). shots.json 에 즉시 반영한다."""
@@ -559,6 +568,16 @@ def api_gt_scan_result(run: str = None, parts: str = None, min_conf: float = 0.0
     return _gt(ge.scan_result, run, ps, min_conf)
 
 
+@app.get("/api/gt/eval/status")
+def api_gt_eval_status(job: str):
+    """채점 진행 조회. /api/sam2/status 와 같은 값을 준다(잡 레지스트리가 하나뿐이다).
+
+    이름만 채점 쪽으로 둔 별칭이다. sam2 라는 이름이 심사에서 오토라벨링 도구(시험항목 6)와
+    엮여 읽혀, 시험항목 1 의 채점 진행을 그쪽으로 묻는 것처럼 보였다.
+    """
+    return sa.job_status(job)
+
+
 @app.get("/api/gt/status")
 def api_gt_status(parts: str = None):
     ps = [x.strip() for x in (parts or "").split(",") if x.strip()]
@@ -601,6 +620,35 @@ def api_gt_label(part: str, stem: str, idx: int):
     return _gt(ge.label_of, part, stem, idx)
 
 
+@app.post("/api/gt/draft")
+def api_gt_draft(payload: dict = Body(...)):
+    """라벨 화면의 자동 저장. 박스를 고칠 때마다 불린다(파일은 아직 안 만든다).
+
+    {"part": "shim", "stem": "20260715_141008", "idx": 75, "boxes": [[cx,cy,w,h], ...]}
+    빈 배열도 저장한다. 내보내기에서 "지웠다"로 처리해 파일을 지운다.
+    """
+    return _gt(ge.draft_set, payload.get("part"), payload.get("stem"),
+               payload.get("idx"), payload.get("boxes") or [])
+
+
+@app.get("/api/gt/counts")
+def api_gt_counts(run: str = None):
+    """장수 표시용 현황(내보낸 파일 · 초안 · 내보낼 것). 후보 목록은 빼서 가볍다."""
+    return _gt(ge.gt_counts, run)
+
+
+@app.post("/api/gt/drop")
+def api_gt_drop(payload: dict = Body(...)):
+    """이 프레임을 그 부품에서 뺀다(GT 파일 + 초안 삭제). 박스만 비우는 것과 다르다."""
+    return _gt(ge.drop_frame, payload.get("part"), payload.get("stem"), payload.get("idx"))
+
+
+@app.post("/api/gt/export")
+def api_gt_export(payload: dict = Body(default=None)):
+    """초안을 평가용 GT 파일로 내보낸다. parts 를 안 주면 초안이 있는 전부."""
+    return _gt(ge.export_gt, (payload or {}).get("parts"))
+
+
 @app.post("/api/gt/select")
 def api_gt_select(payload: dict = Body(...)):
     """부품별로 사람이 고른 프레임 목록 저장. 화면이 그 부품의 전체 목록을 보내온다."""
@@ -628,6 +676,49 @@ def api_gt_eval_detail(run: str = None, part: str = None):
 def api_gt_eval_series(run: str = None, part: str = None, limit: int = 400):
     """AP 를 만든 누적 계열(표로 보여 주는 원자료)."""
     return _gt(ge.eval_series, run, part, limit)
+
+
+@app.get("/api/gt/intro")
+def api_gt_intro():
+    """평가 개요(모델·학습 데이터 규모·지표·판정 기준). 화면 문구를 실제 값으로 채운다."""
+    return _gt(ge.eval_intro)
+
+
+@app.get("/api/gt/inputs")
+def api_gt_inputs(parts: str = None):
+    """채점 입력(정답) 목록. 부품별 프레임 이름·박스 수."""
+    ps = [x.strip() for x in (parts or "").split(",") if x.strip()]
+    return _gt(ge.gt_inputs, ps or None)
+
+
+@app.get("/api/gt/train_inputs")
+def api_gt_train_inputs(parts: str = None, k: int = 4):
+    """학습에 쓰인 라벨 데이터 샘플 목록."""
+    return _gt(ge.train_inputs, [x for x in (parts or "").split(",") if x] or None, k)
+
+
+@app.get("/api/gt/train_image")
+def api_gt_train_image(part: str = None, name: str = None, w: int = 420, box: int = 1):
+    """학습 라벨 데이터 한 장(오토러닝이 만든 박스 포함)."""
+    b = _gt(ge.train_image, part, name, w, box)
+    if isinstance(b, dict):
+        return JSONResponse(b, status_code=200)
+    if b is None:
+        return JSONResponse({"error": "train frame not found"}, status_code=404)
+    return Response(content=b, media_type="image/jpeg",
+                    headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/gt/image")
+def api_gt_image(part: str = None, name: str = None, w: int = 420, box: int = 0):
+    """채점 입력 프레임 한 장. box=1 이면 정답 박스도 그린다(기본 원본)."""
+    b = _gt(ge.gt_image, part, name, w, box)
+    if isinstance(b, dict):
+        return JSONResponse(b, status_code=200)
+    if b is None:
+        return JSONResponse({"error": "image not found"}, status_code=404)
+    return Response(content=b, media_type="image/jpeg",
+                    headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/gt/eval/frame")

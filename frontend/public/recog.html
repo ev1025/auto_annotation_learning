@@ -11,10 +11,8 @@
   추론은 대시보드(:7862)의 /api/detect 프록시를 통해 추론서버(:9412)로 간다.
   브라우저에서 :9412 를 직접 부르면 CORS 에 막히고, 포트도 두 개를 열어야 한다.
 
-  두 가지 방식:
-    1) 사진 찍어 인식  - 폰 기본 카메라 앱으로 1장 촬영 -> 업로드. HTTP 에서도 된다.
-    2) 라이브 인식     - 화면에 카메라를 띄우고 3fps 로 계속 보낸다.
-                         브라우저 정책상 HTTPS(또는 localhost)에서만 카메라를 준다.
+  라이브 인식: 화면에 카메라를 띄우고 3fps 로 계속 보낸다.
+              브라우저 정책상 HTTPS(또는 localhost)에서만 카메라를 준다.
 -->
 <style>
   :root {
@@ -51,14 +49,6 @@
   [hidden] { display:none !important; }
   .placeholder { color:var(--muted); font-size:14px; text-align:center; padding:24px; }
 
-  /* 판정: 화면 위에 크게 */
-  .verdict {
-    position:absolute; left:10px; top:10px; padding:7px 13px; border-radius:999px;
-    font-size:14px; font-weight:700; letter-spacing:-.01em; backdrop-filter:blur(4px);
-  }
-  .verdict.yes { background:rgba(34,197,94,.9); color:#04250f; }
-  .verdict.no  { background:rgba(245,158,11,.9); color:#3b2600; }
-  .verdict.err { background:rgba(248,113,113,.92); color:#3b0a0a; }
   .fps { position:absolute; right:10px; top:10px; padding:6px 10px; border-radius:999px;
          background:rgba(11,16,32,.72); color:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
 
@@ -74,9 +64,6 @@
   .json { font-family:ui-monospace,Consolas,monospace; font-size:11px; color:var(--muted);
           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-  .collect { grid-column:1 / -1; display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); }
-  .collect input { width:20px; height:20px; }
-  .collect b { color:var(--accent-ink); }
   .actions { flex:none; display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 14px calc(10px + env(safe-area-inset-bottom));
              background:var(--panel); border-top:1px solid var(--line); }
   .btn { min-height:var(--tap); border-radius:12px; border:1px solid var(--line); background:#1e2745; color:var(--ink);
@@ -93,17 +80,14 @@
 <body>
 
 <header>
- <label>서버 <select id="srv"><option value="ours">우리 9412</option><option value="xr">연동 8001</option></select></label>
   <h1>부품 인식 테스트</h1>
   <div class="model" id="model">모델 확인 중...</div>
 </header>
 
 <div class="stage" id="stage">
-  <div class="placeholder" id="ph">아래 버튼으로 촬영하면<br />인식 결과가 여기에 표시됩니다</div>
+  <div class="placeholder" id="ph">카메라 준비 중...<br />인식 결과가 여기에 표시됩니다</div>
   <video id="vid" playsinline muted hidden></video>
-  <img id="shot" alt="촬영한 사진" hidden />
   <canvas id="ov" hidden></canvas>
-  <span class="verdict" id="verdict" hidden></span>
   <span class="fps" id="fps" hidden></span>
 </div>
 
@@ -112,23 +96,16 @@
 </div>
 
 <div class="actions">
-  <label class="btn primary" for="cap">사진 찍어 인식<small>기본 카메라 사용</small></label>
-  <input id="cap" type="file" accept="image/*" capture="environment" />
-  <button class="btn" id="live">라이브 인식<small>3fps 연속</small></button>
-  <!-- 임시: 배경(오검) 수집. 배경 학습 끝나면 이 label 과 collect 관련 JS 를 지운다 -->
-  <label class="collect"><input type="checkbox" id="collect" />
-    부품 없는 곳에서 켜기 — 검출되면 배경으로 저장 <b id="ccount"></b></label>
   <p class="note" id="note"></p>
 </div>
 
 <script>
-// 어느 추론서버를 볼지. ours = 우리 9412, xr = 연동 8001(이 화면에서 두 서버를 견줄 수 있다).
-const srv = () => (document.getElementById('srv') || {}).value || 'ours';
+// 추론서버는 연동 8001(xr)로 고정.
+const srv = () => 'xr';   // 서버 8001(연동) 고정
 (function () {
   const $ = (id) => document.getElementById(id);
-  const stage = $('stage'), vid = $('vid'), shot = $('shot'), ov = $('ov');
-  const verdict = $('verdict'), fpsEl = $('fps'), result = $('result'), note = $('note');
-  const liveBtn = $('live');
+  const stage = $('stage'), vid = $('vid'), ov = $('ov');
+  const fpsEl = $('fps'), result = $('result'), note = $('note');
   const CAMERA_ID = 'PHONE_TEST';
   const INTERVAL = 333;           // 3fps (요청 규격)
   let stream = null, timer = null, busy = false, sent = 0, t0 = 0;
@@ -137,8 +114,7 @@ const srv = () => (document.getElementById('srv') || {}).value || 'ours';
   const loadHealth = () => fetch('/api/detect/health?target=' + srv()).then(r => r.json()).then(d => {
     if (d && d.ok) {
       const cls = Object.values(d.classes || {});
-      $('model').innerHTML = '<b>' + (d.model || 'model.pt') + '</b>' + cls.length + '종: '
-        + cls.slice(0, 3).join(', ') + (cls.length > 3 ? ' 외 ' + (cls.length - 3) + '개' : '');
+      $('model').innerHTML = '<b>' + (d.model || 'model.pt') + '</b> ' + cls.length + '종';
     } else {
       $('model').innerHTML = '<b>추론서버 응답 없음</b>' + ((d && d.error) || '');
     }
@@ -150,17 +126,13 @@ const srv = () => (document.getElementById('srv') || {}).value || 'ours';
 
   // 카메라 실시간은 보안 컨텍스트(HTTPS/localhost)에서만 허용된다
   if (!window.isSecureContext || !navigator.mediaDevices) {
-    liveBtn.disabled = true;
     note.innerHTML = 'HTTP 접속이라 라이브(카메라 실시간)는 브라우저가 막습니다(HTTPS/localhost 에서만 허용). '
-      + '사진 찍기는 그대로 됩니다.<br>크롬에서 켜려면: <b>chrome://flags/#unsafely-treat-insecure-origin-as-secure</b> '
+      + '크롬에서 켜려면: <b>chrome://flags/#unsafely-treat-insecure-origin-as-secure</b> '
       + '에 <b>' + location.origin + '</b> 를 넣고 Enabled -> 재시작.';
+  } else {
+    startLive();                       // 버튼 없이 열면 바로 카메라 시작
   }
 
-  function setVerdict(kind, text) {
-    verdict.hidden = false;
-    verdict.className = 'verdict ' + kind;
-    verdict.textContent = text;
-  }
 
   function fitOverlay(el) {
     // object-fit:contain 이므로 요소 박스(=스테이지) 안에서 사진은 여백을 두고 그려진다.
@@ -201,14 +173,12 @@ const srv = () => (document.getElementById('srv') || {}).value || 'ours';
 
   function render(d, ms, imgW, imgH, el) {
     if (d.error) {
-      setVerdict('err', '오류: ' + d.error);
       result.innerHTML = '<p class="empty">' + (d.detail || d.error) + '</p>';
       return;
     }
     // 덜 학습된 모델은 한 장에 300개까지 뱉는다. 전부 그리면 사진이 안 보이고 폰이 느려진다.
     const all = d.detections || [];
     const dets = all.slice().sort((a, b) => b.confidence - a.confidence).slice(0, 12);
-    setVerdict(all.length ? 'yes' : 'no', all.length ? '있다 (' + all.length + ')' : '없다');
     if (dets.length) {
       // 부품 이름·신뢰도는 사진 위 박스에 그린다. 아래 목록은 같은 정보 반복이라 뺐다.
       result.innerHTML = '<div class="json">응답 ' + ms + 'ms · 검출 ' + all.length + '개'
@@ -224,36 +194,18 @@ const srv = () => (document.getElementById('srv') || {}).value || 'ours';
     const fd = new FormData();
     fd.append('image', blob, 'frame.jpg');
     fd.append('camera_id', CAMERA_ID);
-    if ($('collect').checked) fd.append('collect', '1');   // 임시: 배경 수집
     const t = performance.now();
     try {
       fd.append('target', srv());
       const r = await fetch('/api/detect', { method: 'POST', body: fd });
       const d = await r.json();
-      if (d.collected != null) $('ccount').textContent = '· 저장 ' + d.collected + '장';   // 임시
       render(d, Math.round(performance.now() - t), imgW, imgH, el);
     } catch (e) {
-      setVerdict('err', '전송 실패');
       result.innerHTML = '<p class="empty">' + e + '</p>';
     }
   }
 
-  // ---- 1) 사진 찍어 인식 ----
-  $('cap').addEventListener('change', (e) => {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    stopLive();
-    const url = URL.createObjectURL(f);
-    shot.hidden = false; vid.hidden = true; $('ph').hidden = true;
-    shot.onload = () => {
-      send(f, shot.naturalWidth, shot.naturalHeight, shot);
-      URL.revokeObjectURL(url);
-    };
-    shot.src = url;
-    e.target.value = '';        // 같은 사진을 다시 찍어도 change 가 오게
-  });
-
-  // ---- 2) 라이브 인식(3fps) ----
+  // ---- 라이브 인식(3fps) ----
   const work = document.createElement('canvas');
   async function tick() {
     if (busy || !stream) return;
@@ -277,24 +229,19 @@ const srv = () => (document.getElementById('srv') || {}).value || 'ours';
       note.textContent = '카메라를 열지 못했습니다: ' + e.name;
       return;
     }
-    shot.hidden = true; $('ph').hidden = true; vid.hidden = false;
+    $('ph').hidden = true; vid.hidden = false;
     vid.srcObject = stream; await vid.play();
     sent = 0; t0 = performance.now();
     timer = setInterval(tick, INTERVAL);
-    liveBtn.className = 'btn stop';
-    liveBtn.innerHTML = '라이브 정지<small>전송 중</small>';
   }
   function stopLive() {
     if (timer) { clearInterval(timer); timer = null; }
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
     vid.hidden = true; fpsEl.hidden = true;
-    liveBtn.className = 'btn';
-    liveBtn.innerHTML = '라이브 인식<small>3fps 연속</small>';
   }
-  liveBtn.addEventListener('click', () => (stream ? stopLive() : startLive()));
   window.addEventListener('pagehide', stopLive);
   window.addEventListener('resize', () => {
-    const el = !vid.hidden ? vid : (!shot.hidden ? shot : null);
+    const el = !vid.hidden ? vid : null;
     if (el && !ov.hidden) fitOverlay(el);
   });
 })();

@@ -36,6 +36,16 @@ const IcWarn = () => (
 // **굵게** 마커를 <b>로 변환
 // data/bell412/<그룹>/<부품>/videos → 부품 파싱. 폴더=부품, 폴더 안 영상=그 부품의 train/test 테이크
 const partOf = (rel) => { const p = rel.replace(/\/videos$/, '').split('/'); return p.length > 2 ? p.slice(2).join('/') : (p[1] || rel) }
+
+// 부품 정렬 기준. 부품목록과 부품학습데이터 생성 화면이 같은 순서를 쓰도록 localStorage 로 공유한다.
+const PART_SORT_KEY = 'parts_sort_v1'
+const readPartSort = () => { try { return localStorage.getItem(PART_SORT_KEY) === 'name' ? 'name' : 'recent' } catch { return 'recent' } }
+// name = 이름 오름차순, recent = 등록(폴더 mtime) 최신이 위. 리스트마다 이름/시각 뽑는 법만 넘긴다.
+const partCmp = (mode, nameOf, mtimeOf) => (a, b) => (
+  mode === 'name'
+    ? nameOf(a).localeCompare(nameOf(b))
+    : ((mtimeOf(b) || 0) - (mtimeOf(a) || 0)) || nameOf(a).localeCompare(nameOf(b))
+)
 // 부품 폴더의 테이크 → {train:[...], test} : test* 있으면 그게 테스트, 없고 2개+면 끝수 최대("2")가 테스트, 단일이면 학습영상으로 테스트
 
 // 부품 라벨링(SAM2): 데이터셋(그룹)→부품(폴더) 순회. 부품마다 학습 테이크 탭 → 입력 마스크 확인 → 라벨 생성 → 다음 부품
@@ -97,12 +107,16 @@ function AutoLabelView({ onPrep, active }) {
   const [labelStatus, setLabelStatus] = useState(null)
 
   const preppedRef = useRef(new Set())              // 그룹별 '전체 프레임 미리 컷' 1회만
+  const [sortMode, setSortMode] = useState(readPartSort)   // 부품 목록(탭2)에서 고른 정렬을 따른다
+  useEffect(() => { const h = () => setSortMode(readPartSort()); addEventListener('partsortchange', h); return () => removeEventListener('partsortchange', h) }, [])   // 탭2 정렬 바뀌면 따라감
 
   const running = !!labelStatus?.running
 
   const isPartFolder = (rel) => rel.replace(/\/videos$/, '').split('/').length >= 3   // bell412/<컨테이너>/<부품> = 중첩 = 부품
   const nestedParts = folders.filter(f => isPartFolder(f.folder))
-  const partFolders = nestedParts.length ? nestedParts : folders          // 부품 폴더들(중첩 없으면 전체)
+  // 부품 폴더들(중첩 없으면 전체). 정렬 순서를 여기서 한 번에 정해 목록·네비게이션이 같은 순서를 쓴다.
+  const partFolders = [...(nestedParts.length ? nestedParts : folders)]
+    .sort(partCmp(sortMode, pf => partOf(pf.folder), pf => pf.mtime))
   const curPartFolder = partFolders[partIdx]
   const folderVideos = curPartFolder?.videos || []                       // 이 부품의 테이크들
   const src = (selVideo && folderVideos.some(v => v.name === selVideo))   // 선택한 영상(없으면 첫 영상)
@@ -177,6 +191,21 @@ function AutoLabelView({ onPrep, active }) {
   const shotKey = (v, i) => `${v}:${i}`
   const dropMask = (v, i) => setMasks(m => { const n = { ...m }; delete n[shotKey(v, i)]; return n })
   const updateCur = (fn) => setPtsBySrc(prev => ({ ...prev, [src]: fn(prev[src] || {}) }))
+  // 탭을 고치면 그 프레임을 바로 서버 shots.json 에 남긴다.
+  // 예전에는 라벨 생성을 돌릴 때만 저장돼, 탭만 고치고 나가면 새로고침에서
+  // 서버 값으로 통째 교체(loadShots)되며 조용히 옛 값으로 돌아갔다.
+  const persistShot = (frame, pts) => {
+    fetch('/api/sam2/save_shot', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video: keyOf(src), frame,
+                             points: (pts || []).map(p => [p.rx, p.ry, p.lab]) })
+    }).catch(() => {})   // 실패해도 화면은 막지 않는다. 다음 탭에서 다시 보낸다
+  }
+  const updateCurSaved = (fn) => setPtsBySrc(prev => {
+    const vp = fn(prev[src] || {})
+    persistShot(idx, vp[idx] || [])
+    return { ...prev, [src]: vp }
+  })
   const addPoint = (e, lab) => {
     e.preventDefault()
     if (running) return
@@ -185,10 +214,10 @@ function AutoLabelView({ onPrep, active }) {
     const ry = +((e.clientY - rect.top) / rect.height).toFixed(4)
     if (rx < 0 || rx > 1 || ry < 0 || ry > 1) return
     dropMask(src, idx)
-    updateCur(c => ({ ...c, [idx]: [...(c[idx] || []), { rx, ry, lab }] }))
+    updateCurSaved(c => ({ ...c, [idx]: [...(c[idx] || []), { rx, ry, lab }] }))
   }
-  const undo = () => { dropMask(src, idx); updateCur(c => ({ ...c, [idx]: (c[idx] || []).slice(0, -1) })) }
-  const clearFrame = () => { dropMask(src, idx); updateCur(c => { const n = { ...c }; delete n[idx]; return n }) }
+  const undo = () => { dropMask(src, idx); updateCurSaved(c => ({ ...c, [idx]: (c[idx] || []).slice(0, -1) })) }
+  const clearFrame = () => { dropMask(src, idx); updateCurSaved(c => { const n = { ...c }; delete n[idx]; return n }) }
   useEffect(() => {   // Ctrl+Z = 이 프레임 마지막 탭 취소
     const onKey = (e) => {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !running && cur.length) {
@@ -449,11 +478,18 @@ function AutoLabelView({ onPrep, active }) {
                                      src={maskShown ? activeMask.combo
                                                     : `/api/autolabel/frame?src=${encodeURIComponent(srcKey)}&idx=${idx}&w=720`}
                                      alt={maskShown ? '입력 마스크' : `frame ${idx}`}
-                                     onLoad={(e) => { const im = e.currentTarget; setNatSize({ w: im.naturalWidth, h: im.naturalHeight }) }} />}
-                        {/* 마스크 그림에는 서버가 점을 이미 찍어 놓았다. 그 위에 또 찍으면 점이 두 겹으로 보인다.
-                            그래서 마스크가 뜨기 전(서버 응답을 기다리는 동안)에만 우리가 찍은 점을 보여준다.
-                            이게 있어야 탭한 순간 바로 반응이 보인다. */}
-                        {!maskShown && cur.map((p, i) => (
+                                     onLoad={(e) => {
+                                       // 칸 비율은 '프레임' 크기로만 잡는다. 마스크 그림이 비율을
+                                       // 다시 쓰면 탭 프레임을 지날 때마다 비율이 바뀌어(720/405 <-> 640/360)
+                                       // 다시 그려진다. 첫 그림이 마스크일 때만 예외로 받아 둔다.
+                                       const im = e.currentTarget
+                                       if (!maskShown || !natSize) {
+                                         setNatSize({ w: im.naturalWidth, h: im.naturalHeight })
+                                       }
+                                     }} />}
+                        {/* 탭 점은 항상 여기서만 그린다. 서버가 마스크 그림에 함께 굽던 것을 없앴다.
+                            두 군데서 각자 그리니 가로영상(gearbox)과 세로영상에서 크기가 갈렸다. */}
+                        {cur.map((p, i) => (
                           <span key={i} className={`al-dot ${p.lab === 1 ? 'pos' : 'neg'}`}
                                 style={{ left: `${p.rx * 100}%`, top: `${p.ry * 100}%` }} />
                         ))}
@@ -698,7 +734,7 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
       ) : (
         <button className="act-btn ghost rbmenu-btn" onClick={() => setOpen(o => !o)}
                 aria-haspopup="true" aria-expanded={open}>
-          모델 변경 <IcChevronDown />
+          모델 이력 <IcChevronDown />
         </button>
       )}
       {open && (
@@ -894,6 +930,16 @@ function PartsApp({ onPrep, active }) {
   const didInitPick = useRef(false)                  // 학습됨 부품 기본선택을 최초 1회만 적용
   const [models, setModels] = useState([])           // 등록소 버전 목록(타임라인)
   const running = !!status?.running
+  const [elapsed, setElapsed] = useState(0)                 // 학습 경과 시간(초)
+  useEffect(() => {                                         // 학습 중 1초마다 경과 갱신
+    if (!running) { try { localStorage.removeItem('xr_train_t0') } catch { /* */ }; setElapsed(0); return }
+    let t0 = Number(localStorage.getItem('xr_train_t0') || 0)
+    if (!t0) { t0 = Date.now(); try { localStorage.setItem('xr_train_t0', String(t0)) } catch { /* */ } }
+    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - t0) / 1000)))
+    tick(); const id = setInterval(tick, 1000); return () => clearInterval(id)
+  }, [running])
+  const fmtElapsed = (x) => { const h = Math.floor(x / 3600), m = Math.floor(x % 3600 / 60), y = x % 60
+    return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(y).padStart(2, '0') }
 
   const loadTrain = useCallback(() => {   // 모달 열 때 폴더+라벨 현황 갱신
     fetch('/api/autolabel/folders').then(r => r.json()).then(setFolders).catch(() => {})
@@ -904,16 +950,17 @@ function PartsApp({ onPrep, active }) {
     }).catch(() => {})
   }, [])
 
+  const [partSort, setPartSort] = useState(readPartSort)   // 부품 목록(탭2)에서 고른 정렬을 따른다
+  useEffect(() => { const h = () => setPartSort(readPartSort()); addEventListener('partsortchange', h); return () => removeEventListener('partsortchange', h) }, [])   // 탭2 정렬 바뀌면 따라감
   const folderOf = (video) => folders.find(f => f.videos.some(v => v.name === video))
-  // 신규 = 현재 서비스 모델에 없는 부품. 목록의 '신규' 배지와 같은 기준을 쓴다.
-  const isNewPart = (it) => served ? !(served.classes || []).includes(it.part) : !it.trained
   const items = Object.keys(labeledMap).map(video => {   // 라벨 1장 이상 생성된 부품만 학습 대상
     const f = folderOf(video)
     return { video, part: f ? partOf(f.folder) : video,
-             labels: labeledMap[video].labels, trained: trainedVideos.includes(video) }
+             labels: labeledMap[video].labels, trained: trainedVideos.includes(video),
+             mtime: f ? f.mtime : 0 }
   }).filter(it => it.labels > 0)
-    // 방금 등록·라벨한 신규 부품을 맨 위로 올린다(목록이 길어 아래로 묻히면 못 찾는다).
-    .sort((a, b) => (Number(isNewPart(b)) - Number(isNewPart(a))) || a.part.localeCompare(b.part))
+    // 정렬은 부품 목록(탭2)에서 고른 기준(최근 등록순/이름순)을 그대로 따른다.
+    .sort(partCmp(partSort, it => it.part, it => it.mtime))
   const selected = items.filter(it => picked.includes(it.part))
   const allOn = items.length > 0 && selected.length === items.length
   const toggle = (p) => setPicked(c => c.includes(p) ? c.filter(x => x !== p) : [...c, p])
@@ -1130,7 +1177,7 @@ function PartsApp({ onPrep, active }) {
     if (r.error) { notify(r.error); return }
     setApplied(false)
     const s = await refreshServed()
-    flashSvc(`모델을 변경했습니다 · 현재 서비스 모델 ${s?.label || mid}`)
+    flashSvc(`모델을 변경했습니다 · ${(s?.label || mid).split(' · ').slice(0, 2).join(' · ')}`)
   }
 
   const doApply = async () => {   // 신규 모델을 서비스에 적용(추론 서버 배포는 백엔드가 함께 처리)
@@ -1143,7 +1190,7 @@ function PartsApp({ onPrep, active }) {
     if (r.error) { notify(r.error); return }
     setApplied(true)
     const s = await refreshServed()
-    flashSvc(`신규 모델을 적용했습니다 · 현재 서비스 모델 ${s?.label || r.session || target}`)
+    flashSvc(`신규 모델을 적용했습니다 · ${(s?.label || r.session || target).split(' · ').slice(0, 2).join(' · ')}`)
   }
   const doCancel = async () => {   // 학습 중단
     // job id 를 잃은 상태(화면 재진입·탭 이동)에서도 보낸다. 서버가 진행 중인 잡을 찾아 멈춘다.
@@ -1284,7 +1331,7 @@ function PartsApp({ onPrep, active }) {
                   )}
                   {/* 학습 직후에만 열 수 있으면 저장 모델(고정·별칭)을 평소에 관리할 수 없다.
                       학습이 돌고 있지 않고 모델이 하나라도 있으면 항상 열 수 있게 한다. */}
-                  {(trainDone || (!running && (models || []).length > 0)) &&
+                  {((models || []).length > 0) &&
                     <RollbackMenu models={models} servedId={served?.model_id}
                                   onRollbackTo={askRollbackTo} onDeleteModel={askDeleteModel}
                                   onKeep={null} onApply={null} applied={applied} onPin={pinModel} />}
@@ -1298,7 +1345,7 @@ function PartsApp({ onPrep, active }) {
                   <div className="log-prog">
                     <CircularProgress pct={pct} done={trainDone} />
                     <b className="prog-head-title">{headText}</b>
-                    {running && <span className="prog-sub"><span className="spinner" /> 진행 중...</span>}
+                    {running && <span className="prog-sub"><span className="spinner" /> 진행 중 · {fmtElapsed(elapsed)}</span>}
                   </div>
                   <LogConsole log={status?.log} />
                 </div>
@@ -1327,7 +1374,6 @@ function PartsApp({ onPrep, active }) {
                           {status?.n_images != null ? (
                             <small>
                               입력 {(status.input_total ?? status.n_images).toLocaleString()}
-                              {' · 산입 '}{status.n_images.toLocaleString()}
                               {status.n_augmented ? ` · 증강 ${status.n_augmented.toLocaleString()}` : ''}
                               {' · 학습셋 '}{(status.n_images + (status.n_augmented || 0)).toLocaleString()}
                             </small>
@@ -1721,7 +1767,7 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
           <div className="reg-col">
             <div className="reg-field">
               <span className="reg-label">부품 이름</span>
-              <input className="reg-input" value={name} onChange={e => setName(e.target.value)} placeholder="예: gearbox" />
+              <input className="reg-input" value={name} onChange={e => setName(e.target.value)} placeholder="예: gearbox · 기어박스" />
             </div>
             <div className="reg-field">
               <span className="reg-label">부품 카테고리</span>
@@ -1934,6 +1980,9 @@ function PartList({ onEdit, onDeleted, active, flash, onFlashDone }) {
   const [loaded, setLoaded] = useState(false)
   const [msg, setMsg] = useState(null)
   const [confirmDel, setConfirmDel] = useState(null)
+  // 부품 정렬(최근 등록순/이름순). 여기가 기준이고, 오토라벨 부품 패널·학습 선택이 이 값을 따라간다.
+  const [sortMode, setSortMode] = useState(readPartSort)
+  const changeSort = (m) => { setSortMode(m); try { localStorage.setItem(PART_SORT_KEY, m) } catch { /* 저장 실패해도 정렬은 동작 */ } dispatchEvent(new Event('partsortchange')) }
 
   const load = useCallback(() => {
     fetch('/api/parts').then(r => r.json())
@@ -1960,9 +2009,20 @@ function PartList({ onEdit, onDeleted, active, flash, onFlashDone }) {
     else { setMsg({ ok: true, text: `${p.name} 삭제됨` }); onDeleted?.(p.id); load() }
   }
 
+  // 최근 등록순(created_at) / 이름순. 오토라벨·학습선택도 같은 순서를 따른다.
+  const sortedRows = [...rows].sort(partCmp(sortMode, r => r.name,
+                                            r => r.created_at ? Date.parse(r.created_at) / 1000 : 0))
+
   return (
     <div className="tab-body">
-      <h3 className="tab-h">부품 목록</h3>
+      <div className="pt-head">
+        <h3 className="tab-h" style={{ margin: 0 }}>부품 목록</h3>
+        <select className="part-sort" value={sortMode} onChange={(e) => changeSort(e.target.value)}
+                title="부품 정렬" aria-label="부품 정렬">
+          <option value="recent">최근 등록순</option>
+          <option value="name">이름순</option>
+        </select>
+      </div>
       <p className="tab-sub">등록된 부품입니다. 수정을 누르면 등록 화면에서 정보·영상을 관리합니다. (총 {rows.length}개)</p>
       {msg && <div className={`reg-msg ${msg.ok ? 'ok' : 'err'}`}>{msg.text}</div>}
       {!loaded ? (
@@ -1983,7 +2043,7 @@ function PartList({ onEdit, onDeleted, active, flash, onFlashDone }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(p => (
+            {sortedRows.map(p => (
               <tr key={p.id} data-part={p.name} className={flash === p.name ? 'pt-flash' : undefined}>
                 <td className="pt-name">
                   <span className="pt-name-txt">{p.name}</span>

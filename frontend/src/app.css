@@ -127,10 +127,13 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 /* ===== 라벨링 화면 ===== */
 /* 탭 점: 박스 폭의 비율로 잡는다(px 고정이면 화면 크기·영상 비율에 따라 커/작아 보였다).
    백엔드 오버레이도 긴 변 기준 비례(_ov_sizes)라 두 화면의 점 크기가 서로 맞는다. */
+/* 점 크기는 고정 px. 폭 대비 %(2.4%)로 두니 가로영상은 컨테이너가 3배 넓어
+   같은 2.4% 가 훨씬 큰 점이 됐다(gearbox 만 1920x1080, 나머지는 1080x1920).
+   점은 위치를 가리키는 표시라 화면에서 늘 같은 크기여야 한다. */
 .al-dot {
-  position: absolute; width: 2.4%; aspect-ratio: 1; min-width: 7px; max-width: 16px;
-  border-radius: 50%; transform: translate(-50%, -50%); border: 1.5px solid #fff;
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.45); pointer-events: none;
+  position: absolute; width: 11px; height: 11px;
+  border-radius: 50%; transform: translate(-50%, -50%); border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.55); pointer-events: none; z-index: 2;
 }
 .al-dot.pos { background: var(--dot-pos); }
 .al-dot.neg { background: var(--danger); }
@@ -241,6 +244,16 @@ td { padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
 .pb-btn svg { width: var(--ic-sm); height: var(--ic-sm); }
 .part-panel-head .pb-btn { padding: 0 var(--sp-4); }
 .part-panel-head .pb-btn.ico { padding: 0 var(--sp-3); }
+/* 부품 정렬 셀렉트 (부품목록 헤더) */
+.part-sort {
+  min-height: var(--ctl-sm); border: 1px solid var(--line); border-radius: var(--r);
+  background: #fff; color: var(--ink); font-family: inherit; font-size: var(--fs-sm);
+  padding: 0 var(--sp-3); cursor: pointer;
+}
+.part-sort:hover:not(:disabled) { border-color: var(--accent); }
+.part-sort:disabled { opacity: 0.5; cursor: default; }
+/* 부품 목록(탭2) 헤더: 제목 + 정렬 셀렉트 한 줄 */
+.pt-head { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
 
 .part-item {
   flex: 0 0 auto;   /* 세로로 눌려 찌부러지지 않게(스크롤로 처리) */

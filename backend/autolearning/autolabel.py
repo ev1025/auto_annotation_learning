@@ -9,6 +9,7 @@
 SAM/DINOv2 는 한 번만 로드해 캐시. GPU 는 학습과 공유하므로 동시에 돌면 OOM 가능 → 예외 보고.
 """
 import base64
+import os
 import sys
 import threading
 import time
@@ -28,7 +29,12 @@ DEV = "cuda" if torch.cuda.is_available() else "cpu"
 
 # 참조 소스 = data/ 하위 어디든(주제별 폴더 예: bell412/gearbox/videos/)의 영상. 새 영상 넣으면 자동 컷.
 RESULTS = config.BASE_DIR / "results"
-AUTOLABELS = RESULTS / "autolabels"       # results/autolabels/<부품>/{images/<stem>/, labels, boxs} (영속 = 라벨됨)
+# results/<트리>/<부품>/{images/<stem>/, labels, boxs} (영속 = 라벨됨)
+# 트리 이름을 환경변수로 고를 수 있게 둔다. 밝기보정(톤매핑) 프레임으로 학습할 때
+# results/autolabels_tm 을 쓰기 때문이다. 예전에는 폴더를 서로 바꿔치기해 돌렸는데
+# 그 방식은 어느 트리가 최신인지 흐려져 autolabels_tm 라벨이 낡은 채 남았다.
+AUTOLABEL_TREE = os.environ.get("XR_AUTOLABELS", "autolabels")
+AUTOLABELS = RESULTS / AUTOLABEL_TREE
 VIDEO_EXT = {".mp4", ".avi", ".mov", ".mkv"}
 TARGET_FRAMES = 200                       # 영상당 목표 프레임 수(서브샘플, 과다·과부하 방지)
 
@@ -55,11 +61,34 @@ def _videos(force=False):
     # 제외 규칙 두 개
     #   '_' 로 시작하는 폴더(_frame_cache·_negatives·_synth·보관용 _gearbox 등)
     #   부품 폴더 안의 eval (성능 확인용 미학습 영상. 등록 영상으로 잡히면 학습에 섞인다)
-    out = sorted(p for p in vids if p.is_file()
-                 and not any(part.startswith("_") or part == "eval"
-                             for part in p.resolve().relative_to(base).parts[:-1]))
+    def _keep(p):
+        rel = _rel_to_data(p)
+        if rel is None:
+            return False
+        return not any(part.startswith("_") or part == "eval" for part in rel.parts[:-1])
+    out = sorted(p for p in vids if p.is_file() and _keep(p))
     _VIDX.update(t=now, vids=out)
     return out
+
+def _rel_to_data(vp):
+    """영상 Path -> DATA_DIR 기준 상대경로. 심링크를 따라가지 않는다.
+
+    서버 작업폴더(xr_dash_260901)는 data/bell412 아래 영상이 다른 레포로 향한 심링크다.
+    resolve() 로 실체를 따라가면 DATA_DIR 밖이라 relative_to 가 ValueError 를 냈고
+    영상 목록이 통째로 비어 라벨 재생성이 시작조차 못 했다.
+    식별에 필요한 것은 '우리 data/ 안에서의 자리'라서 링크 자체 경로로 계산한다.
+    """
+    base = config.DATA_DIR
+    try:
+        return Path(vp).relative_to(base)
+    except ValueError:
+        pass
+    # 절대/상대가 섞였거나 base 가 링크인 경우만 실체 비교로 넘어간다
+    try:
+        return Path(vp).resolve().relative_to(base.resolve())
+    except ValueError:
+        return None
+
 
 def part_root_of(vp):
     """영상 Path → 그 부품 루트 폴더(data/bell412/<부품>). 'videos' 폴더 아래면 상위, 아니면 부모."""
@@ -68,7 +97,9 @@ def part_root_of(vp):
 def video_key(vp):
     """영상 Path → 부품경로 기반 유니크 키 = data/ 기준 상대경로(확장자 제거).
     예: data/bell412/gearbox/videos/test1.mp4 → 'bell412/gearbox/videos/test1'."""
-    return vp.resolve().relative_to(config.DATA_DIR.resolve()).with_suffix("").as_posix()
+    rel = _rel_to_data(vp)
+    return (rel.with_suffix("").as_posix() if rel is not None
+            else Path(vp).with_suffix("").name)
 
 def cache_dir_of(vp):
     """영상 Path → 그 영상의 프레임 저장소(results/autolabels/<부품>/images/<stem>).
@@ -89,7 +120,10 @@ def resolve_video(src):
     vids = _videos()
     # 1) 부품경로 상대(전체/확장자무시) 정확 매칭
     for vp in vids:
-        rel = vp.resolve().relative_to(base).as_posix()          # bell412/<부품>/videos/<stem>.mp4
+        r = _rel_to_data(vp)
+        if r is None:
+            continue
+        rel = r.as_posix()                                       # bell412/<부품>/videos/<stem>.mp4
         if s == rel or s == rel.rsplit(".", 1)[0]:
             return vp
     # 2) '<부품>/<stem>' 축약 매칭
@@ -190,7 +224,13 @@ def list_folders():
     for rel in sorted(groups):
         parts = rel.split("/")
         label = "/".join(parts[:-1]) if parts[-1] == "videos" and len(parts) > 1 else rel
-        out.append({"folder": rel, "label": label,
+        # 부품 폴더(data/bell412/<부품>)는 등록 때 만들어지고, 영상은 그 아래 videos/ 로 들어간다.
+        # 그래서 부품 폴더 mtime ≈ 등록 시각 → 화면에서 '최근 등록순' 정렬에 쓴다.
+        try:
+            mtime = (config.DATA_DIR / label).stat().st_mtime
+        except OSError:
+            mtime = 0
+        out.append({"folder": rel, "label": label, "mtime": mtime,
                     "videos": [_source_info(vp) for vp in sorted(groups[rel])]})
     return out
 

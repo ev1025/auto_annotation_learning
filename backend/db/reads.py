@@ -49,6 +49,7 @@ def list_folders() -> list[dict]:
     with SessionLocal() as s:
         parts = s.scalars(select(Part).options(selectinload(Part.videos)).order_by(Part.name)).all()
         groups: dict[str, list[PartVideo]] = {}
+        part_ct: dict[str, float] = {}     # rel_dir -> 부품 등록시각(epoch). 화면 '최근 등록순' 정렬용
         for p in parts:
             for v in p.videos:
                 # 저장된 path 는 레포루트 기준. data/ 기준으로 다시 잘라 프론트 규약(folder/key)에 맞춘다.
@@ -58,6 +59,8 @@ def list_folders() -> list[dict]:
                 except ValueError:
                     continue
                 groups.setdefault(rel_dir, []).append(v)
+                if p.created_at:
+                    part_ct[rel_dir] = p.created_at.timestamp()
 
         for rel_dir in sorted(groups):
             seg = rel_dir.split("/")
@@ -67,7 +70,8 @@ def list_folders() -> list[dict]:
                 key = Path(rel_dir + "/" + v.stem).as_posix()
                 n = v.n_frames or 0
                 vids.append({"name": v.stem, "key": key, "count": n, "ready": bool(n)})
-            out.append({"folder": rel_dir, "label": label, "videos": vids})
+            out.append({"folder": rel_dir, "label": label,
+                        "mtime": part_ct.get(rel_dir, 0), "videos": vids})
     return out
 
 

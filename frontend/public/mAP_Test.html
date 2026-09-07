@@ -19,16 +19,21 @@
   AP 를 역산할 수 없다). 프레임 그림에는 GT 와 검출을 겹쳐 그려 FP 이유를 눈으로 본다.
 -->
 <style>
+  /* 폰트를 CDN 이 아니라 같이 두고 쓴다. 심사장 PC 가 인터넷에 못 나가면
+     CDN 은 조용히 맑은 고딕으로 떨어져 화면이 달라진다. */
+  @font-face{font-family:'Pretendard Variable';font-weight:45 920;font-style:normal;
+    font-display:swap;src:url('vendor/PretendardVariable.woff2') format('woff2-variations')}
   :root{
     --bg:#f1f5f9; --surface:#fff; --surface-2:#f8fafc; --surface-3:#f1f5f9;
     --line:#e2e8f0; --line-strong:#cbd5e1;
     --ink-strong:#0f172a; --ink:#1e293b; --muted:#64748b; --faint:#94a3b8;
     --accent:#4f46e5; --accent-ink:#4338ca; --accent-bg:#eef2ff; --accent-line:#c7d2fe;
-    --success:#16a34a; --success-ink:#15803d; --success-line:#86efac; --success-bg:#dcfce7;
+    /* success-ink 는 #15803d 였다. 14px 굵은 숫자에서 흰 배경 대비 4.49 로 4.5 에 미달해 한 단계 진하게. */
+    --success:#16a34a; --success-ink:#166534; --success-line:#86efac; --success-bg:#dcfce7;
     --warn:#b45309; --warn-line:#fde68a; --warn-bg:#fffbeb;
     --danger:#dc2626; --danger-ink:#b91c1c; --danger-line:#fecaca; --danger-bg:#fee2e2;
     --r-sm:6px; --r-md:10px; --r-lg:14px;
-    --font:'Noto Sans KR','Malgun Gothic',system-ui,-apple-system,sans-serif;
+    --font:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,system-ui,'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif;
     --mono:'Consolas','D2Coding',ui-monospace,monospace;
   }
   *{box-sizing:border-box}
@@ -38,7 +43,7 @@
   button{font:inherit;color:inherit;cursor:pointer}
   [hidden]{display:none !important}
   h1{margin:0;font-size:17px;color:var(--ink-strong);white-space:nowrap}
-  h2{margin:0 0 8px;font-size:14px;color:var(--ink-strong)}
+  h2{margin:0 0 10px;font-size:15px;font-weight:800;color:var(--ink-strong)}
 
   header{flex:none;background:var(--surface);border-bottom:1px solid var(--line);
          padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
@@ -49,45 +54,61 @@
   .btn.primary:hover:not(:disabled){background:var(--accent-ink)}
   .btn:disabled{opacity:.45;cursor:not-allowed}
   .btn.ghost{background:transparent}
+  /* 채점 진행 스피너(버튼 오른쪽). 토스트 대신 이걸로 '도는 중'을 보여준다. */
+  .run-spin{width:18px;height:18px;border:2.5px solid var(--line-strong);border-top-color:var(--accent);
+    border-radius:50%;animation:spin .7s linear infinite;flex:none}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .run-note{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
   select{min-height:38px;padding:0 10px;border-radius:var(--r-md);border:1px solid var(--line-strong);
          background:var(--surface);font:inherit;font-weight:600}
 
-  .score{display:flex;align-items:baseline;gap:8px;padding:4px 14px;border-radius:var(--r-md);
-         border:1px solid var(--line);background:var(--surface-3)}
-  .score b{font-size:26px;line-height:1;color:var(--ink-strong);font-variant-numeric:tabular-nums}
-  .score.pass{background:var(--success-bg);border-color:var(--success-line)}
-  .score.pass b{color:var(--success-ink)}
-  .score.fail{background:var(--danger-bg);border-color:var(--danger-line)}
-  .score.fail b{color:var(--danger-ink)}
-  .verdict{font-weight:800}
+  /* 부품별 결과 표 아래 띠. 판정 문구(합격/불합격)는 두지 않는다 - 그 판단은
+     심사위원의 몫이고, 화면은 측정값과 그것을 잰 조건만 제시한다.
+     기준 충족 여부는 값의 색과 왼쪽 띠로만 나타낸다(사실 진술).
+     flex:1 로 남는 높이를 통째로 받아, 옆 예측 결과 칸과 아래가 저절로 맞는다. */
+  .resfoot{flex:1;display:flex;align-items:center;gap:14px;margin-top:12px;
+    padding:7px 14px;border-radius:var(--r-md);border:1px solid var(--line);
+    background:var(--surface-3);border-left-width:5px}
+  .resfoot.pass{border-left-color:var(--success)}
+  .resfoot.pass .rf-val{color:var(--success-ink)}
+  .resfoot.fail{border-left-color:var(--danger)}
+  .resfoot.fail .rf-val{color:var(--danger-ink)}
+  /* 측정값 덩어리. 오른쪽에 두고 왼쪽에 세로선으로 조건과 가른다.
+     오른쪽 여백을 크게 줘 값이 카드 벽에 붙지 않고 안쪽으로 들어온다. */
+  .rf-score{flex:none;display:flex;align-items:baseline;gap:9px;
+    border-left:1px solid var(--line-strong);padding-left:18px;padding-right:26px}
+  .rf-lab{font-size:13px;color:var(--muted)}
+  .rf-val{font-size:40px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+  .rf-baseval{font-size:30px;font-weight:800;line-height:1;color:var(--muted);font-variant-numeric:tabular-nums}
+  .rf-sub{font-size:11px;color:var(--faint);white-space:nowrap}
+  /* 기준 · 조건 · 오류를 왼쪽에 세 줄로 붙인다. */
+  .rf-kv{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;
+    font-size:12.5px;line-height:1.5}
+  .rf-kv .rf-k{color:var(--muted);font-weight:600;margin-top:6px}
+  .rf-kv .rf-k:first-child{margin-top:0}
+  .rf-kv .rf-v{font-weight:700;color:var(--ink-strong)}
 
 
   /* --- 접근성·상호작용 공통 (UI 검수 반영) --- */
   /* 키보드 사용자에게 보이는 포커스 표시. 마우스 클릭에는 나타나지 않는다(:focus-visible) */
   :where(button, select, a, [tabindex]):focus-visible{
     outline:3px solid var(--accent); outline-offset:2px; border-radius:var(--r-sm)}
-  .btn, .tabs button, .card, .fr{transition:background-color .15s ease, border-color .15s ease,
+  .btn, .tabs button, .card{transition:background-color .15s ease, border-color .15s ease,
     box-shadow .15s ease, color .15s ease}
   /* 모션을 줄이도록 설정한 사용자에게는 전환·부드러운 스크롤을 끈다 */
   @media (prefers-reduced-motion: reduce){
     *{transition:none !important; animation:none !important; scroll-behavior:auto !important}
   }
-  main{flex:1;min-height:0;overflow:auto;padding:14px 16px 28px}
+  main{flex:1;min-height:0;overflow:auto;padding:14px 16px 78px}
   .msg{margin:0 0 12px;padding:11px 14px;border-radius:var(--r-md);background:var(--warn-bg);
        border:1px solid var(--warn-line);color:var(--warn);font-weight:600}
   .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);
         padding:12px 14px;margin-bottom:14px}
 
   /* 단계 */
-  .steps{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
-  .step{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px}
-  .step.on{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
-  .step.done{border-color:var(--success-line);background:var(--success-bg)}
-  .step .no{font-size:11px;font-weight:800;color:var(--muted)}
-  .step .ti{font-weight:700;color:var(--ink-strong);margin:2px 0 4px}
-  .step .va{font-family:var(--mono);font-size:12px;color:var(--ink);white-space:pre-line}
-  .step .fo{font-size:11px;color:var(--muted);margin-top:4px}
-  @media (max-width:1100px){.steps{grid-template-columns:repeat(2,1fr)}}
+  .lnk{border:0;background:none;padding:0 2px;font:inherit;font-size:12px;
+    color:#4f46e5;text-decoration:underline;cursor:pointer}
+
 
   table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
   th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:right;white-space:nowrap}
@@ -97,6 +118,10 @@
   #tblParts tbody tr, #tblSeries tbody tr{cursor:pointer}
   thead th[data-sort]{cursor:pointer;user-select:none}
   thead th[data-sort]:hover{color:var(--ink-strong)}
+  /* 눌러서 쓰는 것은 키보드로도 닿아야 한다(Tab 이동 + Enter/Space).
+     초점 테두리를 지우지 않고 뚜렷하게 남긴다. */
+  thead th[data-sort]:focus-visible, tbody tr[tabindex]:focus-visible,
+  .ing-c:focus-visible{outline:3px solid var(--accent);outline-offset:-2px}
   thead th[aria-sort]::after{content:"\25be";margin-left:4px;color:var(--accent)}
   thead th[aria-sort="ascending"]::after{content:"\25b4"}
   tr.sel{background:var(--accent-bg)}
@@ -105,109 +130,428 @@
   .no{color:var(--danger-ink);font-weight:700}
   .scroll{overflow:auto;max-height:340px;border:1px solid var(--line);border-radius:var(--r-md)}
 
-  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
-  .tabs button{min-height:34px;padding:0 12px;border-radius:999px;border:1px solid var(--line-strong);
-               background:var(--surface);font-weight:700;color:var(--muted)}
-  .tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
-  .tabs button .ap{font-family:var(--mono);font-weight:800;margin-left:6px}
 
   .grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
   @media (max-width:1000px){.grid2{grid-template-columns:1fr}}
+
+  /* --- 두 단계. 채점 전에 확인할 것과 채점 뒤에 볼 것을 갈라 놓는다.
+         한 판에 다 쏟아 두면 무엇이 조건이고 무엇이 결과인지 섞여 읽힌다. --- */
+  .stage{margin-bottom:18px}
+  .stage:last-child{margin-bottom:0}
+  .stage-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;
+    padding:7px 12px;border-radius:var(--r-md);
+    background:var(--accent-bg);border:1px solid var(--accent-line)}
+  .stage-head .no{flex:none;width:21px;height:21px;border-radius:50%;
+    background:var(--accent);color:#fff;font-size:12px;font-weight:800;
+    display:inline-flex;align-items:center;justify-content:center}
+  .stage-t{margin:0;font-size:14px;font-weight:800;color:var(--accent-ink)}
+  .stage-t::before{content:none}          /* h2 의 ■ 표시는 카드 제목에만 쓴다 */
+  .stage-head .hint{margin:0;font-size:12px;color:var(--accent-ink);opacity:.75}
+  .stage-head .btn{min-height:34px;padding:0 18px}
+
+  .row4, .row-in, .row-res, .row-calc{display:grid;gap:12px;margin-bottom:12px;
+    align-items:stretch}
+  .row4{grid-template-columns:repeat(4,minmax(0,1fr))}
+  /* 왼쪽 = 무엇으로 배웠나(한 장), 오른쪽 = 무엇을 맞히나(사진 5열). */
+  .row-in{grid-template-columns:minmax(0,.85fr) minmax(0,2.6fr);margin-bottom:0}
+  /* 학습 샘플은 한 장이라 칸 폭만큼 커져 혼자 줄 높이를 늘렸다.
+     옆 예측 격자(2줄)와 같은 높이로 잘라 맞춘다. */
+  #trainBox .ing-c{max-height:238px}
+  /* 왼쪽 = 결론과 부품별 근거, 오른쪽 = 프레임 그림.
+     두 칸을 같은 높이로 늘리지 않는다(align-items:start). 늘리면 짧은 쪽 카드가
+     남는 높이를 빈 자리로 떠안아, 사진 위아래 여백이 옆 카드와 달라졌다. */
+  /* 왼쪽 폭을 더 줄이면 아래 띠의 글이 두 줄로 접혀 오히려 칸이 길어진다. */
+  .row-res{grid-template-columns:minmax(430px,.95fr) minmax(0,2fr);align-items:stretch}
+  /* 식 → 그림 → 표. 어떻게 셈했는지를 먼저 말하고 그림과 숫자로 확인한다. */
+  .row-calc{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr) minmax(0,1fr) minmax(0,0.9fr);
+    margin-bottom:0}
+  /* 실행 로그: 채점 진행을 한 줄씩 콘솔처럼 */
+  .log-wrap{flex:1;min-height:0;position:relative}
+  .score-log{position:absolute;inset:0;overflow-y:auto;background:var(--surface-3);
+    border:1px solid var(--line);border-radius:var(--r-md);padding:8px 10px;
+    font-family:var(--mono);font-size:12px;line-height:1.65;color:var(--ink)}
+  .slog-line{white-space:pre-wrap;word-break:break-all}
+  .slog-line.ok{color:var(--success-ink);font-weight:700}
+  .slog-line.err{color:var(--danger-ink);font-weight:700}
+  .log-wait{color:var(--muted);font-size:13px;min-height:320px;display:flex;align-items:center;justify-content:center}
+  .row4 > .card, .row-in > .card, .row-res > .card, .row-calc > .card{margin-bottom:0}
+
+  /* 사진 위아래 여백. 두 사진 카드에 같은 값을 준다 - 예측할 데이터와 예측 결과는
+     같은 프레임을 채점 전 · 후로 나눠 본 것이라, 나란히 놓았을 때 어긋나면 눈에 띈다.
+     남는 높이가 생기면 아래로만 몰지 않고 위아래로 똑같이 나눈다. */
+  .row-in > .card, .row-res > .card{display:flex;flex-direction:column}
+  #inputBox, #frames{padding:4px 0 5px}
+  #trainBox, #inputBox{flex:1;min-height:0;display:flex;flex-direction:column;
+    justify-content:center}
+  #frames{min-height:0;align-content:start;max-height:540px;overflow-y:auto}
+
+  /* 폭이 좁아지면 한 줄에 하나씩. 심사장 화면은 넓지만 노트북에서도 열어 본다. */
+  @media (max-width:1500px){.row4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media (max-width:1240px){
+    .row-in, .row-res, .row-calc{grid-template-columns:minmax(0,1fr)}
+  }
+
+  /* 부품 보기 - 화면 하단 고정 플로팅 박스. 스크롤과 무관하게 항상 보여 바로 부품 전환 */
+  .pickbar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:50;
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;
+    max-width:calc(100vw - 24px);
+    background:var(--surface);border:1px solid var(--line-strong);border-radius:14px;
+    box-shadow:0 8px 28px rgba(15,23,42,.18);padding:9px 16px}
+  .pickbar .pl{font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap}
+  .plist{display:flex;flex-direction:row;gap:6px;flex-wrap:wrap}
+  .plist button{min-height:30px;padding:0 12px;border-radius:var(--r-sm);
+    border:1px solid var(--line-strong);background:var(--surface);
+    font:inherit;font-size:12px;font-weight:700;color:var(--muted)}
+  .plist button:hover{border-color:var(--accent-line);background:var(--accent-bg);
+    color:var(--accent-ink)}
+  .plist button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+
+  /* 산출 과정. 정밀도·재현율이 나란히 AP 로 모이고, AP 가 mAP 가 된다. */
+  .flow{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
+  .flow .fb{background:var(--surface-2);border:1px solid var(--line-strong);
+    border-radius:var(--r-sm);padding:9px 10px;text-align:center;
+    font-family:var(--mono);font-size:12px;color:var(--ink-strong)}
+  .flow .fb .t{display:block;font-family:var(--font);font-size:13px;font-weight:800;
+    color:var(--ink-strong)}
+  .flow .fb .f{display:block;font-size:12px;color:var(--ink);margin-bottom:5px}
+  .flow .fb b{color:var(--accent-ink);font-size:13px}
+  .flow .wide{grid-column:1/-1}
+  /* 위(누적 결과)·아래(AP 산출)를 가르는 소제목·구분선·안내문 */
+  .flow .flow-sec{grid-column:1/-1;font-size:12px;font-weight:700;color:var(--muted);margin-top:4px}
+  .flow .flow-div{grid-column:1/-1;height:1px;background:var(--line);margin:8px 0 4px}
+  .flow .flow-note{grid-column:1/-1;margin:0;font-size:11px;color:var(--faint);line-height:1.5}
+  .flow .ap-calc{display:block;font-size:12.5px;line-height:1.85;color:var(--ink-strong);margin-top:2px}
+  .flow .ap-calc b{color:var(--accent-ink);font-size:13px}
+  .flow .ap-fpnote{display:block;margin-top:4px;font-size:10px;color:var(--warn);font-family:var(--font);white-space:normal;line-height:1.4}
+  /* 누적 계열: 전체 정답 수를 넘는 여분 검출 줄은 살짝 음영(AP 합산에 안 쓰임) */
+  #tblSeries tbody tr.ser-unused td{background:var(--surface-3);color:var(--muted)}
+  /* 예측할 데이터 GT 박스 표시 토글 */
+  .gt-toggle{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;font-weight:600}
+  .gt-toggle input{cursor:pointer;margin:0}
+  /* 두 갈래가 하나로 모이는 표시. 선을 그림이 아니라 테두리로 그려 눈금이 흐려지지 않는다. */
+  .flow .join, .flow .arw{grid-column:1/-1;position:relative}
+  .flow .join{height:28px}
+  .flow .arw{height:22px}
+  .flow .join .v{position:absolute;top:0;height:13px;border-left:1.5px solid var(--accent-line)}
+  .flow .join .h{position:absolute;left:25%;right:25%;top:13px;
+    border-top:1.5px solid var(--accent-line)}
+  .flow .join .d, .flow .arw .d{position:absolute;left:50%;height:9px;
+    border-left:1.5px solid var(--accent-line)}
+  .flow .join .d{top:13px}
+  .flow .arw .d{top:0}
+  .flow .join::after, .flow .arw::after{content:"";position:absolute;left:50%;
+    transform:translateX(-50%);border-left:4px solid transparent;
+    border-right:4px solid transparent;border-top:5px solid var(--accent-line)}
+  .flow .join::after{top:22px}
+  .flow .arw::after{top:9px}
   .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px}
+  /* 입력 데이터는 항목이 8개다. 한 줄에 한 쌍씩 쌓으면 카드가 세로로 길어져
+     폭을 써서 두 쌍씩 놓는다(좁아지면 자동으로 한 쌍씩). */
+  .kv2{grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr);gap:4px 10px}
+  @media (max-width:1100px){.kv2{grid-template-columns:auto minmax(0,1fr)}}
   .kv div:nth-child(odd){color:var(--muted)}
-  .kv div:nth-child(even){font-family:var(--mono);color:var(--ink-strong);font-weight:700}
-  .calc{font-family:var(--mono);font-size:12px;background:var(--surface-2);border:1px solid var(--line);
-        border-radius:var(--r-md);padding:10px 12px;white-space:pre-wrap;color:var(--ink)}
-  .frames{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px}
-  .fr{border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;background:#0f172a}
-  .fr img{width:100%;display:block}
-  .fr{cursor:zoom-in}
-  .fr.big{grid-column:1/-1;cursor:zoom-out}
-  .fr .cap{background:var(--surface);padding:5px 8px;font-size:11px;color:var(--muted);
-           display:flex;justify-content:space-between;gap:6px}
+  .kv div:nth-child(even){font-variant-numeric:tabular-nums;color:var(--ink-strong);font-weight:700}
+  /* 그래프가 카드 왼쪽 벽에 붙어 오른쪽이 비어 보였다. */
+  /* 옆 카드(누적 계열)와 높이가 같이 늘어나므로, 남는 높이를 그림이 받는다.
+     그러지 않으면 그림 아래가 40px 넘게 비어 두 카드가 짝이 안 맞아 보였다. */
+  .card:has(#prBox){display:flex;flex-direction:column}
+  #prBox{display:flex;justify-content:center;align-items:center;padding:8px 16px;
+    flex:1;min-height:0}
+  #prBox svg{width:100%;max-width:560px;height:auto;max-height:100%}
+  /* 카드 제목 아래 간격을 h2 와 똑같이 둔다(10px). 옆 카드와 사진 시작 높이를 맞추려면
+     제목 줄의 아래 여백부터 같아야 한다. */
+  .in-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .in-head h2{margin:0}
+  /* 2행 5열. 옆으로 밀어 보는 방식은 뒤쪽 5장이 안 보여 심사에서 넘기게 됐다. */
+  .ing-r{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+  .ing-r.one{grid-template-columns:minmax(0,1fr)}
+
+  @media (max-width:900px){.ing-r{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  .ing-c{margin:0;aspect-ratio:16/9;border:1px solid var(--line);
+    border-radius:var(--r-md);overflow:hidden;background:var(--surface-2);cursor:zoom-in;
+    position:relative}
+  /* 세로·가로 영상이 섞여 있어 비율을 그대로 두면 칸 높이가 들쭉날쭉해진다.
+     칸을 고정하고 사진을 채워 자른다(눌러 크게 보면 원본 비율로 보인다). */
+  .ing-c img{width:100%;height:100%;display:block;object-fit:cover}
+  .ing-c:hover{border-color:var(--accent)}
+  /* 크게 보기는 줄 안에서 키우지 않고 화면 위에 겹쳐 띄운다. */
+  .lb{position:fixed;inset:0;z-index:60;background:rgba(15,23,42,.86);display:flex;
+    align-items:center;justify-content:center;padding:24px;cursor:zoom-out}
+  .lb img{max-width:96vw;max-height:88vh;border-radius:var(--r-md);background:#0f172a}
+  .lb .lb-cap{position:absolute;left:0;right:0;bottom:10px;text-align:center;
+    color:#94a3b8;font-size:12px;font-variant-numeric:tabular-nums}
+  /* 표를 카드 폭에 꽉 채운다. 폭을 내용에 맞추던 것을 되돌렸다 - 오른쪽 절반이
+     빈 공간으로 남아 좌우 균형이 깨졌다. */
+  #tblParts, #tblSeries{width:100%}
+  #tblParts th, #tblParts td,
+  #tblSeries th, #tblSeries td{white-space:nowrap;text-align:center}
+  /* 부품별 결과는 7줄. 줄마다 조금씩만 줄여도 20px 가까이 남아, 그만큼 아래 띠가
+     커져 옆 그림 칸과 아래가 정확히 맞는다. */
+  #tblParts th, #tblParts td{padding:3px 8px}
+  #tblParts th:first-child, #tblParts td:first-child,
+  #tblSeries th:first-child, #tblSeries td:first-child{text-align:left}
+  /* 심사 화면이라 줄글 대신 항목:내용 으로 둔다. 절 제목은 ■ 로 시작한다. */
+  .sec{margin:0 0 10px;font-size:15px;font-weight:800;color:var(--ink-strong)}
+  /* 카드 제목은 h2, 카드 안 절 제목은 .sec 인데 표시가 달라 보였다. 같이 붙인다. */
+  h2::before,.sec::before{content:"■";margin-right:6px;color:var(--accent)}
+  .kv + .sec{margin-top:24px}
+  .kv{align-items:start}
+  .kv div:nth-child(even){font-weight:600;line-height:1.6}
+  /* 합격 기준 한 줄만 눈에 먼저 들어오게 한다. */
+  .kv .hl{padding:1px 5px;border-radius:var(--r-sm);
+    background:var(--accent-bg);color:var(--accent-ink)}
+  .intro b{color:var(--ink-strong)}
+  .intro .n{font-family:var(--mono);font-weight:700;color:var(--ink-strong)}
+  /* 입력 데이터와 같은 5열 2행. 폭에 따라 칸 수가 들쭉날쭉하면 두 격자가 안 맞는다. */
+  /* 예측 결과도 입력 데이터와 같은 칸·같은 확대 방식(눌러서 겹쳐 띄우기)을 쓴다.
+     예전에는 자리에서 늘어나 옆 칸까지 밀었고, 비율을 그대로 둬서 칸 높이가 들쭉날쭉했다.
+     프레임별 GT·TP·FP·FN 은 칸 아래 띠로 얹는다. */
+  /* 프레임별 수치를 그림 위에 얹으면 부품 아래쪽을 가린다. 칸 밖 아래에 따로 적는다.
+     칸 자체가 비율 박스였으므로, 이 경우는 그림에 비율을 주고 칸은 풀어 준다. */
+  .ing-c.labeled{aspect-ratio:auto;height:auto;align-self:start;
+    overflow:visible;border:0;background:none;border-radius:0}
+  .ing-c.labeled img{height:auto;aspect-ratio:16/9;object-fit:cover;
+    border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2)}
+  .ing-c.labeled:hover img{border-color:var(--accent)}
+  .ing-c.labeled:focus-visible{outline-offset:2px}
+  .ing-c.labeled figcaption{color:var(--muted);font-size:11px;padding:5px 2px 0;
+    text-align:center;font-variant-numeric:tabular-nums}
   .legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:2px 0 10px}
   .legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:5px}
+
+  /* ================= 채점 전 데이터 줄 ================= */
+  .row4.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+  @media (max-width:1500px){.row4.three{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  /* 줄 높이는 오른쪽(예측할 데이터 두 줄)이 정한다. 사진은 16:9 그대로 두어
+     아래 예측 결과 칸과 같은 비율로 잘린다 - 같은 프레임을 채점 전 · 후로 보는 것이라
+     비율이 어긋나면 나란히 놓았을 때 눈에 띈다. */
+  #inputBox{justify-content:flex-start}
+  /* 학습 사진은 한 장뿐이라 비율대로 두면 옆 격자(2줄)보다 짧아 아래가 뜬다.
+     칸을 꽉 채워 두 카드의 아래를 맞춘다(눌러 크게 보면 원본 비율로 보인다). */
+  #trainBox{justify-content:stretch}
+  #trainBox .ing-r{flex:1;min-height:0}
+  #trainBox .ing-c{aspect-ratio:auto;height:100%;max-height:none;min-height:140px}
+  @media (max-width:1240px){
+    #trainBox .ing-c{aspect-ratio:16/9;height:auto;max-height:238px}
+  }
+  /* ============ 모바일(폰, <=640px) 반응형 ============ */
+  @media (max-width:640px){
+    body{font-size:13px}
+    header{padding:8px 12px;gap:8px}
+    h1{font-size:15px;white-space:normal;line-height:1.3}            /* 긴 제목 줄바꿈 */
+    main{padding:10px 12px 78px}
+    .card{padding:10px 12px;margin-bottom:12px}
+    .stage{margin-bottom:14px}
+    .stage-head{flex-wrap:wrap;gap:8px;padding:7px 10px}             /* 제목/버튼 줄바꿈 */
+    .stage-t{font-size:13px}
+    .stage-head .btn{min-height:36px}
+    /* 측정값 판정 푸터: 가로배치 -> 세로 스택 */
+    .resfoot{flex-direction:column;align-items:stretch;gap:10px}
+    .rf-score{border-left:0;border-top:1px solid var(--line-strong);
+      padding:10px 0 0;justify-content:flex-end}
+    .rf-val{font-size:34px}
+    /* 표: 폰트·여백 축소(넘치면 .scroll 안에서 가로 스크롤) */
+    th,td{padding:5px 6px;font-size:12px}
+    /* 이미지 격자 2열, 산출 흐름 1열 */
+    .ing-r{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .flow{grid-template-columns:1fr}
+    .flow .fb .f{font-size:9px}
+    /* PR 곡선이 카드 폭에 맞게 */
+    #prBox svg{max-width:100%}
+  }
 </style>
 </head>
 <body>
 <header>
-  <h1>mAP 채점</h1>
-  <button class="btn primary" id="btnRun">채점 시작</button>
-  <select id="runSel" title="지난 채점" aria-label="지난 채점 기록"></select>
-  <span class="score" id="score"><span>mAP@0.5</span><b>-</b><span class="verdict"></span></span>
-  <span class="spacer"></span>
-  <span class="num" id="modelLabel" style="font-size:12px;color:var(--muted)"></span>
+  <h1>BELL412 헬기 정비 대상 객체(부품 5종) 인식</h1>
 </header>
 
 <main>
   <div class="msg" id="msg" role="status" aria-live="polite" hidden></div>
 
-  <div class="steps" id="steps"></div>
-
-  <div class="card">
-    <h2>부품별 결과</h2>
-    <div class="scroll" style="max-height:none">
-      <table id="tblParts">
-        <thead><tr>
-          <th data-sort="part">부품</th><th data-sort="n_images">GT 프레임</th>
-          <th data-sort="n_gt">GT 박스</th><th data-sort="det">검출</th>
-          <th data-sort="tp">TP</th><th data-sort="fp">FP</th><th data-sort="fn">FN</th>
-          <th data-sort="precision">정밀도</th><th data-sort="recall">재현율</th>
-          <th data-sort="ap" aria-sort="descending">AP@0.5</th>
-        </tr></thead>
-        <tbody></tbody>
-        <tfoot></tfoot>
-      </table>
+  <!-- ============ 채점 전 ============
+       무엇을 · 무엇으로 · 어떻게 재는지와, 실제로 들어가는 데이터까지.
+       여기까지가 채점 버튼을 누르기 전에 확인할 것이다. -->
+  <section class="stage">
+    <div class="stage-head">
+      <span class="no">1</span>
+      <h2 class="stage-t">채점 전 · 시험 조건과 입력 데이터</h2>
+      <span class="spacer"></span>
+      <button class="btn primary" id="btnRun">채점 시작</button>
+      <span class="run-spin" id="runSpin" hidden></span>
+      <span class="run-note" id="runNote"></span>
     </div>
-    <div class="legend" style="margin-top:8px">
-      TP·FP·FN·정밀도·재현율 = <b id="rcTxt">conf 0.70</b> 한 지점 · AP = conf 0.001 이상 전 구간 적분
-    </div>
-  </div>
 
-  <div class="tabs" id="tabs"></div>
-
-  <div id="detail" hidden>
-    <div class="grid2">
+    <div class="row4 three">
       <div class="card">
-        <h2>수치</h2>
-        <div class="kv" id="partKv"></div>
-        <div class="calc" id="partCalc" style="margin-top:10px"></div>
+        <h3 class="sec">시험 목적 및 기준</h3>
+        <div class="kv" id="kvPurpose"></div>
+      </div>
+      <div class="card">
+        <h3 class="sec">적용 모델 정보</h3>
+        <div class="kv" id="kvModel"></div>
+      </div>
+      <div class="card">
+        <h3 class="sec">평가 및 지표 산출 방식</h3>
+        <div class="kv" id="kvMethod"></div>
+      </div>
+    </div>
+
+    <!-- 무엇으로 배웠고(왼쪽) 무엇을 맞히나(오른쪽). 두 데이터가 다른 장면이라는 것
+         자체가 심사에서 확인할 내용이다(학습 = 판넬 위 단품, 예측 = 작업대 실촬).
+         카드를 나눠 둬야 "학습한 사진으로 채점했다" 로 읽히지 않는다. -->
+    <div class="row-in">
+      <div class="card">
+        <h2>학습데이터 샘플</h2>
+        <div id="trainBox"></div>
+      </div>
+      <div class="card">
+        <div class="in-head"><h2>예측할 데이터</h2><span class="spacer"></span>
+          <label class="gt-toggle"><input type="checkbox" id="inGtChk"> GT 박스</label></div>
+        <div id="inputBox"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 채점 후 ============
+       결론(측정값) → 근거(부품별 · 프레임) → 그 값이 나온 계산 순서다. -->
+  <section class="stage" id="stgAfter" hidden>
+    <div class="stage-head">
+      <span class="no">2</span>
+      <h2 class="stage-t">채점 후 · 측정 결과와 산출 근거</h2>
+    </div>
+
+    <div class="row-res" id="resRow">
+      <!-- 채점 시작하면 여기에 진행 로그가 한 줄씩 쌓인다. 결과는 아래 '부품별 결과'로 옮겼다. -->
+      <div class="card">
+        <h2>실행 로그</h2>
+        <div class="log-wrap"><div class="score-log" id="scoreLog"></div></div>
+      </div>
+      <div class="card">
+        <div class="in-head">
+          <h2>예측 결과</h2>
+          <span class="spacer"></span>
+          <span class="legend" style="margin:0">
+            <span><i style="background:#38bdf8"></i>정답(GT) 점선</span>
+            <span><i style="background:#19af3c"></i>TP 실선</span>
+            <span><i style="background:#ff3c00"></i>FP 실선</span>
+          </span>
+        </div>
+        <div class="ing-r" id="frames"></div>
+      </div>
+    </div>
+
+    <!-- 식 → 그림 → 표 순서. 어떻게 셈했는지를 먼저 말하고, 그 다음 그것을
+         그림과 숫자로 확인한다. 누적 계열의 재현율 · 정밀도 열이 곧 PR 곡선의
+         가로 · 세로라서 둘은 붙여 둔다. -->
+    <div class="row-calc" id="detail" hidden>
+      <div class="card">
+        <h2>부품별 결과</h2>
+        <div class="scroll" style="max-height:none">
+          <table id="tblParts">
+            <thead><tr>
+              <th data-sort="part">부품</th>
+              <th data-sort="tp">TP</th><th data-sort="fp">FP</th><th data-sort="fn">FN</th>
+              <th data-sort="precision">정밀도</th><th data-sort="recall">재현율</th>
+              <th data-sort="ap" aria-sort="descending">AP@0.5</th>
+            </tr></thead>
+            <tbody></tbody>
+            <tfoot></tfoot>
+          </table>
+        </div>
+        <div class="resfoot" id="resFoot"></div>
+      </div>
+      <div class="card">
+        <h2>산출 과정</h2>
+        <!-- 넷을 가로로 늘어놓으면 서로 무관한 네 개처럼 보인다. 실제로는
+             정밀도와 재현율이 나란히 AP 를 만들고, 그 AP 들이 mAP 가 된다.
+             정밀도에서 재현율이 나오는 것이 아니므로 둘 사이에 화살표를 두지 않는다. -->
+        <div class="flow" id="partCalc"></div>
       </div>
       <div class="card">
         <h2>PR 곡선 · AP = 곡선 아래 면적</h2>
         <div id="prBox"></div>
-        <div class="legend"><span>가로 재현율 · 세로 정밀도</span></div>
+      </div>
+      <div class="card">
+        <h2>누적 계열 <span class="num" id="serTitle"
+             style="color:var(--muted);font-weight:400"></span></h2>
+        <div class="scroll" style="max-height:none"><table id="tblSeries">
+          <thead></thead><tbody></tbody></table></div>
       </div>
     </div>
-
-    <div class="card">
-      <h2>프레임 <span class="num" id="frTitle" style="color:var(--muted);font-weight:400"></span></h2>
-      <div class="legend">
-        <span><i style="background:#00c800"></i>GT (실선)</span>
-        <span><i style="background:#008cff"></i>TP (점선)</span>
-        <span><i style="background:#ff3c00"></i>FP (점선)</span>
-        <span>숫자 = conf · IoU</span>
-      </div>
-      <div class="frames" id="frames"></div>
-    </div>
-    <div class="card">
-      <h2>누적 계열 <span class="num" id="serTitle" style="color:var(--muted);font-weight:400"></span></h2>
-      <div class="legend">한 줄 = 검출 1건 · conf 내림차순 누적 · AP = Σ(재현율 증가분 × 정밀도)</div>
-      <div class="scroll"><table id="tblSeries"><thead></thead><tbody></tbody></table></div>
-    </div>
-
-  </div>
+  </section>
 </main>
+
+<!-- 부품 보기: 화면 하단 고정 플로팅. position:fixed 라 스크롤과 무관하게 항상 보여
+     어디서든 바로 부품을 바꾼다(예전엔 머리줄에 있었음). -->
+<div class="pickbar">
+  <span class="pl">부품 보기</span>
+  <div class="plist" id="partPick" role="group" aria-label="부품 보기 선택"></div>
+</div>
 
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
+
+
 const api = async (u, o) => {
   const r = await fetch(u, o);
   return r.json().catch(() => ({ error: "응답을 읽지 못했습니다(HTTP " + r.status + ")" }));
 };
 const post = (u, b) => api(u, { method: "POST", headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify(b) });
+
+// 눌러서 쓰는 요소를 키보드로도 쓸 수 있게 한다(Tab · Enter · Space).
+// 표 줄·정렬 머리·사진을 onclick 만으로 두면 마우스 없이는 아무것도 못 한다.
+// 부품 보기 목록. 세로로 쌓아 왼쪽 칸에 둔다 - 가로 버튼 줄로 두면 같은 것을
+// 위(입력)와 아래(결과) 두 군데에 놓게 돼 무엇을 고른 것인지 헷갈렸다.
+function partList(el, parts, cur, onPick) {
+  // 지금 고른 것에 on 을 준다. aria-pressed 로 눌린 상태를 읽어 주기까지 한다.
+  el.innerHTML = parts.map((v) =>
+    '<button type="button" class="' + (v === cur ? "on" : "") + '" data-part="' + v +
+    '" aria-pressed="' + (v === cur) + '">' + v + "</button>").join("");
+  el.querySelectorAll("button").forEach((b) => { b.onclick = () => onPick(b.dataset.part); });
+}
+
+
+function listMark(el, cur) {
+  el.querySelectorAll("button").forEach((b) => {
+    b.classList.toggle("on", b.dataset.part === cur);
+    b.setAttribute("aria-pressed", b.dataset.part === cur);
+  });
+}
+
+
+// 부품을 고르는 창구는 하나다. 목록을 누르든 부품별 결과 표의 줄을 누르든
+// 여기로 들어와, 위(학습·예측할 데이터)와 아래(예측 결과·PR·누적 계열)가 함께 바뀐다.
+async function choose(part) {
+  if (!part) { return; }
+  await renderInput(part);
+  if (S.res) { await pick(part); }
+}
+
+
+function clickable(el, fn, label) {
+  el.tabIndex = 0;
+  el.setAttribute("role", "button");
+  if (label) { el.setAttribute("aria-label", label); }
+  el.onclick = fn;
+  el.onkeydown = (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fn(); }
+  };
+}
+
+function logScore(line, kind) {
+  const el = $("scoreLog");
+  if (!el) { return; }
+  const p = document.createElement("div");
+  p.className = "slog-line" + (kind ? " " + kind : "");
+  const d = new Date(), z = (n) => String(n).padStart(2, "0");
+  const ts = "" + d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + "_" + z(d.getHours()) + z(d.getMinutes()) + z(d.getSeconds());
+  p.textContent = ts + "  " + line;
+  el.appendChild(p);
+  el.scrollTop = el.scrollHeight;                 // 항상 맨 아래로
+}
 function say(t) {
   const m = $("msg");
   if (!t) { m.hidden = true; return; }
@@ -217,91 +561,211 @@ const f2 = (v) => (v == null ? "-" : Number(v).toFixed(2));
 const f3 = (v) => (v == null ? "-" : Number(v).toFixed(3));
 const pct = (v) => (v == null ? "-" : (Number(v) * 100).toFixed(1) + "%");
 
-const S = { sortKey: "ap", sortAsc: false, res: null, part: null, series: null, det: null, job: null };
+const S = { sortKey: "ap", sortAsc: false, res: null, part: null, series: null,
+            det: null, job: null, inputs: null,     // inputs = 입력 목록 캐시
+            inPart: "gear_assembly" };              // 데모: 처음 펼쳐 둘 부품
 
 /* ---------------- 단계 카드 ---------------- */
-function steps(res, prog) {
-  const cls = res ? res.classes || [] : [];
-  const nImg = cls.reduce((a, c) => a + (c.n_images || 0), 0);
-  const nGt = cls.reduce((a, c) => a + (c.n_gt || 0), 0);
-  const nDet = cls.reduce((a, c) => a + (c.tp || 0) + (c.fp || 0), 0);
-  const tp = cls.reduce((a, c) => a + (c.tp || 0), 0);
-  const fp = cls.reduce((a, c) => a + (c.fp || 0), 0);
-  const fn = cls.reduce((a, c) => a + (c.fn || 0), 0);
-  const items = [
-    ["①", "GT", res ? nImg + "장 · 박스 " + nGt + "개" : (prog || "-"),
-     "라벨 없는 프레임 제외"],
-    ["②", "재예측", res ? "부품 " + cls.length + "종 · conf 0.001" : (prog || "-"),
-     "매번 새로 추론"],
-    ["③", "IoU " + (res ? res.iou : "0.5"),
-     res ? "TP " + tp + " · FP " + fp + " · FN " + fn : "-",
-     "conf 높은 검출부터 · GT 하나는 한 번만"],
-    ["④", "AP", res ? cls.map((c) => c.part.slice(0, 8) + " " + f3(c.ap)).join("\n") : "-",
-     "all-point interpolation (COCO)"],
-    ["⑤", "판정", res ? res.map50_pct + " / " + res.pass_threshold +
-                       (res.verdict === "pass" ? " 합격" : " 불합격") : "-",
-     "mAP = AP 산술평균"]
-  ];
-  $("steps").innerHTML = items.map((it, i) => {
-    const on = res ? "done" : (prog && i < 2 ? "on" : "");
-    return '<div class="step ' + on + '"><div class="no">' + it[0] + "</div><div class=\"ti\">" +
-           it[1] + '</div><div class="va">' + it[2] + '</div><div class="fo">' + it[3] +
-           "</div></div>";
-  }).join("");
+// 입력 데이터 = 채점에 들어가는 프레임 그 자체. 부품을 골라 한 줄로 크게 보고
+// 옆으로 밀어 넘긴다. 정답 박스는 그리지 않는다(입력을 보는 자리라서).
+// 평가 개요. 수치는 서비스 모델 meta.json 과 현재 정답 파일에서 읽는다.
+// 코드에 적어 두면 모델이나 정답이 바뀔 때 문구만 낡아 심사에서 어긋난다.
+async function renderIntro() {
+  const d = await api("/api/gt/intro");
+  S.intro = d;                       // 부품별 결과 표 아래 띠에서 프레임 · GT 수를 쓴다
+  const box = $("kvPurpose");
+  if (!box) { return; }
+  if (d.error) { box.innerHTML = "<div>상태</div><div>" + d.error + "</div>"; return; }
+  const n = (v) => (v || 0).toLocaleString();
+  const kv = (id, rows) => {
+    const el = $(id);
+    if (el) {
+      el.innerHTML = rows.map((r) => "<div>" + r[0] + "</div><div>" + r[1] + "</div>").join("");
+    }
+  };
+  // 무엇을 · 어느 기준으로 · 무엇을 넣어 재는지를 한 카드에 모은다.
+  // 검증셋 설명만으로는 카드 하나를 채우지 못해, 목적·기준 아래 한 줄로 붙였다.
+  kv("kvPurpose", [
+    ["평가 항목", "BELL412 헬기 정비 대상 객체(부품 " + n(d.n_parts) + "종) 인식 정확도"],
+    ["합격 기준", '<span class="hl">mAP@0.5 &ge; ' + n(d.pass_threshold) + "</span>" +
+                  " (부품 " + n(d.n_parts) + "종 AP 의 산술 평균)"],
+    ["데이터 구성", "모델 학습에 사용되지 않은 테스트 데이터셋 (프레임 " +
+                    n(d.n_frames) + "장)"]
+  ]);
+  kv("kvModel", [
+    ["모델명", "YOLOv11m (" + d.base_model + ")"],
+    ["학습 데이터", "총 " + n(d.n_images) + "장" +
+                    (d.n_synth ? " (실제 촬영 " + n(d.n_real) + "장 / 실사 배경 합성 " +
+                                 n(d.n_synth) + "장 / 배경 " + n(d.n_bg) + "장)" : "")],
+    ["학습 상태", "부품 " + n(d.n_classes) + "종 대상 " + n(d.epochs) + " Epoch 학습 완료"]
+  ]);
+  // 입력 데이터(검증셋) 카드는 없앴다. 데이터 구성은 위 목적·기준 카드로 옮겼고,
+  // 대상 부품 5종은 머리줄의 부품 보기 목록과 부품별 결과 표에 이미 있다.
+  kv("kvMethod", [
+    ["검출 기준", "예측 박스와 정답(GT) 박스를 IoU " + d.iou +
+                  " 기준으로 매칭하여 TP, FP, FN 산출"],
+    ["지표 산출", "신뢰도 내림차순에 따른 PR(Precision-Recall) 곡선 하단 면적으로 AP 계산"],
+    // 보고 임계값. 예전에는 부품별 결과 표 아래에 적었는데, 그 자리는 한 줄뿐이라
+    // "어디서 틀렸나" 에 내줬다. 조건은 조건끼리 이 카드에 모은다.
+    ["집계 대상", "PR 곡선을 만든 검출 전부에서 TP · FP 집계 (별도 신뢰도 임계 없음)"]
+  ]);
+}
+
+// 크게 보기. 줄 안에서 키우면 줄 높이가 늘어나 옆 칸이 빈 칸처럼 보였다.
+function lightbox(part, name, src, extra, cap) {
+  const old = document.querySelector(".lb");
+  if (old) { old.remove(); }
+  const back = document.activeElement;             // 닫은 뒤 초점을 되돌린다
+  const el = document.createElement("div");
+  el.className = "lb";
+  el.setAttribute("role", "dialog");
+  el.setAttribute("aria-modal", "true");
+  el.setAttribute("aria-label", part + " " + name);
+  el.tabIndex = -1;
+  el.innerHTML = '<img src="' + (src || "/api/gt/image") + "?part=" + encodeURIComponent(part) + "&name=" + encodeURIComponent(name) + "&w=1600" + (extra || "") + '" alt="' + name + '">' +
+                 (cap ? '<div class="lb-cap">' + cap + "</div>" : "");
+  const close = () => {
+    el.remove();
+    document.removeEventListener("keydown", onKey);
+    if (back && back.focus) { back.focus(); }
+  };
+  const onKey = (e) => { if (e.key === "Escape") { close(); } };
+  el.onclick = close;
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(el);
+  el.focus();
+}
+
+async function renderInput(keep) {
+  const box = $("inputBox"), sel = $("partPick");
+  if (!box || !sel) { return; }
+  if (!S.inputs) {
+    const d = await api("/api/gt/inputs");
+    if (d.error) { box.innerHTML = '<span class="muted">' + d.error + "</span>"; return; }
+    S.inputs = d.parts || [];
+  }
+  const ps = S.inputs;
+  if (!ps.length) {
+    sel.innerHTML = "";
+    box.innerHTML = '<span class="muted">정답이 없습니다. GT 만들기에서 박스를 그린 뒤 ' +
+                    '내보내기를 누르세요.</span>';
+    return;
+  }
+  const want = keep || S.inPart || ps[0].part;
+  const cur = ps.find((p) => p.part === want);
+  // 클릭으로 특정 부품(keep)을 지정했는데 입력 목록에 없더라도 다른 부품(ps[0])으로 갈아타지
+  // 않는다 - 학습데이터·예측할데이터가 예측결과(pick 은 part 를 그대로 씀)와 어긋나던 원인.
+  const inPart = cur ? cur.part : want;
+  S.inPart = inPart;
+  partList(sel, ps.map((p) => p.part), inPart, choose);
+  if (!cur) {
+    box.innerHTML = '<span class="muted">이 부품의 예측 데이터가 없습니다.</span>';
+    renderTrain(inPart);
+    return;
+  }
+  box.innerHTML = '<div class="ing-r">' + cur.items.map((it) =>
+    '<figure class="ing-c" data-part="' + cur.part + '" data-name="' + it.name +
+    '" title="' + it.name + '">' +
+    '<img loading="lazy" src="' + "/api/gt/image?part=" + encodeURIComponent(cur.part) + "&name=" + encodeURIComponent(it.name) + "&box=" + (S.inGt ? 1 : 0) + '" alt="' + it.name + '">' +
+    "</figure>").join("") + "</div>";
+  box.querySelectorAll(".ing-c").forEach((f) => {
+    clickable(f, () => lightbox(f.dataset.part, f.dataset.name, "", "&box=" + (S.inGt ? 1 : 0)),
+              f.dataset.part + " " + f.dataset.name + " 크게 보기");
+  });
+  renderTrain(cur.part);
+}
+
+
+async function renderTrain(part) {
+  const box = $("trainBox");
+  if (!box) { return; }
+  if (!S.trains) {
+    const d = await api("/api/gt/train_inputs?k=1");
+    if (d.error) { box.innerHTML = '<span class="muted">' + d.error + "</span>"; return; }
+    S.trains = d.parts || [];
+  }
+  const cur = S.trains.find((p) => p.part === part);
+  if (!cur) {
+    box.innerHTML = '<span class="muted">이 부품의 학습 라벨 데이터가 없습니다.</span>';
+    return;
+  }
+  // 박스는 그리지 않는다. 여기는 "무엇으로 배웠나" 를 보이는 자리이고,
+  // 라벨 박스를 겹쳐 보는 것은 아래 예측 결과가 맡는다.
+  box.innerHTML = '<div class="ing-r one">' + cur.items.map((it) =>
+    '<figure class="ing-c" data-name="' + it.name + '" title="' + it.name + '">' +
+    '<img loading="lazy" src="' + "/api/gt/train_image?part=" + encodeURIComponent(part) + "&name=" + encodeURIComponent(it.name) + "&box=0" + '" alt="' + it.name + '">' +
+    "</figure>").join("") + "</div>";
+  box.querySelectorAll(".ing-c").forEach((f) => {
+    // 크게 볼 때는 자르지 않은 원본 전체를 본다(판넬·주변까지 확인하려고)
+    clickable(f, () => lightbox(part, f.dataset.name, "/api/gt/train_image", "&crop=0&box=0"),
+              part + " " + f.dataset.name + " 크게 보기");
+  });
 }
 
 /* ---------------- 결과 표·탭 ---------------- */
 function renderResult(res) {
   S.res = res;
-  const sc = $("score");
-  sc.className = "score " + (res.verdict === "pass" ? "pass" : "fail");
-  sc.innerHTML = "<span>mAP@0.5</span><b>" + res.map50_pct + "</b>" +
-                 '<span class="verdict">' + (res.verdict === "pass" ? "합격" : "불합격") +
-                 " (기준 " + res.pass_threshold + ")</span>";
-  $("modelLabel").textContent = res.model_label || "";
-  $("rcTxt").textContent = "conf " + f2(res.report_conf);
-  steps(res);
+  // 채점 뒤에야 두 번째 단계가 열린다. 채점 전에는 조건과 입력 데이터만 보인다.
+  const st = $("stgAfter");
+  if (st) { st.hidden = false; }
+  // 표 아래 띠. 합격·불합격은 우리가 적지 않는다 - 그 판단은 심사위원의 몫이고,
+  // 화면은 측정값(합계 줄)과 그것을 잰 조건만 제시한다(사실 진술).
+  const foot = $("resFoot");
+  if (foot) {
+    const it = S.intro || {};
+    const wrong = ["fp", "fn"].reduce((a, k) => a.concat(
+      (res.classes || []).filter((c) => (c[k] || 0) > 0)
+        .map((c) => k.toUpperCase() + " " + c[k] + " (" + c.part + ")")), []);
+    foot.className = "resfoot " +
+      (res.map50_pct >= res.pass_threshold ? "pass" : "fail");
+    // 조건을 왼쪽에, 측정값을 오른쪽 끝에 둔다. 위 표의 마지막 열이 AP@0.5 이므로
+    // 그 아래 같은 자리에 mAP 측정값이 놓여, 열을 따라 눈이 그대로 내려온다.
+    foot.innerHTML =
+      '<div class="rf-kv">' +
+      '<div class="rf-k">기준</div><div class="rf-v">mAP@0.5 &ge; ' + res.pass_threshold + '</div>' +
+      '<div class="rf-k">틀린 것</div>' +
+      (wrong.length ? wrong.map((w) => '<div class="rf-v">' + w + '</div>').join("")
+                    : '<div class="rf-v">없음</div>') + '</div>' +
+      '<div class="rf-score">' +
+      '<span class="rf-lab">기준</span>' +
+      '<span class="rf-baseval">' + res.pass_threshold + '</span>' +
+      '<span class="rf-lab" style="margin-left:8px">결과</span>' +
+      '<span class="rf-val">' + res.map50_pct + "</span></div>";
+    foot.setAttribute("role", "status");
+  }
+
 
   const tb = $("tblParts").querySelector("tbody");
   tb.innerHTML = (res.classes || []).map((c) =>
     '<tr data-part="' + c.part + '"><td>' + c.part + (c.in_model ? "" : " (모델에 없음)") +
-    '</td><td class="num">' + c.n_images + '</td><td class="num">' + c.n_gt +
-    '</td><td class="num">' + (c.tp + c.fp) + '</td><td class="num ok">' + c.tp +
+    '</td><td class="num ok">' + c.tp +
     '</td><td class="num no">' + c.fp + '</td><td class="num no">' + c.fn +
-    '</td><td class="num">' + pct(c.precision) + '</td><td class="num">' + pct(c.recall) +
+    '</td><td class="num">' + f3(c.precision) + '</td><td class="num">' + f3(c.recall) +
     '</td><td class="num"><b>' + f3(c.ap) + "</b></td></tr>").join("");
   const n = (res.classes || []).length || 1;
   const sum = (k) => (res.classes || []).reduce((a, c) => a + (c[k] || 0), 0);
   $("tblParts").querySelector("tfoot").innerHTML =
-    '<tr><td><b>합계 · mAP</b></td><td class="num">' + sum("n_images") +
-    '</td><td class="num">' + sum("n_gt") + '</td><td class="num">' + (sum("tp") + sum("fp")) +
-    '</td><td class="num">' + sum("tp") + '</td><td class="num">' + sum("fp") +
+    '<tr><td><b>합계 · mAP</b></td>' +
+    '<td class="num">' + sum("tp") + '</td><td class="num">' + sum("fp") +
     '</td><td class="num">' + sum("fn") + '</td><td></td><td></td><td class="num"><b>' +
     f3(res.map50) + "</b></td></tr>";
   tb.querySelectorAll("tr").forEach((tr) => {
-    tr.onclick = () => pick(tr.dataset.part);
+    clickable(tr, () => choose(tr.dataset.part), tr.dataset.part + " 상세 보기");
+    tr.setAttribute("role", "row");
   });
 
-  $("tabs").innerHTML = (res.classes || []).map((c) =>
-    '<button data-part="' + c.part + '">' + c.part +
-    '<span class="ap">' + f3(c.ap) + "</span></button>").join("");
-  $("tabs").querySelectorAll("button").forEach((b) => {
-    b.onclick = () => pick(b.dataset.part);
-    b.setAttribute("aria-pressed", b.dataset.part === S.part ? "true" : "false");
-  });
   // 부품 표 정렬. 어느 부품이 점수를 끌어내리는지 바로 보려면 정렬이 필요하다.
   $("tblParts").querySelectorAll("thead th[data-sort]").forEach((th) => {
-    th.onclick = () => sortBy(th.dataset.sort);
+    clickable(th, () => sortBy(th.dataset.sort), th.textContent.trim() + " 기준 정렬");
+    th.setAttribute("role", "columnheader");     // 표 머리 역할은 유지한다
   });
   $("tblParts").querySelectorAll("thead th[data-sort]").forEach((th) => {
     if (th.dataset.sort === S.sortKey) {
       th.setAttribute("aria-sort", S.sortAsc ? "ascending" : "descending");
     } else { th.removeAttribute("aria-sort"); }
   });
-  const runs = res.runs || [];
-  $("runSel").innerHTML = runs.map((r) =>
-    '<option value="' + r + '"' + (r === res.run ? " selected" : "") + ">" + r + "</option>").join("");
-  if ((res.classes || []).length) { pick(res.part || res.classes[0].part); }
+  // choose 로 부른다(pick 만 하면 결과쪽만 바뀌고 학습·예측할·칩 은 초기 부품에 남아 어긋났다).
+  if ((res.classes || []).length) { choose(res.part || res.classes[0].part); }
 }
 
 function sortBy(key) {
@@ -321,60 +785,99 @@ async function pick(part) {
   if (!part) { return; }
   S.part = part;
   $("detail").hidden = false;
-  $("tabs").querySelectorAll("button").forEach((b) => {
-    b.className = b.dataset.part === part ? "on" : "";
-  });
+  listMark($("partPick"), part);                     // 표에서 골라도 목록을 맞춘다
   $("tblParts").querySelectorAll("tbody tr").forEach((tr) => {
     tr.className = tr.dataset.part === part ? "sel" : "";
   });
   const c = (S.res.classes || []).find((x) => x.part === part) || {};
 
-  $("partKv").innerHTML = [
-    ["GT 프레임 / 박스", c.n_images + "장 / " + c.n_gt + "개"],
-    ["검출 (conf " + f2(S.res.report_conf) + ")", (c.tp + c.fp) + "건"],
-    ["TP / FP / FN", c.tp + " / " + c.fp + " / " + c.fn],
-    ["정밀도 = TP/(TP+FP)", pct(c.precision)],
-    ["재현율 = TP/(TP+FN)", pct(c.recall)],
-    ["F1", f3(c.f1)],
-    ["AP@0.5 (전 구간)", f3(c.ap)],
-    ["모델 포함", c.in_model ? "예" : "아니오 (검출 0 → 전부 FN)"]
-  ].map((r) => "<div>" + r[0] + "</div><div>" + r[1] + "</div>").join("");
+  // 수치 카드는 없앴다. 같은 값이 위 부품별 결과 표에 이미 있어 두 번 읽게 됐다.
+  // 여기서는 산출 과정(계산식)만 남긴다.
 
-  $("partCalc").textContent =
-    "정밀도 = " + c.tp + " / (" + c.tp + " + " + c.fp + ") = " + f3(c.precision) + "\n" +
-    "재현율 = " + c.tp + " / (" + c.tp + " + " + c.fn + ") = " + f3(c.recall) + "\n" +
-    "AP = Σ (ΔR × P) = " + f3(c.ap) + "\n" +
-    "mAP = " + (S.res.classes || []).length + "종 평균 = " + f3(S.res.map50);
+  const aps = (S.res.classes || []).map((x) => f3(x.ap));
+  const fb = (cls, t, f, body) =>
+    '<div class="fb' + (cls ? " " + cls : "") + '"><span class="t">' + t +
+    '</span><span class="f">' + f + "</span>" + body + "</div>";
+
+  // 이 산출은 부품 한 종의 예시다. 정밀도·mAP 는 지금, AP 식은 시점(검출)별 정밀도가 필요해
+  // 누적 계열(loadSeries) 읽은 뒤 fillApBox 로 채운다. 재현율 수식은 혼란을 줘 뺐다.
+  $("partCalc").innerHTML =
+    fb("wide", "정밀도", "TP / (TP + FP)",
+       c.tp + " / (" + c.tp + " + " + c.fp + ") = <b>" + f3(c.precision) + "</b>") +
+    '<div class="fb wide"><span class="t">AP</span>' +
+    '<span class="f">Σ 정밀도 / 전체 GT 수</span>' +
+    '<span class="ap-calc">계산 중…</span></div>' +
+    '<div class="flow-div"></div>' +
+    fb("wide", "mAP", "부품 5종 AP 의 산술 평균",
+       "(" + aps.join(" + ") + ") / " + aps.length + " = <b>" + f3(S.res.map50) + "</b>");
 
   drawPR(c);
   await loadSeries(part);
+  fillApBox(c);
   await loadFrames(part);
 }
 
+function fillApBox(c) {
+  const box = document.querySelector("#partCalc .ap-calc");
+  if (!box) { return; }
+  const rows = (S.series && S.series.rows) || [];
+  const nGt = c.tp + c.fn;                                 // 전체 정답 수(TP+FN)
+  // 정답(TP) 시점의 정밀도만 더한다. 오탐지(FP)는 수식에서 아예 빼고, 밑 주석으로만 설명.
+  const sd = "₀₁₂₃₄₅₆₇₈₉";
+  const sub = (n) => String(n).split("").map((d) => sd[+d]).join("");
+  const terms = rows.filter((r) => r[2] === "TP").map((r) => f3(r[6]));
+  const hasFP = rows.some((r) => r[2] !== "TP");
+  const k = terms.length;
+  const pline = k === 0 ? "-"
+    : k <= 3 ? terms.map((_, i) => "P" + sub(i + 1)).join(" + ")
+    : "P₁ + P₂ + … + P" + sub(k);
+  const shown = k === 0 ? "-"
+    : (k <= 6 ? terms.join(" + ")
+       : terms.slice(0, 3).join(" + ") + " + … + " + terms.slice(-2).join(" + "));
+  box.innerHTML =
+    "( " + pline + " ) / " + nGt + "<br>" +
+    "= ( " + shown + " ) / " + nGt + "<br>" +
+    "= <b>" + f3(c.ap) + "</b>" +
+    (hasFP ? '<span class="ap-fpnote">※ 모델 예측 신뢰도 정렬 결과, 오탐지(FP)가 11번째로 밀려났으므로 정답(TP) 합산에 포함되지 않습니다.</span>' : "");
+}
 function drawPR(c) {
   const rec = (c.pr && c.pr.recall) || [], pre = (c.pr && c.pr.precision) || [];
-  const W = 460, H = 300, m = 34;
-  const x = (v) => m + v * (W - m - 10);
-  const y = (v) => H - m - v * (H - m - 12);
-  let path = "";
-  rec.forEach((r, i) => { path += (i ? " L" : "M") + x(r) + "," + y(pre[i]); });
+  const W = 520, H = 300, m = 90, mb = 46;   // m 이 넓은 것은 눈금 숫자 왼쪽에 축 이름을 두기 때문
+                                             // mb = 아래 여백(눈금 숫자 + 축 이름 두 줄)
+  const x = (v) => m + v * (W - m - 14);
+  const y = (v) => H - mb - v * (H - mb - 26);
+  let line = "";                              // 곡선 선(정밀도 vs 재현율)
+  rec.forEach((r, i) => { line += (i ? " L" : "M") + x(r) + "," + y(pre[i]); });
+  // 면적(area): 곡선 아래부터 x축(정밀도 0)까지 닫아 채운다 - 'AP = 곡선 아래 면적'을 눈에 보이게
+  let area = "";
+  if (rec.length) {
+    area = "M" + x(rec[0]) + "," + y(0) +
+           rec.map((r, i) => " L" + x(r) + "," + y(pre[i])).join("") +
+           " L" + x(rec[rec.length - 1]) + "," + y(0) + " Z";
+  }
   let grid = "";
   for (let g = 0; g <= 1.0001; g += 0.25) {
     grid += '<line x1="' + x(g) + '" y1="' + y(0) + '" x2="' + x(g) + '" y2="' + y(1) +
             '" stroke="#e2e8f0"/><line x1="' + x(0) + '" y1="' + y(g) + '" x2="' + x(1) +
             '" y2="' + y(g) + '" stroke="#e2e8f0"/>' +
-            '<text x="' + x(g) + '" y="' + (H - 12) + '" font-size="10" fill="#94a3b8" text-anchor="middle">' +
-            g.toFixed(2) + '</text><text x="' + (m - 6) + '" y="' + (y(g) + 3) +
-            '" font-size="10" fill="#94a3b8" text-anchor="end">' + g.toFixed(2) + "</text>";
+            '<text x="' + x(g) + '" y="' + (H - mb + 18) + '" font-size="12" fill="#475569" text-anchor="middle">' +
+            g.toFixed(2) + '</text><text x="' + (m - 8) + '" y="' + (y(g) + 3) +
+            '" font-size="12" fill="#475569" text-anchor="end">' + g.toFixed(2) + "</text>";
   }
   $("prBox").innerHTML =
     '<svg role="img" aria-label="' + (c.part || "") + " PR 곡선. AP " + f3(c.ap) +
     ". 같은 내용이 아래 누적 계열 표에 숫자로 있습니다." + '" viewBox="0 0 ' + W + " " + H +
-    '" style="width:100%;height:auto;max-height:320px">' + grid +
-    (path ? '<path d="' + path + '" fill="rgba(79,70,229,.12)" stroke="#4f46e5" stroke-width="2"/>' : "") +
+    '">' + grid +
+    (area ? '<path d="' + area + '" fill="rgba(79,70,229,.15)" stroke="none"/>' : "") +
+    (line ? '<path d="' + line + '" fill="none" stroke="#4f46e5" stroke-width="2"/>' : "") +
     rec.map((r, i) => '<circle cx="' + x(r) + '" cy="' + y(pre[i]) + '" r="2.5" fill="#4f46e5"/>').join("") +
-    '<text x="' + (W - 10) + '" y="' + (m - 14) + '" font-size="12" fill="#0f172a" text-anchor="end" font-weight="700">AP ' +
-    f3(c.ap) + "</text></svg>";
+    '<text x="' + (W - 14) + '" y="18" font-size="12" fill="#0f172a" text-anchor="end" font-weight="700">AP ' +
+    f3(c.ap) + "</text>" +
+    // 축 이름은 그래프 안에 둔다. 밖에 따로 적으면 그림과 떨어져 읽는 순서가 끊긴다.
+    '<text x="' + x(0.5) + '" y="' + (H - 6) + '" font-size="13" fill="#1e293b" font-weight="600" text-anchor="middle">재현율</text>' +
+    // 세로로 눕힌 글씨는 눈금 숫자와 겹쳐 읽히지 않았다. 눈금 숫자 왼쪽·축 가운데 높이에 가로로 둔다.
+    '<text x="4" y="' + (y(0.5) + 4) + '" font-size="13" fill="#1e293b" font-weight="600" text-anchor="start">정밀도</text>' +
+    "</svg>";
 }
 
 async function loadSeries(part) {
@@ -384,24 +887,44 @@ async function loadSeries(part) {
   const tb = $("tblSeries").querySelector("tbody");
   if (d.error) { th.innerHTML = ""; tb.innerHTML = '<tr><td>' + d.error + "</td></tr>"; return; }
   S.series = d;
-  const label = { i: "순번", conf: "conf", match: "판정", image: "프레임",
+  // 순번이 '전체 정답 수(nGt)'를 넘는 줄 = AP 합산에 안 쓰이는 여분(밀려난 검출). 살짝 음영.
+  const cls = (S.res.classes || []).find((x) => x.part === part);
+  const nGt = cls ? (cls.tp + cls.fn) : 0;
+  const iIdx = d.head.indexOf("i");
+  const label = { i: "순번", conf: "신뢰도", match: "판정", image: "프레임",
                   cum_tp: "누적 TP", cum_fp: "누적 FP", precision: "정밀도",
                   recall: "재현율", at_report: "임계 안" };
-  th.innerHTML = "<tr>" + d.head.map((h) => "<th>" + (label[h] || h) + "</th>").join("") + "</tr>";
+  // 프레임 이름(image) 열만 뺀다(줄을 누르면 열린다).
+  // 신뢰도(conf)는 맨 오른쪽에 붙인다 - 순번이 이미 "신뢰도 높은 순"이라 위치는 왼쪽일
+  // 필요가 없고, 실제 신뢰도 값을 함께 보여 준다.
+  const confIdx = d.head.indexOf("conf");
+  const imgIdx = d.head.indexOf("image");
+  const cols = d.head.map((h, i) => i).filter((i) => i !== imgIdx && i !== confIdx);
+  if (confIdx >= 0) { cols.push(confIdx); }
+  th.innerHTML = "<tr>" + cols.map((i) => "<th>" + (label[d.head[i]] || d.head[i]) + "</th>")
+    .join("") + "</tr>";
   tb.innerHTML = d.rows.map((r) => {
     const tp = r[2] === "TP";
-    return '<tr data-name="' + r[3] + '">' + r.map((v, i) => {
+    const unused = nGt && iIdx >= 0 && Number(r[iIdx]) > nGt;   // 전체 정답 수 초과 = 여분 검출
+    return '<tr class="' + (unused ? "ser-unused" : "") + '" data-name="' + r[3] + '" title="' + r[3] + '">' + cols.map((i) => {
+      const v = r[i];
       if (i === 2) { return '<td class="' + (tp ? "ok" : "no") + '">' + v + "</td>"; }
-      if (i === 3) { return "<td>" + v + "</td>"; }
       const num = Number(v);
-      return '<td class="num">' + (isNaN(num) ? v : (i === 0 || i === 4 || i === 5 ? num : num.toFixed(4))) + "</td>";
+      return '<td class="num">' +
+        (isNaN(num) ? v : (i === 0 || i === 4 || i === 5 ? num : num.toFixed(4))) + "</td>";
     }).join("") + "</tr>";
   }).join("");
-  $("serTitle").textContent = "검출 " + d.n_rows + "건" +
-    (d.n_rows > d.rows.length ? " (앞 " + d.rows.length + "건 표시)" : "") +
-    (d.foot && d.foot.length ? " · " + d.foot.join(" · ") : "");
+  // CSV 꼬리말(d.foot)은 붙이지 않는다. curve_<부품>.csv 의 주석 줄이라 쉼표가 그대로 새어
+  // "AP@0.5 (all-point interpolation),1.000000" 처럼 표시됐다. 세 값 다 화면에 이미 있다.
+  //   전체 GT 수 -> 부품별 결과 표 'GT 박스' 열, ① GT 카드
+  //   AP@0.5     -> 부품별 결과 표 'AP@0.5' 열, ④ AP 카드
+  //   보고 임계   -> 하단 범례
+  // 제목에 건수를 쓰지 않는다. 정답 장수와 같아 보여 뜻이 없다. 잘렸을 때만 알린다.
+  $("serTitle").textContent =
+    d.n_rows > d.rows.length ? "앞 " + d.rows.length + " / " + d.n_rows + "건" : "";
   tb.querySelectorAll("tr").forEach((tr) => {
-    tr.onclick = () => showFrame(tr.dataset.name, true);
+    clickable(tr, () => showFrame(tr.dataset.name, false), tr.dataset.name + " 프레임 보기");
+    tr.setAttribute("role", "row");
   });
 }
 
@@ -413,7 +936,6 @@ async function loadFrames(part) {
   S.det = d.images || {};
   // FP·FN 이 있는 프레임을 앞에 둔다(볼 이유가 있는 것부터)
   const names = Object.keys(S.det).sort((a, b) => score(b) - score(a));
-  $("frTitle").textContent = names.length + "장 · 오차 있는 것부터";
   box.innerHTML = names.map((n) => card(n)).join("");        // GT 를 전부 보여 준다
   bindZoom();
   function score(n) {
@@ -425,41 +947,36 @@ async function loadFrames(part) {
   }
 }
 
-function zoom(el, name) {
-  const big = el.classList.toggle("big");
-  const img = el.querySelector("img");
-  img.src = "/api/gt/eval/frame?run=" + encodeURIComponent(S.res.run) +
-            "&part=" + encodeURIComponent(S.part) + "&name=" + encodeURIComponent(name) +
-            "&w=" + (big ? 1600 : 640);
-  if (big) { el.scrollIntoView({ block: "nearest" }); }
+// 프레임 하나의 GT·TP·FP·FN 문구. 격자 칸과 크게 본 그림에서 같이 쓴다.
+function counts(n) {
+  const v = S.det[n] || {};
+  const preds = (v.pred || []).filter((p) => p[4] >= S.res.report_conf);
+  const tp = preds.filter((p) => p[6]).length;
+  return "GT " + (v.gt || []).length + " · TP " + tp + " · FP " + (preds.length - tp) +
+         " · FN " + Math.max(0, (v.gt || []).length - tp);
 }
 
+
 function card(n) {
-  const v = S.det[n] || {};
-  const rc = S.res.report_conf;
-  const preds = (v.pred || []).filter((p) => p[4] >= rc);
-  const tp = preds.filter((p) => p[6]).length;
-  const fp = preds.length - tp;
-  const fn = Math.max(0, (v.gt || []).length - tp);
-  return '<div class="fr" id="fr_' + n + '"><img loading="lazy" alt="' + n + " 프레임 GT " +
-         (v.gt || []).length + " TP " + tp + " FP " + fp +
-         '" src="/api/gt/eval/frame?run=' +
-         encodeURIComponent(S.res.run) + "&part=" + encodeURIComponent(S.part) +
-         "&name=" + encodeURIComponent(n) + '&w=640"><div class="cap"><span>' + n +
-         "</span><span>GT " + (v.gt || []).length + " · TP " + tp + " · FP " + fp +
-         " · FN " + fn + "</span></div></div>";
+  const c = counts(n);
+  return '<figure class="ing-c labeled" id="fr_' + n + '" data-name="' + n + '" title="' + n +
+         '"><img loading="lazy" alt="' + n + " 프레임 " + c + '" src="' +
+         "/api/gt/eval/frame?run=" + encodeURIComponent(S.res.run) + "&part=" + encodeURIComponent(S.part) + "&name=" + encodeURIComponent(n) + '">' +
+         "<figcaption>" + c + "</figcaption></figure>";
 }
 
 function bindZoom() {
-  $("frames").querySelectorAll(".fr").forEach((el) => {
-    el.onclick = () => zoom(el, el.id.slice(3));
+  $("frames").querySelectorAll(".ing-c").forEach((el) => {
+    clickable(el, () => lightbox(S.part, el.dataset.name, "/api/gt/eval/frame", "",
+                                 counts(el.dataset.name)),
+              S.part + " " + el.dataset.name + " 크게 보기");
   });
 }
 
 function showFrame(name, front) {
   if (!name || !S.det || !S.det[name]) { return; }
   const box = $("frames");
-  const cur = Array.from(box.querySelectorAll(".fr")).map((e) => e.id.slice(3));
+  const cur = Array.from(box.querySelectorAll(".ing-c")).map((e) => e.dataset.name);
   if (front && cur[0] !== name) {
     const rest = cur.filter((x) => x !== name).slice(0, 11);
     box.innerHTML = [name].concat(rest).map((n) => card(n)).join("");
@@ -470,42 +987,68 @@ function showFrame(name, front) {
 }
 
 /* ---------------- 실행 ---------------- */
+// 채점 대상은 서버가 정한다(시험 대상 5종 중 정답이 있는 것). 화면에서 고르지 않는다.
+async function evalParts() {
+  const st = await api("/api/gt/status");
+  return (st.parts || []).filter((p) => p.labels > 0);
+}
+
 async function load(run) {
+  S.inputs = null; await renderInput(); renderIntro();   // 입력·개요도 다시 읽는다
   const d = await api("/api/gt/eval/result" + (run ? "?run=" + encodeURIComponent(run) : ""));
-  if (d.error) { say(d.error); steps(null); return; }
+  if (d.error) { say(d.error); return; }
   say("");
   renderResult(d);
 }
 
 async function run() {
+  // 진행 표시는 토스트(#msg) 대신 버튼 오른쪽 스피너 + 작은 진행 수치로.
+  const spin = $("runSpin"), note = $("runNote");
+  const stop = () => { spin.hidden = true; note.textContent = ""; $("btnRun").disabled = false; };
   $("btnRun").disabled = true;
   say("");
-  const st = await api("/api/gt/status");
-  const have = ((st.parts || []).filter((p) => p.labels > 0));
+  // 채점 시작하면 두 번째 단계를 열어 실행 로그를 보여준다. 결과 칸은 채점이 끝나면 채워진다.
+  $("stgAfter").hidden = false;
+  $("detail").hidden = true;
+  $("frames").innerHTML = '<div class="log-wait">채점 중...</div>';
+  const slog = $("scoreLog"); if (slog) { slog.innerHTML = ""; }
+  logScore("채점 시작");
+  let lastLogLen = 0;
+  const have = await evalParts();
   if (!have.length) {
-    say("GT 없음");
-    $("btnRun").disabled = false; return;
+    stop();
+    say("채점할 부품을 고르세요. (GT 가 없으면 GT 만들기에서 먼저 내보내세요)");
+    return;
   }
-  steps(null, have.reduce((a, p) => a + p.labels, 0) + "장 준비");
+  spin.hidden = false; note.textContent = "준비 중";       // 스피너 시작
   const r = await post("/api/gt/eval", { parts: have.map((p) => p.part), iou: 0.5 });
-  if (r.error) { say(r.error); $("btnRun").disabled = false; return; }
+  if (r.error) { stop(); say(r.error); return; }
   S.job = r.job;
   const tick = async () => {
-    const s = await api("/api/sam2/status?job=" + S.job);
-    if (s.error) { say(s.error); $("btnRun").disabled = false; return; }
-    steps(null, (s.note || "") + (s.total ? " (" + s.done + "/" + s.total + ")" : ""));
+    // 채점 진행 조회. /api/sam2/status 와 같은 값을 주는 채점용 별칭을 쓴다.
+    const s = await api("/api/gt/eval/status?job=" + S.job);
+    if (s.error) { stop(); say(s.error); return; }
+    note.textContent = s.total ? (s.done + "/" + s.total) : (s.note || "채점 중");
+    if (s.log && s.log.length > lastLogLen) {                 // YOLO 서버가 추론한 프레임(균일 로그)
+      for (let i = lastLogLen; i < s.log.length; i++) { logScore(s.log[i]); }
+      lastLogLen = s.log.length;
+    }
     if (s.running) { setTimeout(tick, 1200); return; }
-    $("btnRun").disabled = false;
-    if (s.stage === "error") { say(s.error || "채점이 실패했습니다."); return; }
+    stop();
+    if (s.stage === "error") { logScore(s.error || "채점 실패", "err"); say(s.error || "채점이 실패했습니다."); return; }
+    logScore("채점 완료", "ok");
     await load();
   };
   tick();
 }
 
 $("btnRun").onclick = run;
-$("runSel").onchange = (e) => load(e.target.value);
-steps(null);
-load();
+S.inGt = false;                                  // 예측할 데이터 GT 박스(기본 꺼짐, 체크 시 표시)
+$("inGtChk").onchange = (e) => { S.inGt = e.target.checked; renderInput(S.inPart); };
+// 원본은 처음 들어오면 결과를 띄우지 않는다. 지난 채점 기록을 자동으로 불러오면
+// 지금 채점한 것인지 예전 것인지 심사 자리에서 구분이 안 되기 때문이다.
+// 그래서 열면 개요·입력 데이터만 그리고, 결과는 '채점 시작' 을 눌러야 나온다.
+renderIntro(); renderInput();
 </script>
 </body>
 </html>

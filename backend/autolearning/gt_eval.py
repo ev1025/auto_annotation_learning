@@ -17,7 +17,9 @@ ultralytics 의 val 을 쓰지 않는 이유
   게다가 평가영상은 부품 폴더 밖(_gt_videos)에 있어 part_root_of/resolve_video 로는 찾지도 못한다.
   평가 프레임은 학습 트리와 완전히 분리한다.
 """
+import csv
 import json
+import re
 import shutil
 import sys
 import threading
@@ -36,17 +38,35 @@ import config
 import sam2_autolabel as sa
 
 # ---- 확정된 규약(계약서 0장). 바꾸면 심사 문서와 화면이 어긋난다 ----
-GT_PARTS = ["seal_support", "r-ring", "shim", "split_gearbox", "bracket"]
+# 시험항목 1 의 평가 대상 5종(2026-09-02 사용자 확정). shim 은 대상이 아니다.
+# mAP@0.5 는 이 5종 AP 의 산술 평균이라, 여기 없는 부품이 응답에 섞이면 판정값이 달라진다.
+GT_PARTS = ["Igb_seal-support", "Igb_r-ring", "Igb_split-gearbox", "Igb_bracket",
+             "Igb_gear-assembly"]   # 2026-09-07 카테고리 접두(Igb_) 통일
 PASS_THRESHOLD = 51            # mAP@0.5 x 100 이 이 값 이상이면 합격
-REPORT_CONF = 0.70             # TP/FP/FN 을 보고하는 운영 임계
+CURVE_CONF_DEFAULT = 0.001     # AP 적분 하한(아래 CURVE_CONF 와 같은 값)
+
+# TP/FP/FN 을 세는 지점. AP 를 적분하는 검출 집합과 같은 집합에서 센다.
+#
+# 전에는 0.70 이었다. 그 값의 출처는 우리 추론 API 규격(0.7 미만은 detections 에 넣지 않는다)이고
+# 시험시나리오에는 conf 기준이 없다. 그런데 GT 는 0.70 아래로 잡힌 프레임까지 포함하므로,
+# 0.70 에서 세면 모델이 찾아낸 프레임이 FN 으로 계산된다. 실제로 AP 1.000 인 부품의
+# 재현율이 50% 로 나와 두 수치가 서로를 부정했다.
+# 규격의 산식은 TP·FP·FN -> P·R -> PR 곡선 -> AP 다. 그 곡선을 만든 검출 전부에서 세는 것이
+# 규격과 맞고, 임의의 임계를 심사 자리에 들고 가지 않아도 된다.
+REPORT_CONF = CURVE_CONF_DEFAULT
 CURVE_CONF = 0.001             # PR 곡선을 그릴 하한(이 이상 전 구간)
 EVAL_IMGSZ = config.IMG_SIZE   # 학습과 같은 입력 크기로 재야 의미가 있다
 
 PARTS_ROOT = config.DATA_DIR / "bell412"
 GT_VIDEO_DIR = PARTS_ROOT / "_gt_videos"
-FRAMES_ROOT = config.BASE_DIR / "results" / "gt_frames"     # 평가 프레임 캐시(학습 트리와 분리)
-SCAN_ROOT = config.BASE_DIR / "results" / "gt_scan"
-EVAL_ROOT = config.BASE_DIR / "results" / "gt_eval"
+GT_ROOT = config.BASE_DIR / "results" / "GT"                 # 채점(평가) 결과 상위 폴더
+EVAL_ROOT = GT_ROOT / "eval"         # 채점 결과(run 별) - mAP_Test 가 읽고 쓴다
+# GT 만들기 전용(프레임 표본 -> 배포모델 스캔 -> 사람이 박스 확정). 채점은 이 둘을 읽지 않으므로
+# (채점은 data/bell412/<부품>/gt 만 읽음) 평가 폴더 밖 results/gt_build 로 분리해 둔다.
+BUILD_ROOT = config.BASE_DIR / "results" / "gt_build"
+FRAMES_ROOT = BUILD_ROOT / "frames"  # 선정 프레임 표본
+SCAN_ROOT = BUILD_ROOT / "scan"      # 배포모델 스캔
+KEEP_EVAL_RUNS = 2          # 최근 2개 보관(무한 누적 방지 + 재채점해도 직전 결과가 즉시 안 깨지게)
 VIDEO_EXT = {".mp4", ".avi", ".mov", ".mkv"}
 
 _CUT_LOCK = threading.Lock()   # 같은 영상을 두 요청이 동시에 자르면 반쪽 파일이 남는다
@@ -315,8 +335,163 @@ def _gt_dirs(part):
     return g / "images", g / "labels"
 
 
+def _train_dirs(part):
+    """오토러닝이 만든 학습 라벨 데이터. 채점용 정답(gt)과 다른 트리다.
+
+    images/<영상이름>/<프레임번호>.jpg  ·  labels/<영상이름>_<프레임번호>.txt
+    """
+    root = sa.autolabel.AUTOLABELS / part
+    return root / "images", root / "labels"
+
+
+def _draw_label(im, lp, color):
+    """YOLO 라벨 파일(중심x 중심y 폭 높이, 0~1)을 그림 위에 점선으로 옮긴다."""
+    if not lp.exists():
+        return
+    H, W = im.shape[:2]
+    _r, bt, _e = sa._ov_sizes(W, H)
+    for ln in lp.read_text(encoding="utf-8").splitlines():
+        t = ln.split()
+        if len(t) < 5:
+            continue
+        try:
+            cx, cy, bw, bh = (float(v) for v in t[1:5])
+        except ValueError:
+            continue
+        x1, y1 = int((cx - bw / 2) * W), int((cy - bh / 2) * H)
+        x2, y2 = int((cx + bw / 2) * W), int((cy + bh / 2) * H)
+        _dashed_rect(im, (x1, y1), (x2, y2), color, bt)
+
+
+def _label_boxes_px(lp, W, H):
+    """라벨 파일의 상대 좌표를 픽셀 좌표로."""
+    out = []
+    if not lp.exists():
+        return out
+    for ln in lp.read_text(encoding="utf-8").splitlines():
+        t = ln.split()
+        if len(t) < 5:
+            continue
+        try:
+            cx, cy, bw, bh = (float(v) for v in t[1:5])
+        except ValueError:
+            continue
+        out.append((int((cx - bw / 2) * W), int((cy - bh / 2) * H),
+                    int((cx + bw / 2) * W), int((cy + bh / 2) * H)))
+    return out
+
+
+def _crop_to_label(im, lp, pad=3.0, ar=16.0 / 9.0):
+    """라벨 박스 주변만 잘라 낸다.
+
+    학습 영상은 세로로 찍혀 있고 부품이 판넬 가운데 조그맣게 놓여 있다. 전체를 그대로
+    보여 주면 부품이 20px 남짓이라 무엇을 라벨했는지 보이지 않았다.
+    박스를 pad 배로 넓혀 주변 맥락(판넬)은 남기고 화면 비율(ar)에 맞춘다.
+    """
+    H, W = im.shape[:2]
+    bs = _label_boxes_px(lp, W, H)
+    if not bs:
+        return im
+    x1 = min(b[0] for b in bs); y1 = min(b[1] for b in bs)
+    x2 = max(b[2] for b in bs); y2 = max(b[3] for b in bs)
+    cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+    bw, bh = max(1, x2 - x1), max(1, y2 - y1)
+    cw = min(float(W), max(bw * pad, bh * pad * ar))
+    ch = min(float(H), cw / ar)
+    cw = min(float(W), ch * ar)                 # 높이에 걸리면 폭도 같이 줄인다
+    x = int(min(max(0.0, cx - cw / 2), W - cw))
+    y = int(min(max(0.0, cy - ch / 2), H - ch))
+    return im[y:y + int(ch), x:x + int(cw)]
+
+
+def train_inputs(parts=None, k=4):
+    """학습에 쓰인 라벨 데이터에서 부품마다 k장씩. 실제로 무엇을 배웠는지 보이는 자리."""
+    out = []
+    for part in (parts or gt_eval_parts()):
+        part = _safe_name(part)
+        _imgs, lbls = _train_dirs(part)
+        names = sorted(f.stem for f in lbls.glob("*.txt")) if lbls.exists() else []
+        if not names:
+            continue
+        # 이어진 프레임은 서로 거의 같은 그림이라 앞에서 k장 자르면 다 비슷하다.
+        # 전체에 걸쳐 고르게 뽑는다.
+        step = max(1, len(names) // max(1, k))
+        picked = names[::step][:k]
+        out.append({"part": part, "n": len(names),
+                    "items": [{"name": v} for v in picked]})
+    return {"parts": out, "n_images": sum(x["n"] for x in out)}
+
+
+def train_image(part=None, name=None, w=420, box=1, crop=1):
+    """학습 라벨 데이터 한 장. box=1 이면 오토러닝이 만든 라벨 박스를 그린다.
+
+    crop=1 이면 라벨 주변만 잘라 낸다(기본). 세로 영상 전체를 보여 주면 부품이 너무 작다.
+    """
+    part, name = _safe_name(part or ""), _safe_name(name or "")
+    if not (part and name) or "_" not in name:
+        return None
+    imgs, lbls = _train_dirs(part)
+    vid, num = name.rsplit("_", 1)
+    ip = imgs / vid / (num + ".jpg")
+    if not ip.exists():
+        return None
+    im = _rd(ip)
+    if im is None:
+        return None
+    lp = lbls / (name + ".txt")
+    if box:
+        _draw_label(im, lp, COL_TP)             # 자르기 전에 그린다(좌표 변환 없이)
+    if crop:
+        im = _crop_to_label(im, lp)
+    H, W = im.shape[:2]
+    try:
+        w = max(120, min(1600, int(w)))
+    except (TypeError, ValueError):
+        w = 420
+    if W > w:
+        im = cv2.resize(im, (w, int(H * w / W)))
+    ok, buf = cv2.imencode(".jpg", im, [cv2.IMWRITE_JPEG_QUALITY, 82])
+    return buf.tobytes() if ok else None
+
+
+def gt_parts_present():
+    """GT 파일이 하나라도 있는 부품. 평가 대상은 사람이 내보낸 것으로 정한다.
+
+    예전에는 GT_PARTS 5종에 박혀 있었다. 그런데 실제로 만든 5종이
+    bracket·gear_assembly·r-ring·seal_support·split_gearbox 였고 목록에는 shim 이
+    들어 있어서, gear_assembly 10장이 채점에서 통째로 빠졌다.
+    GT_PARTS 는 이제 화면에 앞세울 순서로만 쓴다.
+    """
+    out = []
+    for part in _known_parts():
+        lbls = _gt_dirs(part)[1]
+        if not lbls.exists():
+            continue
+        for lp in lbls.glob("*.txt"):
+            if any(ln.strip() for ln in lp.read_text(encoding="utf-8").splitlines()):
+                out.append(part)
+                break
+    return sorted(out, key=lambda x: (GT_PARTS.index(x) if x in GT_PARTS else 99, x))
+
+
+def gt_eval_parts(parts=None):
+    """채점 대상. 지정이 없으면 시험 대상 5종 중 GT 가 있는 것만 준다.
+
+    화면에서 부품을 골라 보낼 수 있지만, 아무것도 안 보냈을 때 GT 가 있는 부품을
+    전부 넣으면 판정값(5종 산술평균)이 조용히 6종 평균으로 바뀐다. 기본은 5종으로 묶고
+    그 밖의 부품은 사람이 명시해야만 들어간다.
+    """
+    have = set(gt_parts_present())
+    if parts:
+        want = [p for p in (_safe_name(x) for x in parts) if p and p in have]
+        return sorted(set(want), key=lambda x: (GT_PARTS.index(x) if x in GT_PARTS else 99, x))
+    return [p for p in GT_PARTS if p in have]
+
+
 def gt_status(parts=None):
-    parts = [p for p in (_safe_name(x) for x in (parts or GT_PARTS)) if p]
+    # 지정이 없으면 시험 대상 5종만. 화면에 그 밖의 부품(gearbox 손라벨 40장 등)이 섞이면
+    # 심사에서 판정 근거가 흐려진다. 그 GT 파일은 남겨 두고 이 화면에서만 뺀다.
+    parts = [p for p in (_safe_name(x) for x in (parts or gt_eval_parts())) if p]
     m = sa.served_model() or {}
     in_model = set(m.get("classes", []))
     out = []
@@ -337,6 +512,238 @@ def gt_status(parts=None):
 
 
 # ==================== 2.7 GT 저장 ====================
+DRAFT_FILE = SCAN_ROOT.parent / "gt_draft.json"   # 자동 저장한 작업물(내보내기 전 단계)
+_DRAFT_LOCK = threading.Lock()
+
+
+def _load_drafts():
+    if not DRAFT_FILE.exists():
+        return {}
+    try:
+        d = json.loads(DRAFT_FILE.read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except (ValueError, OSError):
+        return {}
+
+
+MIN_SIDE = 0.004          # 이보다 얇은 박스는 라벨이 아니다(1920px 기준 약 8px)
+
+
+def _norm_boxes(boxes):
+    """화면이 보낸 박스를 검사해 정규화(cx cy w h, 0~1)한다. 잘못되면 (None, 사유).
+
+    폭·높이가 0 에 가까운 박스는 버리고 나머지는 살린다. 예전에는 오류로 돌려보냈는데,
+    박스 두 개 중 하나가 한 방향으로만 끌려 높이 0 이 되면 멀쩡한 첫 박스까지
+    저장이 거부됐다. 못 쓸 박스 하나가 그 프레임 작업 전체를 막을 이유가 없다.
+    """
+    out = []
+    if not isinstance(boxes, list):
+        return None, "박스 목록이 배열이 아닙니다."
+    for b in boxes[:50]:
+        if not isinstance(b, (list, tuple)) or len(b) < 4:
+            return None, "박스 형식이 잘못됐습니다: %s" % (b,)
+        try:
+            cx, cy, bw, bh = (min(max(float(v), 0.0), 1.0) for v in b[:4])
+        except (TypeError, ValueError):
+            return None, "박스 값이 숫자가 아닙니다: %s" % (b,)
+        if bw < MIN_SIDE or bh < MIN_SIDE:
+            continue                      # 너무 얇다 - 이 박스만 버린다
+        out.append([cx, cy, bw, bh])
+    return out, None
+
+
+def draft_set(part, stem, idx, boxes):
+    """라벨 화면이 박스를 고칠 때마다 자동으로 부르는 저장.
+
+    파일(data/bell412/<부품>/gt/)에 바로 쓰지 않는 이유: 내보내기를 눌러야 평가용
+    파일이 되게 해 달라는 요청이다. 그래서 작업물은 여기 초안으로만 쌓고,
+    내보내기에서 한 번에 파일로 만든다. 빈 배열도 그대로 기록한다 - "아직 안 그림"과
+    "지웠다"를 구분해야 내보내기가 지운 것을 파일에서도 지울 수 있다.
+    """
+    part, stem = _safe_name(part), _safe_name(stem)
+    if not part or not stem:
+        return {"error": "part / stem 이 올바르지 않습니다."}
+    try:
+        idx = int(idx)
+    except (TypeError, ValueError):
+        return {"error": "idx 가 정수가 아닙니다."}
+    bx, err = _norm_boxes(boxes)
+    if err:
+        return {"error": err}
+    name = "%s_%05d" % (stem, idx)
+    with _DRAFT_LOCK:
+        d = _load_drafts()
+        d.setdefault(part, {})[name] = bx
+        try:
+            DRAFT_FILE.parent.mkdir(parents=True, exist_ok=True)
+            tmp = DRAFT_FILE.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+            tmp.replace(DRAFT_FILE)      # 자동 저장이 잦아 중간에 끊겨도 파일이 깨지지 않게
+        except OSError as e:
+            return {"error": "초안 저장 실패: %s" % e}
+    return {"ok": True, "part": part, "name": name, "boxes": len(bx)}
+
+
+def draft_list():
+    """부품별 초안 목록. 화면이 "작업한 프레임"을 알아보게 한다.
+
+    박스가 있는 것만 센다. 빈 초안은 "지웠다"는 표시라 저장소에는 남겨야 하지만
+    (내보내기가 파일을 지우는 근거) 화면의 장수에 넣으면 지운 것까지 세게 된다.
+    """
+    d = _load_drafts()
+    return {"drafts": {p: sorted(k for k, v in f.items() if v) for p, f in d.items()}}
+
+
+def _file_boxes(part, name):
+    """내보낸 라벨 파일의 박스. 초안과 견줘 "내보낼 것"을 세는 데 쓴다."""
+    lp = _gt_dirs(part)[1] / (name + ".txt")
+    if not lp.exists():
+        return None
+    out = []
+    for ln in lp.read_text(encoding="utf-8").splitlines():
+        t = ln.split()
+        if len(t) >= 5:
+            try:
+                out.append([float(v) for v in t[1:5]])
+            except ValueError:
+                continue
+    return out
+
+
+def draft_pending():
+    """초안 중 아직 파일에 반영되지 않은 프레임.
+
+    화면이 "내보낼 것 N장"을 띄우는 근거다. 세 경우가 여기 든다.
+      파일이 없는데 박스가 있다 / 박스를 지웠는데 파일이 남아 있다 / 좌표가 다르다
+    """
+    out = {}
+    for part, frames in _load_drafts().items():
+        todo = []
+        for name, boxes in frames.items():
+            cur = _file_boxes(part, name)
+            if not boxes:
+                if cur:                          # 지웠는데 파일이 남음
+                    todo.append(name)
+                continue
+            if cur is None or len(cur) != len(boxes):
+                todo.append(name)
+                continue
+            # 소수 6자리로 쓰므로 그 눈금보다 크게 다르면 바뀐 것으로 본다
+            if any(abs(a - b) > 1e-6 for cb, bb in zip(cur, boxes) for a, b in zip(cb, bb)):
+                todo.append(name)
+        if todo:
+            out[part] = sorted(todo)
+    return out
+
+
+def gt_counts(run=None):
+    """화면의 장수 표시를 서버 기준으로 맞추는 데 쓰는 가벼운 현황.
+
+    수집 결과(collect_result)로도 같은 값을 얻지만 후보 전체(수백 장 좌표)를 함께
+    실어 보내 자동 저장마다 부를 수는 없다. 그래서 표시에 필요한 세 가지만 준다.
+      saved   내보낸 GT 파일
+      drafts  자동 저장한 작업분(박스가 있는 것)
+      pending 초안이 파일과 달라 내보내야 하는 것
+    """
+    runs = _collect_runs()
+    if not runs:
+        return {"saved": {}, "drafts": {}, "pending": {}}
+    run = _safe_name(run) if run else runs[0]
+    f = SCAN_ROOT / run / "collect.json"
+    if not f.exists():
+        return {"error": "없는 실행입니다: " + str(run)}
+    try:
+        parts = list(json.loads(f.read_text(encoding="utf-8")).get("cands") or {})
+    except (ValueError, OSError) as e:
+        return {"error": "수집 결과를 읽지 못했습니다: %s" % e}
+    saved = {}
+    for part in parts:
+        gl = _gt_dirs(part)[1]
+        saved[part] = sorted(x.stem for x in gl.glob("*.txt")) if gl.exists() else []
+    return {"run": run, "saved": saved, "drafts": draft_list()["drafts"],
+            "pending": draft_pending()}
+
+
+def drop_frame(part, stem, idx):
+    """이 프레임을 그 부품에서 통째로 뺀다. GT 파일 + 초안을 함께 지운다.
+
+    'GT 삭제'(박스 비우기)와 다르다. 박스만 비우면 프레임은 목록에 남아 다시 그릴 수
+    있는데, 이건 그 프레임 자체를 작업 대상에서 뺀다. 선택 목록에서 빼는 것은
+    화면이 /api/gt/select 로 따로 저장한다(선택은 실행별 파일이라서).
+    """
+    part, stem = _safe_name(part), _safe_name(stem)
+    if not part or not stem:
+        return {"error": "part / stem 이 올바르지 않습니다."}
+    try:
+        idx = int(idx)
+    except (TypeError, ValueError):
+        return {"error": "idx 가 정수가 아닙니다."}
+    name = "%s_%05d" % (stem, idx)
+    imgs, lbls = _gt_dirs(part)
+    gone = []
+    for f in (imgs / (name + ".jpg"), lbls / (name + ".txt")):
+        if f.exists():
+            try:
+                f.unlink()
+                gone.append(f.name)
+            except OSError as e:
+                return {"error": "파일 삭제 실패: %s" % e}
+    with _DRAFT_LOCK:
+        d = _load_drafts()
+        had = d.get(part, {}).pop(name, None) is not None
+        if not d.get(part):
+            d.pop(part, None)
+        try:
+            DRAFT_FILE.parent.mkdir(parents=True, exist_ok=True)
+            tmp = DRAFT_FILE.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+            tmp.replace(DRAFT_FILE)
+        except OSError as e:
+            return {"error": "초안 갱신 실패: %s" % e}
+    sa.logger.info("[gt] 프레임 제외 %s/%s 파일=%s 초안=%s", part, name, gone, had)
+    return {"ok": True, "part": part, "name": name, "files": gone, "draft": had}
+
+
+def export_gt(parts=None):
+    """초안을 평가용 GT 파일로 내보낸다(images + labels).
+
+    빈 박스로 남은 초안은 그 부품의 파일을 지운다(화면에서 지운 것을 반영).
+    초안은 지우지 않는다 - 내보낸 뒤에도 이어서 고칠 수 있어야 한다.
+    """
+    d = _load_drafts()
+    want = None
+    if parts:
+        want = {_safe_name(x) for x in (parts if isinstance(parts, list) else [parts])}
+    done, removed, errs = {}, {}, []
+    for part, frames in sorted(d.items()):
+        if want and part not in want:
+            continue
+        if part not in _known_parts():
+            errs.append("모르는 부품이라 건너뜀: %s" % part)
+            continue
+        for name, boxes in sorted(frames.items()):
+            stem, _, sidx = name.rpartition("_")
+            if not sidx.isdigit():
+                errs.append("이름을 읽을 수 없어 건너뜀: %s" % name)
+                continue
+            r = commit(part, stem, int(sidx), boxes)
+            if r.get("error"):
+                errs.append("%s/%s: %s" % (part, name, r["error"]))
+            elif boxes:
+                done[part] = done.get(part, 0) + 1
+            else:
+                removed[part] = removed.get(part, 0) + 1
+    # 화면 문구는 "결과"를 말해야 한다. written 은 이번에 새로 쓴 장수라서,
+    # 이미 파일이던 7장 + 새로 쓴 3장인 부품이 "3장" 으로 보여 적게 만든 것처럼 읽혔다.
+    totals = {}
+    for part in sorted(set(done) | set(removed)):
+        gl = _gt_dirs(part)[1]
+        totals[part] = len(list(gl.glob("*.txt"))) if gl.exists() else 0
+    return {"ok": not errs, "written": done, "removed": removed, "totals": totals,
+            "files": sum(done.values()), "deleted": sum(removed.values()),
+            "errors": errs[:20]}
+
+
 def commit(part, stem, idx, boxes):
     part, stem = _safe_name(part), _safe_name(stem)
     if not part or not stem:
@@ -364,13 +771,13 @@ def commit(part, stem, idx, boxes):
         return {"ok": True, "part": part, "name": name, "boxes": 0,
                 "images": st["images"], "labels": st["labels"]}
 
+    bx, err = _norm_boxes(list(boxes))      # 초안과 같은 규칙으로 걸러 낸다
+    if err:
+        return {"error": err}
+    if not bx:
+        return {"error": "쓸 수 있는 박스가 없습니다(너무 얇음)."}
     lines = []
-    for b in boxes:
-        if not isinstance(b, (list, tuple)) or len(b) < 4:
-            return {"error": f"박스 형식이 잘못됐습니다: {b}"}
-        cx, cy, bw, bh = (min(max(float(v), 0.0), 1.0) for v in b[:4])
-        if bw <= 0 or bh <= 0:
-            return {"error": "박스 폭·높이가 0 입니다."}
+    for cx, cy, bw, bh in bx:
         # class 는 항상 0. 부품 구분은 폴더가 한다(폴더마다 그 부품 박스만 들어간다)
         lines.append(f"0 {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}")
     shutil.copy(src, ip)                 # 원본 해상도 그대로 복사(재인코딩·축소 금지)
@@ -607,6 +1014,51 @@ def _eval_runs():
                    if d.is_dir() and (d / "summary.json").exists()), reverse=True)
 
 
+def _prune_eval_runs(keep=KEEP_EVAL_RUNS):
+    """오래된 채점 결과 폴더 정리. 최신 keep 개만 남긴다.
+
+    채점 시작을 누를 때마다 gt_eval/<시각>/ 이 새로 쌓여 드롭다운이 지저분해졌다.
+    같은 GT를 반복 채점하면 결과가 사실상 같으므로 최신 것만 남긴다.
+    """
+    for name in _eval_runs()[keep:]:            # _eval_runs 는 시각 역순
+        shutil.rmtree(EVAL_ROOT / name, ignore_errors=True)
+
+
+def _write_supplement(out, result, detail, report_conf):
+    """공인평가 자료 보강 요청 대비용, 사람이 바로 읽는 표를 남긴다.
+
+    summary.json 은 기계용, curve_*.csv 는 곡선 점이라 평가자가 바로 읽기 어렵다.
+    부품별 지표와 프레임별 TP·FP·FN 을 엑셀에서 바로 열리는 CSV(utf-8-sig)로 뽑아 둔다.
+    화면 근거(프레임 이미지)는 API·페이지로 언제든 보이므로 여기서는 수치표만 만든다.
+    """
+    def _w(path, header, rows):
+        with (out / path).open("w", encoding="utf-8-sig", newline="") as f:
+            wr = csv.writer(f)
+            wr.writerow(header)
+            wr.writerows(rows)
+
+    # 1) 부품별 지표(요약 한 줄 포함)
+    prows = [[c["part"], "Y" if c["in_model"] else "N", c["n_images"], c["n_gt"],
+              c["tp"], c["fp"], c["fn"], c["precision"], c["recall"], c["f1"], c["ap"]]
+             for c in result["classes"]]
+    prows += [[], ["mAP@0.5(%)", result["map50_pct"], "판정", result["verdict"],
+                   "합격기준", result["pass_threshold"], "IoU", result["iou"],
+                   "conf", report_conf, "imgsz", result["imgsz"]]]
+    _w("부품별_지표.csv",
+       ["부품", "모델포함", "이미지수", "GT수", "TP", "FP", "FN", "정밀도", "재현율", "F1", "AP"],
+       prows)
+
+    # 2) 프레임별 GT·TP·FP·FN (화면 격자와 같은 계산)
+    frows = []
+    for part, frames in detail.items():
+        for name, v in frames.items():
+            preds = [p for p in v.get("pred", []) if len(p) > 4 and p[4] >= report_conf]
+            tp = sum(1 for p in preds if len(p) > 6 and p[6])
+            gt = len(v.get("gt", []))
+            frows.append([part, name, gt, tp, len(preds) - tp, max(0, gt - tp)])
+    _w("프레임별_결과.csv", ["부품", "프레임", "GT", "TP", "FP", "FN"], frows)
+
+
 def _load_gt(part):
     """부품의 GT. {이름: {"path":..., "boxes":[XYXY...]}}.
 
@@ -668,22 +1120,31 @@ def _dump_series(out, series, report_conf):
       at_report 이 줄이 보고 임계(conf 0.70) 안에 들어가는가
     """
     for part, d in series.items():
-        rows = ["i,conf,match,image,cum_tp,cum_fp,precision,recall,at_report"]
+        rows = ["i,conf,match,image,cum_tp,cum_fp,precision,recall"]
         ctp = cfp = 0
         n_gt = d["n_gt"]
         for i, (cf, img, ok) in enumerate(d["flags"], 1):
             ctp += 1 if ok else 0
             cfp += 0 if ok else 1
-            rows.append("%d,%.6f,%s,%s,%d,%d,%.6f,%.6f,%s" % (
+            rows.append("%d,%.6f,%s,%s,%d,%d,%.6f,%.6f" % (
                 i, cf, "TP" if ok else "FP", img, ctp, cfp,
-                ctp / i, (ctp / n_gt) if n_gt else 0.0,
-                "Y" if cf >= report_conf else "N"))
+                ctp / i, (ctp / n_gt) if n_gt else 0.0))
         rows.append("")
         rows.append("# 전체 GT 수,%d" % n_gt)
         rows.append("# AP@0.5 (all-point interpolation),%.6f" % d["ap"])
-        rows.append("# 보고 임계 conf,%.2f" % report_conf)
         (out / ("curve_%s.csv" % _safe_name(part))).write_text(
             "\n".join(rows), encoding="utf-8-sig")   # utf-8-sig: 엑셀에서 한글이 안 깨지게
+
+
+def _conf_str(cf):
+    """신뢰도 표기. 보통 2자리로 쓰되, 2자리에서 0.00 으로 뭉개지는 작은 값은
+    유효숫자가 드러날 때까지 자릿수를 늘린다(검출 하한 conf 가 0.001 이라 최대 4자리면 충분).
+    0.00 은 '검출 안 됨'처럼 보여 오해를 주므로 실제 검출값을 보인다."""
+    for p in (2, 3, 4):
+        s = "%.*f" % (p, cf)
+        if float(s) != 0.0:
+            return s
+    return "%.4f" % cf
 
 
 def _run_eval(job_id, parts, iou, report_conf, weights):
@@ -738,6 +1199,10 @@ def _run_eval(job_id, parts, iou, report_conf, weights):
                     for cf, cl, bb in pred_cache[nm]:
                         if cl == cid:
                             dets.append((float(cf), nm, tuple(float(v) for v in bb)))
+                    # 이 프레임의 이 부품 검출을 같은 줄에(2개면 2개 다: 예 TP + FP 프레임)
+                    _fd = sorted((cf for cf, cl, bb in pred_cache[nm] if cl == cid), reverse=True)
+                    if _fd:
+                        j.setdefault("log", []).append(" · ".join("%s %s" % (part, _conf_str(cf)) for cf in _fd))
                 done += 1
                 if done % 5 == 0 or done == total:
                     j.update(done=done, note=f"{done}/{total} · {part}")
@@ -802,16 +1267,28 @@ def _run_eval(job_id, parts, iou, report_conf, weights):
         run = datetime.now().strftime("%y%m%d_%H%M%S")
         result = {"run": run, "weights": str(w), "model_label": label,
                   "iou": iou, "report_conf": report_conf, "pass_threshold": PASS_THRESHOLD,
+                  # 채점 입력을 화면에 그대로 보여 주기 위한 값(심사에서 조건을 묻는다)
+                  "imgsz": EVAL_IMGSZ, "curve_conf": CURVE_CONF,
                   "map50": round(m50, 4), "map50_pct": round(m50 * 100, 1),
                   "verdict": "pass" if m50 * 100 >= PASS_THRESHOLD else "fail",
                   "classes": classes, "missing": missing}
         out = EVAL_ROOT / run
         out.mkdir(parents=True, exist_ok=True)
+        # 프레임별 YOLO 탐지 결과를 txt 로 남긴다(공인평가: 탐지 → 라벨 파일 생성 증빙).
+        # 형식: 한 줄에 '<부품> <신뢰도> <x1> <y1> <x2> <y2>'. 검출 없으면 빈 파일.
+        _ldir = out / "labels"; _ldir.mkdir(exist_ok=True)
+        for _nm, _preds in pred_cache.items():
+            _lines = ["%s %.3f %d %d %d %d" % (model.names.get(_cl, _cl), _cf,
+                      int(_bb[0]), int(_bb[1]), int(_bb[2]), int(_bb[3]))
+                      for _cf, _cl, _bb in sorted(_preds, key=lambda x: -x[0])]
+            (_ldir / (_nm + ".txt")).write_text(chr(10).join(_lines), encoding="utf-8")
         (out / "summary.json").write_text(json.dumps(result, ensure_ascii=False, indent=1),
                                           encoding="utf-8")
         _dump_series(out, series, report_conf)
         (out / "detail.json").write_text(json.dumps(detail, ensure_ascii=False),
                                          encoding="utf-8")
+        _write_supplement(out, result, detail, report_conf)   # 공인평가 보강용 CSV
+        _prune_eval_runs()                       # 최신 것만 남기고 이전 결과 정리
         j.update(stage="done", running=False, run=run, result=result,
                  note=f"mAP@0.5 = {result['map50_pct']}")
     except Exception as e:   # noqa: BLE001
@@ -823,6 +1300,7 @@ def _run_eval(job_id, parts, iou, report_conf, weights):
 
 
 def start_eval(parts=None, iou=0.5, report_conf=REPORT_CONF, weights=None):
+    parts = gt_eval_parts(parts)      # 지정 없으면 시험 대상 5종만
     parts = [p for p in (_safe_name(x) for x in (parts or GT_PARTS)) if p]
     if not parts:
         return {"error": "채점할 부품이 없습니다."}
@@ -839,7 +1317,7 @@ def start_eval(parts=None, iou=0.5, report_conf=REPORT_CONF, weights=None):
         sa._BUSY["on"] = True
     jid = uuid.uuid4().hex[:8]
     sa.JOBS[jid] = {"stage": "eval", "running": True, "error": None,
-                    "done": 0, "total": 0, "note": "준비 중"}
+                    "done": 0, "total": 0, "note": "준비 중", "log": []}
     threading.Thread(target=_run_eval, args=(jid, parts, iou, report_conf, weights),
                      daemon=True).start()
     return {"job": jid}
@@ -851,6 +1329,8 @@ def eval_result(run=None):
     if not runs:
         return {"error": "채점 기록이 없습니다. 먼저 채점을 실행하세요.", "runs": []}
     run = _safe_name(run) or runs[0]
+    if not (EVAL_ROOT / run).exists():
+        run = runs[0]                       # 프룬된 run 요청 시 최신으로 대체(화면이 "없음" 안 뜨게)
     fp = EVAL_ROOT / run / "summary.json"
     if not fp.exists():
         return {"error": f"채점 기록이 없습니다: {run}", "runs": runs}
@@ -865,6 +1345,8 @@ def eval_detail(run=None, part=None):
     if not runs:
         return {"error": "채점 기록이 없습니다."}
     run = _safe_name(run) or runs[0]
+    if not (EVAL_ROOT / run).exists():
+        run = runs[0]                       # 프룬된 run 요청 시 최신으로 대체(화면이 "없음" 안 뜨게)
     fp = EVAL_ROOT / run / "detail.json"
     if not fp.exists():
         return {"error": "이 채점에는 근거 파일이 없습니다(예전 실행). 다시 채점하세요."}
@@ -881,6 +1363,8 @@ def eval_series(run=None, part=None, limit=400):
     if not runs:
         return {"error": "채점 기록이 없습니다."}
     run = _safe_name(run) or runs[0]
+    if not (EVAL_ROOT / run).exists():
+        run = runs[0]                       # 프룬된 run 요청 시 최신으로 대체(화면이 "없음" 안 뜨게)
     part = _safe_name(part or "")
     fp = EVAL_ROOT / run / ("curve_%s.csv" % part)
     if not fp.exists():
@@ -897,12 +1381,124 @@ def eval_series(run=None, part=None, limit=400):
             "n_rows": len(rows), "foot": foot}
 
 
+def eval_intro():
+    """평가 개요에 쓸 값. 코드에 적어 두면 모델을 바꿀 때 문구가 낡으므로 실제 값을 읽는다."""
+    m = sa.served_model() or {}
+    w = str(m.get("weights") or "")
+    meta = {}
+    try:
+        # weights = results/<세션>/model/best.pt -> 그 세션의 meta.json
+        for part in Path(w).parts:
+            if len(part) == 13 and part[6] == "_":
+                f = config.BASE_DIR / "results" / part / "meta.json"
+                if f.exists():
+                    meta = json.loads(f.read_text(encoding="utf-8"))
+                break
+    except (ValueError, OSError):
+        meta = {}
+    label = str(meta.get("label") or m.get("label") or "")
+    n_img = int(meta.get("n_images") or 0)
+    syn = bg = 0
+    for pat, key in ((r"합성\s*(\d+)", "syn"), (r"배경\s*(\d+)", "bg")):
+        mm = re.search(pat, label)
+        if mm:
+            if key == "syn":
+                syn = int(mm.group(1))
+            else:
+                bg = int(mm.group(1))
+    real = n_img - syn - bg if n_img and (syn or bg) else 0
+    st = gt_status()["parts"]
+    return {"base_model": meta.get("base_model") or "yolo11m.pt",
+            "n_classes": meta.get("n_classes") or len(m.get("classes") or []),
+            "epochs": meta.get("epochs") or 0,
+            "n_images": n_img, "n_real": max(0, real), "n_synth": syn, "n_bg": bg,
+            "imgsz": EVAL_IMGSZ, "iou": 0.5, "pass_threshold": PASS_THRESHOLD,
+            "n_parts": len(st), "n_frames": sum(x["labels"] for x in st),
+            "n_boxes": sum(x["boxes"] for x in st),
+            "parts": [x["part"] for x in st]}
+
+
+def _dashed_rect(img, p1, p2, color, th, dash=18, gap=12):
+    """점선 사각형. 정답을 실선으로 그리면 검출과 거의 겹칠 때 서로를 완전히 가린다."""
+    (x1, y1), (x2, y2) = p1, p2
+    for xa in range(x1, x2, dash + gap):
+        xb = min(xa + dash, x2)
+        cv2.line(img, (xa, y1), (xb, y1), color, th)
+        cv2.line(img, (xa, y2), (xb, y2), color, th)
+    for ya in range(y1, y2, dash + gap):
+        yb = min(ya + dash, y2)
+        cv2.line(img, (x1, ya), (x1, yb), color, th)
+        cv2.line(img, (x2, ya), (x2, yb), color, th)
+
+
+# 색 규약(BGR). 정답은 뒤로 물러나는 하늘색 점선, 검출은 눈에 드는 초록/빨강 실선.
+COL_GT = (248, 189, 56)     # 하늘색 #38bdf8
+COL_TP = (60, 175, 25)      # 초록  #19af3c
+COL_FP = (0, 60, 255)       # 빨강
+
+
+def gt_inputs(parts=None):
+    """채점에 들어가는 입력(정답) 목록. 부품별 프레임 이름과 박스 수.
+
+    심사에서 먼저 확인하는 것은 "무엇을 넣었나"다. 채점 실행과 무관하게 지금 있는
+    정답을 그대로 보여 주려고 채점 결과(detail.json)를 거치지 않는다.
+    """
+    out = []
+    for part in (parts or gt_eval_parts()):
+        part = _safe_name(part)
+        imgs, lbls = _gt_dirs(part)
+        items = []
+        if lbls.exists():
+            for lp in sorted(lbls.glob("*.txt")):
+                lines = [ln for ln in lp.read_text(encoding="utf-8").splitlines() if ln.strip()]
+                if not lines or not (imgs / (lp.stem + ".jpg")).exists():
+                    continue
+                items.append({"name": lp.stem, "boxes": len(lines)})
+        if items:
+            out.append({"part": part, "n": len(items),
+                        "boxes": sum(x["boxes"] for x in items), "items": items})
+    return {"parts": out, "n_images": sum(p["n"] for p in out),
+            "n_boxes": sum(p["boxes"] for p in out)}
+
+
+def gt_image(part=None, name=None, w=420, box=0):
+    """채점에 들어가는 프레임 한 장. box=1 이면 사람이 그린 정답 박스도 그린다.
+
+    기본은 박스 없이 원본 그대로다. 이 화면의 '입력 데이터' 는 무엇을 넣었는지 보는
+    자리이고, 정답·검출을 겹쳐 보는 것은 아래 결과 프레임이 맡는다.
+    """
+    part, name = _safe_name(part or ""), _safe_name(name or "")
+    if not (part and name):
+        return None
+    imgs, lbls = _gt_dirs(part)
+    ip, lp = imgs / (name + ".jpg"), lbls / (name + ".txt")
+    if not ip.exists():
+        return None
+    im = _rd(ip)
+    if im is None:
+        return None
+    H, W = im.shape[:2]
+    if box:
+        # 입력 화면은 "여기 부품이 있다" 표시라 초록 점선으로 둔다(사용자 지시).
+        _draw_label(im, lp, COL_TP)
+    try:
+        w = max(120, min(1600, int(w)))
+    except (TypeError, ValueError):
+        w = 420
+    if W > w:
+        im = cv2.resize(im, (w, int(H * w / W)))
+    ok, buf = cv2.imencode(".jpg", im, [cv2.IMWRITE_JPEG_QUALITY, 82])
+    return buf.tobytes() if ok else None
+
+
 def eval_frame(run=None, part=None, name=None, w=900):
     """GT(초록)와 검출(주황·TP는 파랑)을 한 장에 겹쳐 그린 이미지. 근거 확인용."""
     runs = _eval_runs()
     if not runs:
         return None
     run = _safe_name(run) or runs[0]
+    if not (EVAL_ROOT / run).exists():
+        run = runs[0]                       # 프룬된 run 요청 시 최신으로 대체(화면이 "없음" 안 뜨게)
     part, name = _safe_name(part or ""), _safe_name(name or "")
     fp = EVAL_ROOT / run / "detail.json"
     if not (fp.exists() and part and name):
@@ -917,19 +1513,6 @@ def eval_frame(run=None, part=None, name=None, w=900):
     H, W = im.shape[:2]
     _r, bt, _e = sa._ov_sizes(W, H)
 
-    def dashed(img, p1, p2, color, th, dash=18, gap=12):
-        """점선 사각형. 검출을 실선으로 그리면 GT 와 거의 겹칠 때(IoU 0.99) 초록이
-        완전히 가려져 평가자가 GT 를 볼 수 없다. 점선 사이로 GT 가 보이게 한다."""
-        (x1, y1), (x2, y2) = p1, p2
-        for xa in range(x1, x2, dash + gap):
-            xb = min(xa + dash, x2)
-            cv2.line(img, (xa, y1), (xb, y1), color, th)
-            cv2.line(img, (xa, y2), (xb, y2), color, th)
-        for ya in range(y1, y2, dash + gap):
-            yb = min(ya + dash, y2)
-            cv2.line(img, (x1, ya), (x1, yb), color, th)
-            cv2.line(img, (x2, ya), (x2, yb), color, th)
-
     # 라벨은 선 색 바탕에 흰 글씨로 얹는다. 글씨만 그리면 배경 무늬(수건·바닥)에 묻혀
     # 읽히지 않았다. 라벨끼리 겹치면 자리를 위·아래로 옮겨 서로 가리지 않게 한다.
     FONT = cv2.FONT_HERSHEY_SIMPLEX
@@ -943,12 +1526,23 @@ def eval_frame(run=None, part=None, name=None, w=900):
                 return True
         return False
 
-    def label(text, x, y_above, y_below, color):
+    def label(text, x, y_above, y_below, color, inside=False):
         (tw, th), base = cv2.getTextSize(text, FONT, fs, ft)
         pad, bh = 4, th + base + 8
         x = min(max(x, 0), max(0, W - tw - pad * 2))
-        # 1순위 박스 위, 2순위 박스 아래. 그래도 겹치면 한 줄 높이씩 밀어 내린다.
-        for y in ([y_above - bh, y_below] +
+        if inside:
+            # 검출 라벨: 아래선 밖 -> 아래선 안쪽 -> 박스 위 순서로 자리를 본다.
+            # 아래가 화면 끝이거나 다른 라벨이 차지했을 때만 안쪽으로 들어간다.
+            cands = [y_below]
+            if (y_below - y_above) > bh * 2.2:
+                # 박스가 라벨 높이의 2.2배는 되어야 안쪽에 넣는다.
+                # 작은 부품은 라벨이 부품을 다 덮어 버린다.
+                cands.append(y_below - 2 - bh)
+            cands.append(y_above - bh)
+        else:
+            cands = [y_above - bh, y_below]     # 정답 라벨은 박스 위가 1순위
+        # 그래도 겹치면 한 줄 높이씩 밀어 내린다.
+        for y in (cands +
                   [y_below + k * (bh + 2) for k in range(1, 8)] +
                   [y_above + k * (bh + 2) for k in range(1, 8)]):
             if y < 0 or y + bh > H:
@@ -965,17 +1559,22 @@ def eval_frame(run=None, part=None, name=None, w=900):
         cv2.rectangle(im, (x, y), (x + tw + pad * 2, y + bh), color, -1)
         cv2.putText(im, text, (x + pad, y + th + 4), FONT, fs, (255, 255, 255), ft, cv2.LINE_AA)
 
+    # 정답은 하늘색 점선으로 뒤에 두고, 검출을 초록·빨강 실선으로 앞에 세운다.
+    # 심사에서 보는 것은 "모델이 무엇을 찾았나" 라서 검출이 눈에 먼저 들어와야 한다.
     for b in d.get("gt", []):
-        cv2.rectangle(im, (b[0], b[1]), (b[2], b[3]), (0, 200, 0), bt + 1)   # GT 초록 실선(굵게)
+        _dashed_rect(im, (b[0], b[1]), (b[2], b[3]), COL_GT, bt)
     for b in d.get("gt", []):
-        label("GT", b[0], b[1] - 2, b[3] + 2, (0, 200, 0))
+        label("GT", b[0], b[1] - 2, b[3] + 2, COL_GT)
     for b in d.get("pred", []):
-        if b[4] < 0.05:                # 곡선용 저신뢰 검출까지 다 그리면 화면이 못 읽는다
-            continue
-        col = (255, 140, 0) if b[6] else (0, 60, 255)                        # TP 파랑 / FP 빨강
-        dashed(im, (b[0], b[1]), (b[2], b[3]), col, bt)                      # 검출은 점선
-        label("%s %.2f iou %.2f" % ("TP" if b[6] else "FP", b[4], b[5]),
-              b[0], b[1] - 2, b[3] + 2, col)
+        # 신뢰도로 그림을 걸러내지 않는다. 표의 TP·FP·FN 은 검출 전부에서 세므로,
+        # 여기서 conf 0.05 미만을 빼면 "FP 1건" 이라 적힌 박스가 그림에 없었다
+        # (bracket 의 FP 는 conf 0.019 였다). 실제 검출은 프레임당 1~2건이라 다 그려도 읽힌다.
+        col = COL_TP if b[6] else COL_FP                       # TP 초록 / FP 빨강
+        cv2.rectangle(im, (b[0], b[1]), (b[2], b[3]), col, bt)  # 검출은 실선
+        # 라벨에 conf 를 쓰지 않는다. 판정은 IoU 0.5 로 하고 conf 는 정렬 순서일 뿐인데,
+        # 그림에 같이 적으면 심사에서 "이 숫자가 기준인가"를 묻게 된다.
+        label("%s (IoU %.2f)" % ("TP" if b[6] else "FP", b[5]),
+              b[0], b[1] - 2, b[3] + 2, col, inside=True)
     w = max(64, min(int(w or 900), 4096))
     if W > w:
         im = cv2.resize(im, (w, int(H * w / W)))
@@ -987,12 +1586,20 @@ def eval_frame(run=None, part=None, name=None, w=900):
 # ==================== 시나리오1 전용: 5종 x 10컷 수집 + 탭 마스크 ====================
 # 이 화면은 일회용이다. 영상을 고르거나 임계값을 만지는 기능을 두지 않는다.
 # 심사 기준(시나리오1)이 conf 0.7 이므로 수집도 그 기준으로만 한다.
-PICK_CONF = REPORT_CONF        # 0.70. 심사 기준과 같은 값으로 프레임을 고른다
+# 후보를 고르는 임계는 낮게 잡는다.
+# 0.70 으로 훑던 것을 내렸다. 0.70 은 심사 기준이 아니라 우리 추론 API 의 출력 규격
+# (0.7 미만은 detections 에 넣지 않는다)이다. 시험시나리오의 판정 지표는 mAP@0.5 이고
+# mAP 는 PR 곡선 전체 면적이라 특정 conf 에 묶이지 않는다.
+# 실측: 평가프레임 715장에서 nut 은 0.70 이상이 1장뿐이라 화면에 사실상 나오지 않았고,
+# 0.10 까지 내리면 20장이 나온다(brether_cap 9장 -> 17장). 후보가 적어 사람이 고를 수 없었다.
+# 게다가 후보를 높은 임계로 자르면 GT 가 "모델이 이미 잘 맞히는 장면"에만 생겨,
+# 놓친 장면(FN)이 채점에서 통째로 빠진다. 그래서 낮게 훑고 고르기는 사람이 한다.
+PICK_CONF = 0.10
 PICK_PER_PART = 10             # 종별 10컷
 
 
 def _run_collect(job_id, step):
-    """평가영상 전체를 conf 0.70 으로 훑어 5종별 10컷을 고른다.
+    """평가영상 전체를 conf PICK_CONF 로 훑어 부품별 후보를 모은다.
     사람이 영상을 고르지 않는다. 있는 영상을 전부 본다."""
     j = sa.JOBS[job_id]
     try:
@@ -1098,7 +1705,9 @@ def collect_result(run=None):
     for part in (d.get("cands") or {}):
         gi, gl = _gt_dirs(part)
         saved[part] = sorted(p.stem for p in gl.glob("*.txt")) if gl.exists() else []
-    d["saved"] = saved
+    d["saved"] = saved                 # 내보낸 GT 파일
+    d["drafts"] = draft_list()["drafts"]   # 자동 저장한 작업물
+    d["pending"] = draft_pending()         # 그중 아직 파일에 반영 안 된 것
     d["sel"] = _load_select(run)
     return d
 
@@ -1112,9 +1721,14 @@ def label_of(part, stem, idx):
         idx = int(idx)
     except (TypeError, ValueError):
         return {"error": "idx 가 정수가 아닙니다."}
-    lp = _gt_dirs(part)[1] / f"{stem}_{idx:05d}.txt"
+    name = f"{stem}_{idx:05d}"
+    # 초안이 있으면 그것이 최신이다(자동 저장분). 없으면 내보낸 파일을 읽는다.
+    dr = _load_drafts().get(part, {})
+    if name in dr:
+        return {"boxes": [list(b) for b in dr[name]], "src": "draft"}
+    lp = _gt_dirs(part)[1] / f"{name}.txt"
     if not lp.exists():
-        return {"boxes": []}
+        return {"boxes": [], "src": "none"}
     boxes = []
     for ln in lp.read_text(encoding="utf-8").splitlines():
         t = ln.split()
@@ -1123,7 +1737,7 @@ def label_of(part, stem, idx):
                 boxes.append([float(t[1]), float(t[2]), float(t[3]), float(t[4])])
             except ValueError:
                 continue
-    return {"boxes": boxes}
+    return {"boxes": boxes, "src": "file"}
 
 
 def _known_parts():

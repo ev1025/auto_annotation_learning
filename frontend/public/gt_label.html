@@ -44,6 +44,8 @@
   h1{margin:0;font-size:17px;color:var(--ink-strong);white-space:nowrap}
   .sub{color:var(--muted);font-size:12px}
   .spacer{flex:1}
+  /* 버튼 묶음은 통째로 줄바꿈한다(안에서 갈라지지 않게) */
+  .acts{display:flex;align-items:center;gap:8px;flex:none;flex-wrap:nowrap;margin-left:auto}
 
   .btn{min-height:36px;padding:0 14px;border-radius:var(--r-md);border:1px solid var(--line-strong);
        background:var(--surface);font-weight:600}
@@ -99,6 +101,7 @@
   .card .wrap{position:relative;background:#0f172a;aspect-ratio:16/9}
   .card img{width:100%;height:100%;object-fit:contain;display:block}
   .card .wrap svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  #labMark{font-size:12px;color:var(--muted);min-width:64px}
   .card .meta{padding:6px 8px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;display:flex;gap:6px;
               justify-content:space-between;align-items:center}
   .card .meta b{color:var(--ink);font-weight:700}
@@ -119,15 +122,19 @@
   /* 박스 조작은 SVG 대신 HTML 요소로 그린다. viewBox 안에서는 핸들 크기가 이미지 배율에
      따라 커지고 커서 모양도 방향별로 줄 수 없어 쓰기 불편했다. */
   #ov{position:absolute;inset:0;touch-action:none;cursor:crosshair}
-  .bx{position:absolute;border:2px solid rgba(255,255,255,.85);border-radius:2px;cursor:move;
-      box-shadow:0 0 0 1px rgba(15,23,42,.6), inset 0 0 0 1px rgba(15,23,42,.45)}
-  .bx.on{border-color:#4f46e5;background:rgba(79,70,229,.12);
-         box-shadow:0 0 0 1px rgba(255,255,255,.9), 0 2px 10px rgba(15,23,42,.35)}
+  /* 박스가 잘 안 보인다는 지적. 2px 반투명 흰 선이라 금속·밝은 배경에서 묻혔다.
+     굵은 진홍 선 + 안팎 이중 테두리(어두운 쪽·밝은 쪽)로 배경 밝기와 무관하게 읽히게 한다.
+     반투명 채움은 뺐다 - 부품을 가려 박스를 맞추기 어려웠다. */
+  /* 흰 안쪽 테두리는 뺐다(요청). 밝은 배경 대비는 바깥 어두운 선 하나로 낸다. */
+  .bx{position:absolute;border:3px solid #f5006e;border-radius:2px;cursor:move;
+      box-shadow:0 0 0 1px rgba(15,23,42,.55)}
+  .bx.on{border-width:4px;border-color:#ff0a78;
+         box-shadow:0 0 0 1px rgba(15,23,42,.6), 0 0 12px rgba(245,0,110,.5)}
   /* 핸들은 보이는 크기(10px)보다 잡히는 범위(26px)를 크게 둔다. 작아서 못 잡는 게 제일 불편했다. */
   .hd{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;display:grid;place-items:center}
-  .hd::after{content:"";width:10px;height:10px;background:#fff;border:2px solid #4f46e5;
-             border-radius:50%;box-shadow:0 1px 4px rgba(15,23,42,.45)}
-  .hd:hover::after{width:14px;height:14px}
+  .hd::after{content:"";width:12px;height:12px;background:#fff;border:3px solid #f5006e;
+             border-radius:50%;box-shadow:0 0 0 1px rgba(15,23,42,.7), 0 1px 5px rgba(15,23,42,.5)}
+  .hd:hover::after{width:16px;height:16px}
   /* 변을 그대로 끌어도 크기가 바뀐다(모서리를 정확히 집을 필요가 없다) */
   .eg{position:absolute}
   .eg[data-h="n"],.eg[data-h="s"]{left:8%;width:84%;height:14px;cursor:ns-resize}
@@ -163,10 +170,15 @@
   <span class="pill" id="cntSel">선택 -</span>
   <span class="pill" id="cntSaved">GT -</span>
   <span class="spacer"></span>
-  <button class="btn" id="btnClear">선택 비우기</button>
-  <button class="btn primary" id="btnSaveSel">선택 저장</button>
-  <button class="btn danger" id="btnDel" hidden>GT 삭제</button>
-  <button class="btn primary" id="btnSave" hidden>GT 저장</button>
+  <!-- 한 덩어리로 묶는다. 낱개로 두면 창이 좁을 때 갈라져
+       "이미지 삭제" 가 둘째 줄 왼쪽 끝으로 떨어졌다(못 찾는다는 지적). -->
+  <div class="acts">
+    <button class="btn" id="btnClear">선택 비우기</button>
+    <button class="btn primary" id="btnSaveSel">선택 저장</button>
+    <button class="btn" id="btnDel" hidden>박스 지우기</button>
+    <button class="btn danger" id="btnDrop" hidden>이미지 삭제</button>
+    <button class="btn primary" id="btnExport" hidden>내보내기</button>
+  </div>
 </header>
 
 <main>
@@ -180,8 +192,9 @@
     <div class="bar">
       <button class="btn" id="btnPrev" aria-label="이전 프레임">◀ 이전</button>
       <span class="pill" id="labPos">-</span>
+      <span class="meta" id="labMark"></span>
       <button class="btn" id="btnNext" aria-label="다음 프레임">다음 ▶</button>
-      <label class="chk"><input type="checkbox" id="showModel" checked /> 모델 박스</label>
+      <label class="chk"><input type="checkbox" id="showModel" /> 모델 박스</label>
     </div>
     <div class="stage" id="stage">
       <div class="holder">
@@ -192,7 +205,7 @@
     <div class="foot">
       <span class="hint">
         <kbd>Shift</kbd>+방향키 이동 · <kbd>Alt</kbd>+방향키 크기 ·
-        <kbd>Ctrl</kbd>+<kbd>Z</kbd> 되돌리기 · <kbd>Del</kbd> 삭제 · <kbd>S</kbd> 저장 ·
+        <kbd>Ctrl</kbd>+<kbd>Z</kbd> 되돌리기 · <kbd>Del</kbd> 박스 삭제 · <kbd>S</kbd> 내보내기 ·
         <kbd>←</kbd><kbd>→</kbd> 프레임
       </span>
     </div>
@@ -204,7 +217,14 @@
 const $ = (id) => document.getElementById(id);
 const api = async (url, opt) => {
   const r = await fetch(url, opt);
-  return r.json().catch(() => ({ error: "응답을 읽지 못했습니다(HTTP " + r.status + ")" }));
+  const d = await r.json().catch(() => null);
+  if (!r.ok) {
+    // HTTP 실패를 성공으로 읽으면 뒷단계가 그대로 진행돼 반쪽만 처리된다.
+    // 실제로 라우트를 배포에서 빠뜨렸을 때 정적 서빙이 405 와 {"detail": ...} 를 줬고,
+    // 그 응답에 error 키가 없어 "성공"으로 읽혀 파일은 남고 선택만 지워졌다.
+    return { error: (d && (d.error || d.detail)) || ("요청 실패(HTTP " + r.status + ")") };
+  }
+  return d || { error: "응답을 읽지 못했습니다(HTTP " + r.status + ")" };
 };
 const post = (url, body) => api(url, {
   method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
@@ -222,6 +242,95 @@ const frameUrl = (c, w) => "/api/gt/frame?stem=" + encodeURIComponent(c.stem) + 
                            (w ? "&w=" + w : "");
 const savedName = (c) => c.stem + "_" + String(c.idx).padStart(5, "0");
 const clamp01 = (v) => Math.min(Math.max(v, 0), 1);
+const NLQ = String.fromCharCode(10);    // 확인창 줄바꿈
+
+// ---- 자동 저장 ----
+// 박스를 고치면 저장 버튼을 누르지 않아도 서버 초안에 남는다. 평가용 파일은
+// 내보내기에서만 만든다.
+//
+// 보낼 것을 큐에 넣고 따로 보낸다. 화면 조작(탭·부품·프레임 전환)이 저장을
+// 기다리면 안 되기 때문이다. 기다리게 했더니 await 뒤의 render() 가 뒤늦게 돌아
+// 그 사이 바꾼 선택을 덮어썼다(고르기 수정이 라벨에 안 먹던 원인).
+let draftT = null;        // 모아 보내기 타이머
+let draftQ = [];          // 보낼 것(프레임당 최신 하나)
+let draftSending = false;
+
+function touch() {                 // 박스가 바뀔 때마다 호출
+  S.dirty = true;
+  mark();
+  if (draftT) { clearTimeout(draftT); }
+  draftT = setTimeout(() => { draftT = null; flushDraft(); }, 500);
+}
+
+function flushDraft() {            // 지금 프레임을 큐에 넣는다(기다리지 않는다)
+  if (draftT) { clearTimeout(draftT); draftT = null; }
+  if (!S.dirty) { return; }
+  const c = S.list[S.i];
+  if (!c || !S.part) { return; }
+  const key = S.part + "|" + c.stem + "|" + c.idx;
+  draftQ = draftQ.filter((x) => x.key !== key);      // 같은 프레임은 최신 것만 보낸다
+  draftQ.push({ key: key, part: S.part, stem: c.stem, idx: c.idx,
+                name: savedName(c), boxes: S.boxes.map((b) => b.slice()) });
+  S.dirty = false;
+  pumpDrafts();
+}
+
+async function pumpDrafts() {
+  if (draftSending) { return; }
+  draftSending = true;
+  try {
+    while (draftQ.length) {
+      const it = draftQ.shift();
+      const r = await post("/api/gt/draft",
+                           { part: it.part, stem: it.stem, idx: it.idx, boxes: it.boxes });
+      if (r.error) { say(r.error); continue; }
+      const cur = S.list[S.i];
+      // 지금 보고 있는 프레임이 저장된 것일 때만 "저장됨" 을 켠다
+      if (cur && S.part === it.part && cur.stem === it.stem && cur.idx === it.idx) {
+        S.savedMark = true;
+      }
+      mark();
+    }
+  } finally {
+    draftSending = false;
+    mark();                        // 큐를 다 비운 뒤에도 표시를 한 번 더 갱신한다
+    refreshCounts();               // 장수는 서버 기준으로 다시 받는다
+  }
+}
+
+// 장수를 화면에서 직접 세지 않는다. 자동 저장마다 이름을 밀어 넣기만 하다 보니
+// 실제보다 부풀었다(파일과 같은지 볼 수 없고, 되돌린 것도 뺄 수 없었다).
+// 서버가 파일과 초안을 견줘 준 값만 쓴다.
+let cntT = null;
+
+function refreshCounts() {
+  if (cntT) { clearTimeout(cntT); }
+  cntT = setTimeout(async () => {
+    cntT = null;
+    const r = await api("/api/gt/counts?run=" + encodeURIComponent(S.data.run || ""));
+    if (r.error) { return; }                 // 표시용이라 실패해도 조용히 넘긴다
+    S.data.saved = r.saved || {};
+    S.data.drafts = r.drafts || {};
+    S.data.pending = r.pending || {};
+    counters();
+    if (S.mode === "pick") { renderPick(); } // 고르기 꼬리표(GT 있음)도 맞춘다
+  }, 400);
+}
+
+async function drainDrafts() {     // 내보내기 직전에만 실제로 기다린다
+  flushDraft();
+  while (draftSending || draftQ.length) {
+    await new Promise((r) => setTimeout(r, 60));
+  }
+}
+
+function mark() {                  // 저장 상태 표시(자동이라 버튼이 아니라 위치 옆에)
+  const el = $("labMark");
+  if (!el) { return; }
+  const busy = S.dirty || draftSending || draftQ.length > 0;
+  // 손대지 않은 프레임에 "저장됨" 을 띄우면 안 그린 것도 저장된 것처럼 읽힌다
+  el.textContent = busy ? "저장 중" : (S.savedMark ? "자동 저장됨" : "");
+}
 
 const S = {
   tip: null, undo: [],
@@ -245,9 +354,21 @@ async function load(keepPart) {
 }
 
 function partList() {
-  // 고르기는 잡힌 부품 전부, 라벨은 고른 것이 있는 부품만.
+  // 고르기는 잡힌 부품 전부. 라벨은 실제로 띄울 프레임이 있는 부품만.
   const all = Object.keys((S.data || {}).cands || {});
-  return S.mode === "pick" ? all : all.filter((p) => (S.sel[p] || new Set()).size > 0);
+  return S.mode === "pick" ? all : all.filter((p) => labFrames(p).length > 0);
+}
+
+function labFrames(part) {
+  // 라벨 탭에 띄울 프레임 = 고르기에서 고른 것 + GT 를 저장해 둔 것.
+  // 저장분을 빼면 이미 만든 GT 를 다시 열 길이가 없어진다(고르기에서 체크를 풀거나
+  // 재수집으로 선택이 비워졌을 때). 저장한 이름이 이번 수집 후보에 없으면
+  // 띄울 프레임이 없다는 뜻이라 여기서 자연히 걸러진다(gearbox 손라벨 40장이 그렇다).
+  const sel = S.sel[part] || new Set();
+  const done = new Set([...(((S.data || {}).saved) || {})[part] || [],
+                        ...(((S.data || {}).drafts) || {})[part] || []]);
+  return (((S.data || {}).cands || {})[part] || [])
+    .filter((c) => sel.has(keyOf(c)) || done.has(savedName(c)));
 }
 
 function fillParts(keepPart) {
@@ -262,17 +383,40 @@ function fillParts(keepPart) {
 
 function counters() {
   if (!S.part) { return; }
+  // 숫자 셋이 각각 다른 것을 세다 보니 "선택 2/10" 인데 이전다음은 7장을 훑었다.
+  // 그래서 각 탭에서 눈에 보이는 것과 같은 값만 띄운다.
+  //   후보  = 고르기 격자의 카드 수
+  //   선택  = 고르기에서 체크한 수 (고르기 탭에서만)
+  //   목록  = 라벨에서 이전다음이 훑는 장수 (라벨 탭에서만, 위치 표시의 분모와 같다)
+  //   GT    = 박스가 있는 프레임 수(내보낸 파일 + 자동 저장분, 같은 프레임은 한 번)
+  //   미반영 = 그중 파일에 아직 안 들어간 것
   const cands = (S.data.cands || {})[S.part] || [];
   const per = S.data.per_part || 10;
-  const nsel = S.sel[S.part].size;
-  const nsaved = ((S.data.saved || {})[S.part] || []).length;
+  const names = new Set(cands.map(savedName));
+  const inCands = (arr) => (arr || []).filter((n) => names.has(n));
+  const files = inCands((S.data.saved || {})[S.part]);
+  const box = new Set([...files, ...inCands((S.data.drafts || {})[S.part])]);
+  const npend = inCands((S.data.pending || {})[S.part]).length;
+  const nsel = S.sel[S.part] ? S.sel[S.part].size : 0;
+
+  // 라벨 탭에서는 "후보"·"목록" 을 띄우지 않는다. 후보는 고르기 개념이고, 목록 장수는
+  // 이전·다음 옆 위치 표시(1 / 10)가 이미 같은 값을 보여 준다. 두 번 세니 헷갈렸다.
+  const pick = S.mode === "pick";
+  $("cntFound").hidden = !pick;
   $("cntFound").textContent = "후보 " + cands.length + "장";
+
   const cs = $("cntSel");
+  cs.hidden = !pick;
   cs.textContent = "선택 " + nsel + "/" + per;
+  cs.title = "고르기에서 체크한 장수.";
   cs.className = "pill " + (nsel === per ? "ok" : nsel > per ? "bad" : "warn");
+
   const cv = $("cntSaved");
-  cv.textContent = "GT " + nsaved + "장";
-  cv.className = "pill " + (nsaved >= per ? "ok" : "");
+  cv.textContent = "GT " + box.size + "/" + per + (npend ? " · 미반영 " + npend : "");
+  cv.title = "박스를 그린 프레임 " + box.size + "장(파일 " + files.length + ")." +
+             (npend ? " 미반영 " + npend + "장은 내보내기를 눌러야 파일이 됩니다."
+                    : " 전부 파일에 반영됨. 채점은 이 파일만 봅니다.");
+  cv.className = "pill " + (npend ? "warn" : box.size >= per ? "ok" : "");
 }
 
 function render() {
@@ -281,7 +425,8 @@ function render() {
   $("btnClear").hidden = !pick;
   $("btnSaveSel").hidden = !pick;
   $("btnDel").hidden = pick;
-  $("btnSave").hidden = pick;
+  $("btnDrop").hidden = pick;
+  $("btnExport").hidden = pick;
   if (!n || !S.part) {                  // 라벨 모드인데 고른 부품이 없으면 빈 화면
     $("viewPick").hidden = !pick; $("viewLab").hidden = pick;
     if (pick) { $("grid").innerHTML = ""; } else { $("im").removeAttribute("src"); $("ov").innerHTML = ""; }
@@ -298,7 +443,9 @@ function renderPick() {
   $("tabPick").setAttribute("aria-pressed", "true");
   $("tabLab").setAttribute("aria-pressed", "false");
   const cands = (S.data.cands || {})[S.part] || [];
-  const saved = new Set((S.data.saved || {})[S.part] || []);
+  // 내보낸 파일과 자동 저장한 작업분을 함께 '작업함'으로 본다
+  const saved = new Set([...(S.data.saved || {})[S.part] || [],
+                         ...(S.data.drafts || {})[S.part] || []]);
   const g = $("grid");
   g.innerHTML = "";
   if (!cands.length) {
@@ -332,6 +479,7 @@ function renderPick() {
     const toggle = () => {
       const set = S.sel[S.part];
       if (set.has(k)) { set.delete(k); } else { set.add(k); }
+      autoSaveSel(S.part);
       renderPick(); counters();
       const again = g.children[n];        // 다시 그린 뒤에도 초점을 그 카드에 둔다
       if (again) { again.focus(); }
@@ -343,6 +491,28 @@ function renderPick() {
     g.appendChild(el);
   });
 }
+
+// 선택도 자동 저장한다. GT·초안은 자동인데 선택만 버튼을 눌러야 남아서,
+// 10장을 라벨해 놓고 고르기에는 5장으로 보이는 어긋남이 생겼다(split_gearbox).
+let selT = null;
+
+function autoSaveSel(part) {
+  const target = part || S.part;
+  if (selT) { clearTimeout(selT); }
+  selT = setTimeout(async () => {
+    selT = null;
+    if (!S.data.run || !target || !S.sel[target]) { return; }
+    const r = await post("/api/gt/select",
+                         { run: S.data.run, part: target, keys: Array.from(S.sel[target]) });
+    if (r.error) { say(r.error); return; }
+    const b = $("btnSaveSel");
+    if (b) {
+      b.textContent = "저장됨";
+      setTimeout(() => { b.textContent = "선택 저장"; }, 1200);
+    }
+  }, 500);
+}
+
 
 async function saveSel() {
   const b = $("btnSaveSel");
@@ -357,9 +527,7 @@ async function saveSel() {
 
 /* ---------------- 2. 라벨 ---------------- */
 function selList() {
-  const cands = (S.data.cands || {})[S.part] || [];
-  const s = S.sel[S.part];
-  return cands.filter((c) => s.has(keyOf(c)));
+  return labFrames(S.part);
 }
 
 async function renderLab() {
@@ -382,6 +550,7 @@ async function renderLab() {
   S.boxes = (g.boxes || []).map((b) => b.slice());
   S.act = S.boxes.length ? 0 : -1;
   S.dirty = false;
+  S.savedMark = (g.src === "draft");    // 이미 자동 저장분이 있는 프레임이면 그렇다고 표시
   drawBoxes();
 }
 
@@ -416,7 +585,7 @@ function drawBoxes() {
     h += "</div>";
   });
   ov.innerHTML = h;
-  $("btnSave").textContent = S.dirty ? "GT 저장 *" : "GT 저장";
+  mark();
 }
 
 /* 화면 좌표 -> 0..1. 오버레이가 이미지와 정확히 겹쳐 있으므로 비율 계산만 하면 된다 */
@@ -464,13 +633,18 @@ $("ov").addEventListener("pointermove", (ev) => {
   drag.moved = true;
   if (drag.kind === "new") {
     const x = Math.min(drag.x0, nx), y = Math.min(drag.y0, ny);
-    const w = Math.abs(nx - drag.x0), hh = Math.abs(ny - drag.y0);
-    if (w < 0.004 && hh < 0.004) { return; }
+    // 한 방향으로만 끌면 폭이나 높이가 0 인 박스가 생겨 저장이 거부됐다.
+    // 크기 조절 쪽과 같은 최소값(0.004)으로 막는다.
+    const w = Math.max(Math.abs(nx - drag.x0), 0.004);
+    const hh = Math.max(Math.abs(ny - drag.y0), 0.004);
+    if (!drag.moved0 && w <= 0.004 && hh <= 0.004) { return; }
+    drag.moved0 = true;
     if (drag.made === undefined) {
-      S.boxes.push([0, 0, 0, 0]); drag.made = S.boxes.length - 1; S.act = drag.made;
+      // 프레임당 박스는 하나만 둔다(사용자 지시). 새로 그리면 있던 것을 대신한다.
+      S.boxes = [[0, 0, 0, 0]]; drag.made = 0; S.act = 0;
     }
     S.boxes[drag.made] = [x + w / 2, y + hh / 2, w, hh];
-    S.dirty = true; S.tip = sizeTip(S.boxes[drag.made]); drawBoxes(); return;
+    touch(); S.tip = sizeTip(S.boxes[drag.made]); drawBoxes(); return;
   }
   const b = S.boxes[S.act];
   if (!b) { return; }
@@ -487,7 +661,7 @@ $("ov").addEventListener("pointermove", (ev) => {
     b[0] = (x1 + x2) / 2; b[1] = (y1 + y2) / 2;
     b[2] = Math.max(x2 - x1, 0.004); b[3] = Math.max(y2 - y1, 0.004);
   }
-  S.dirty = true; S.tip = sizeTip(b); drawBoxes();
+  touch(); S.tip = sizeTip(b); drawBoxes();
 });
 $("ov").addEventListener("pointerup", async (ev) => {
   const d = drag; drag = null;
@@ -505,44 +679,110 @@ async function tap(nx, ny) {
   if (!c) { return; }
   const r = await post("/api/gt/tap", { stem: c.stem, idx: c.idx, points: [[nx, ny, 1]] });
   if (r.error) { say(r.error); return; }
-  if (r.combo) { $("im").src = "data:image/jpeg;base64," + r.combo; }
-  if (r.box) { S.boxes.push(r.box.slice()); S.act = S.boxes.length - 1; S.dirty = true; drawBoxes(); }
+  // 마스크 겹친 그림(r.combo)으로 프레임을 갈아치우지 않는다.
+  // 두 가지 문제가 있었다. ①서버(_b64)가 이미 "data:image/jpeg;base64," 를 붙여 주는데
+  // 화면에서 또 붙여 주소가 겹쳐 ERR_INVALID_URL 로 그림이 사라졌다(클릭하면 화면이 비던 원인).
+  // ②고쳐서 띄워도 그 그림은 가로 640 으로 줄인 것이라 1920 원본이 흐려진다.
+  // 결과는 박스로 바로 보이니 원본을 그대로 둔다.
+  // 마스크가 화면 절반을 넘으면 부품이 아니라 배경을 잡은 것이다. 박스 하나만 두는
+  // 규칙이라 이걸 그대로 넣으면 공들여 맞춘 박스가 통째로 덮인다. 그래서 넣지 않는다.
+  if (r.verdict === "over") {
+    say("배경을 잡았습니다(화면의 " + Math.round((r.area_frac || 0) * 100) +
+        "%). 부품 안쪽을 다시 누르거나 드래그로 그리세요.");
+    return;
+  }
+  // 탭으로 만든 것도 하나만 둔다(드래그와 같은 규칙)
+  if (r.box) { say(""); S.boxes = [r.box.slice()]; S.act = 0; touch(); drawBoxes(); }
 }
 
-async function saveGT() {
+async function exportGT() {
+  // 자동 저장은 초안까지만 한다. 이 버튼이 평가용 파일(images·labels)을 만든다.
+  await drainDrafts();
+  const b = $("btnExport");
+  b.disabled = true; b.textContent = "내보내는 중";
+  try {
+    const r = await post("/api/gt/export", {});
+    if (r.error) { say(r.error); return; }
+    // 부품별 "지금 파일이 몇 장인가"를 말한다. 이번에 몇 장을 썼는지는 괄호로 뒤에 붙인다.
+    const tot = r.totals || {};
+    const names = Object.keys(tot);
+    let m = "내보내기 완료";
+    if (names.length) {
+      m += " · " + names.map((k) => k + " " + tot[k] + "장").join(" · ");
+    }
+    const chg = [];
+    if (r.files) { chg.push("새로 " + r.files); }
+    if (r.deleted) { chg.push("지움 " + r.deleted); }
+    if (chg.length) { m += "  (" + chg.join(", ") + ")"; }
+    if ((r.errors || []).length) { m += " · 문제 " + r.errors.length + "건: " + r.errors[0]; }
+    say(m);
+    await load(S.part);             // 내보낸 목록(saved)을 다시 읽어 꼬리표를 맞춘다
+  } finally {
+    b.disabled = false; b.textContent = "내보내기";
+  }
+}
+
+async function dropFrame() {
+  // 박스만 비우는 것("박스 지우기")과 다르다. 이 프레임을 이 부품 작업에서 통째로 뺀다.
+  // 되돌릴 수 없어(파일·초안 삭제) 한 번 묻는다.
   const c = S.list[S.i];
   if (!c) { return; }
-  const r = await post("/api/gt/commit",
-                       { part: S.part, stem: c.stem, idx: c.idx, boxes: S.boxes });
-  if (r.error) { say(r.error); return; }
-  S.dirty = false;
-  if (!S.data.saved) { S.data.saved = {}; }
-  const sv = S.data.saved[S.part] || (S.data.saved[S.part] = []);
-  if (sv.indexOf(savedName(c)) < 0) { sv.push(savedName(c)); }
-  counters();
-  if (S.i < S.list.length - 1) { S.i += 1; renderLab(); } else { drawBoxes(); }
+  if (!window.confirm(S.part + " · " + savedName(c) + NLQ +
+                      "이 이미지를 목록에서 지웁니다. GT 파일과 작업분이 삭제됩니다.")) { return; }
+  const b = $("btnDrop");
+  b.disabled = true;
+  try {
+    // 큐에 이 프레임 저장분이 남아 있으면 지운 뒤 되살아난다. 먼저 비운다.
+    draftQ = draftQ.filter((x) => x.key !== (S.part + "|" + c.stem + "|" + c.idx));
+    S.dirty = false;
+    const r = await post("/api/gt/drop", { part: S.part, stem: c.stem, idx: c.idx });
+    if (r.error) { say(r.error); return; }
+    // 선택에서도 빼고 서버에 남긴다(선택은 실행별 파일이라 따로 저장해야 한다)
+    S.sel[S.part].delete(keyOf(c));
+    const rs = await post("/api/gt/select",
+                          { run: S.data.run, part: S.part, keys: Array.from(S.sel[S.part]) });
+    if (rs.error) { say(rs.error); }
+    // 목록에서 즉시 빼고(렌더가 이걸 본다) 장수는 서버에서 다시 받는다
+    const nm = savedName(c);
+    ["saved", "drafts", "pending"].forEach((k) => {
+      const arr = (S.data[k] || {})[S.part];
+      if (arr) { const at = arr.indexOf(nm); if (at >= 0) { arr.splice(at, 1); } }
+    });
+    S.savedMark = false;
+    refreshCounts();
+    if (S.i > 0) { S.i -= 1; }        // 목록이 줄어드니 한 칸 앞으로
+    render();                          // 부품 목록까지 다시 그린다(마지막 장이면 부품이 빠진다)
+  } finally {
+    b.disabled = false;
+  }
 }
 
-async function delGT() {
-  const c = S.list[S.i];
-  if (!c) { return; }
-  const r = await post("/api/gt/commit", { part: S.part, stem: c.stem, idx: c.idx, boxes: [] });
-  if (r.error) { say(r.error); return; }
-  S.data.saved[S.part] = ((S.data.saved || {})[S.part] || []).filter((x) => x !== savedName(c));
-  S.boxes = []; S.act = -1; S.dirty = false;
-  counters(); drawBoxes();
+function delGT() {
+  // 파일을 직접 지우지 않는다. 박스를 비우고 자동 저장하면 내보내기가 파일에서도 지운다.
+  if (!S.list[S.i]) { return; }
+  S.boxes = []; S.act = -1;
+  touch(); drawBoxes();
 }
 
-$("tabPick").onclick = () => { S.mode = "pick"; render(); };
+$("tabPick").onclick = () => { flushDraft(); S.mode = "pick"; render(); };
 $("tabLab").onclick = () => { S.mode = "label"; S.i = 0; render(); };
-$("partSel").onchange = (e) => { S.part = e.target.value; S.i = 0; render(); };
-$("btnClear").onclick = () => { S.sel[S.part].clear(); renderPick(); counters(); };
+$("partSel").onchange = (e) => { flushDraft(); S.part = e.target.value; S.i = 0; render(); };
+$("btnClear").onclick = () => {
+  S.sel[S.part].clear(); autoSaveSel(S.part); renderPick(); counters();
+};
 $("btnSaveSel").onclick = saveSel;
-$("btnPrev").onclick = () => { if (S.i > 0) { S.i -= 1; renderLab(); } };
-$("btnNext").onclick = () => { if (S.i < S.list.length - 1) { S.i += 1; renderLab(); } };
+// 프레임을 넘기기 전에 남은 수정을 큐에 넣는다(안 넣으면 마지막 수정이 날아간다).
+// 큐에 넣기만 하고 기다리지 않는다 - 기다리면 화면이 밀린다.
+$("btnPrev").onclick = () => { if (S.i > 0) { flushDraft(); S.i -= 1; renderLab(); } };
+$("btnNext").onclick = () => {
+  if (S.i < S.list.length - 1) { flushDraft(); S.i += 1; renderLab(); }
+};
+// 탭·부품을 바꾸거나 창을 닫을 때도 흘려보낸다
+window.addEventListener("beforeunload", () => { flushDraft(); });
 $("showModel").onchange = drawBoxes;
-$("btnSave").onclick = saveGT;
+$("btnExport").onclick = exportGT;
 $("btnDel").onclick = delGT;
+$("btnDrop").onclick = dropFrame;
 document.addEventListener("keydown", (e) => {
   if (S.mode !== "label") { return; }
   const b = S.boxes[S.act];
@@ -554,22 +794,22 @@ document.addEventListener("keydown", (e) => {
     const dy = e.key === "ArrowUp" ? -d : e.key === "ArrowDown" ? d : 0;
     if (e.shiftKey) { b[0] = clamp01(b[0] + dx); b[1] = clamp01(b[1] + dy); }
     else { b[2] = Math.max(0.004, b[2] + dx); b[3] = Math.max(0.004, b[3] + dy); }
-    S.dirty = true; S.tip = sizeTip(b); drawBoxes();
+    touch(); S.tip = sizeTip(b); drawBoxes();
     return;
   }
   if (e.key === "ArrowLeft" || e.key === "a") { $("btnPrev").click(); }
   else if (e.key === "ArrowRight" || e.key === "d") { $("btnNext").click(); }
-  else if (e.key === "s" || e.key === "S") { saveGT(); }
+  else if (e.key === "s" || e.key === "S") { exportGT(); }
   else if ((e.key === "z" || e.key === "Z") && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
     const prev = S.undo.pop();
-    if (prev) { S.boxes = JSON.parse(prev); S.act = S.boxes.length ? 0 : -1; S.dirty = true; drawBoxes(); }
+    if (prev) { S.boxes = JSON.parse(prev); S.act = S.boxes.length ? 0 : -1; touch(); drawBoxes(); }
   }
   else if (e.key === "Delete" || e.key === "Backspace") {
     if (S.act >= 0) {
       S.boxes.splice(S.act, 1);
       S.act = S.boxes.length ? 0 : -1;
-      S.dirty = true; drawBoxes();
+      touch(); drawBoxes();
     }
   }
 });
