@@ -60,6 +60,20 @@ def valid_name(name: str) -> bool:
     return bool(name and NAME_RE.match(name))
 
 
+# 카테고리 이름은 부품명의 접두어(`<카테고리>_<품목>`)로 그대로 들어간다.
+# 그래서 부품명과 같은 문자 집합만 허용한다. 공백이 들어가면 그 카테고리로 등록하는
+# 부품마다 이름이 valid_name 에서 거부돼(예: '전장 부품_relay') 등록이 실패한다.
+CAT_RE = re.compile(r"^[A-Za-z0-9가-힣][A-Za-z0-9가-힣_\-]{0,31}$")
+
+
+def valid_category(name: str) -> bool:
+    return bool(name and CAT_RE.match(name))
+
+
+CAT_ERR = ("카테고리 이름은 한글·영문·숫자·_·- 만 쓸 수 있습니다"
+           "(공백·/ 는 안 됩니다). 부품명 앞에 그대로 붙기 때문입니다.")
+
+
 def _safe_filename(name: str) -> str:
     """업로드 파일명 정리(경로 주입·공백 방지). 확장자는 유지."""
     base = Path(str(name or "")).name                  # 디렉터리 성분 제거
@@ -78,6 +92,8 @@ def add_category(name: str) -> dict:
     name = (name or "").strip()
     if not name:
         return _err("카테고리 이름을 입력하세요.")
+    if not valid_category(name):
+        return _err(CAT_ERR)
     with SessionLocal() as s:
         if s.query(Category).filter_by(name=name).first():
             return _err(f"이미 있는 카테고리입니다: {name}")
@@ -91,6 +107,8 @@ def rename_category(cid: int, name: str) -> dict:
     name = (name or "").strip()
     if not name:
         return _err("카테고리 이름을 입력하세요.")
+    if not valid_category(name):
+        return _err(CAT_ERR)
     with SessionLocal() as s:
         c = s.get(Category, cid)
         if not c:

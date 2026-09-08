@@ -485,6 +485,8 @@ button.prep-chip:hover { border-color: var(--accent); }
 @media (max-width: 1000px) { .reg-grid { grid-template-columns: 1fr; } }
 .reg-field { display: flex; flex-direction: column; gap: var(--sp-4); }
 .reg-label { font-size: var(--fs-base); font-weight: 700; color: var(--ink-strong); }
+.reg-hint{margin-top:4px;font-size:var(--fs-2xs);color:var(--muted)}   /* 저장될 이름 미리보기 */
+.reg-hint b{color:var(--accent-ink,#4338ca);font-weight:800;font-variant-numeric:tabular-nums}
 .reg-input, .reg-textarea, .csel-btn {
   font-family: inherit; font-size: var(--fs-base); color: var(--ink);
   border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--surface);
@@ -887,10 +889,11 @@ button.prep-chip:hover { border-color: var(--accent); }
 .rbmenu-item.keep { border-bottom: 1px solid var(--line); border-radius: 0; margin-bottom: var(--sp-2); padding-bottom: var(--sp-6); }
 .rbmenu-item.keep .rbmenu-t { color: var(--danger-ink); }
 /* 한 줄로: '2026-08-25 02:24 · 36종'. 예전에는 세로로 쌓아 항목 하나가 두 줄이었다. */
-.rbmenu-main { display: flex; align-items: baseline; gap: var(--sp-3); min-width: 0; flex: 1; }
-.rbmenu-main .rbmenu-t { white-space: nowrap; }
+.rbmenu-main { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex: 1;
+  flex-wrap: nowrap; }   /* 별칭이 길어도 줄이 안 깨지게: 자식이 각자 줄어든다 */
+.rbmenu-main .rbmenu-t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .rbmenu-t { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-strong); font-variant-numeric: tabular-nums; }
-.rbmenu-s { font-size: var(--fs-2xs); color: var(--muted); }
+.rbmenu-s { font-size: var(--fs-2xs); color: var(--muted); flex: none; white-space: nowrap; }
 .rbmenu-cur { font-size: var(--fs-2xs); font-weight: 700; color: var(--success-ink); background: var(--success-bg);
   padding: var(--sp-1) var(--sp-4); border-radius: var(--r-pill); flex-shrink: 0; }
 .rbmenu-del { flex-shrink: 0; width: var(--ib-sm); height: var(--ib-sm); border-radius: var(--r-pill); border: 1px solid var(--line);
@@ -1192,5 +1195,4 @@ button.prep-chip:hover { border-color: var(--accent); }
   background:#fff;border-radius:6px;font:inherit;font-size:13px;line-height:1;color:#94a3b8;cursor:pointer}
 .rbmenu-pin.on{color:#d97706;border-color:#fde68a;background:#fffbeb}
 .rbmenu-pin:hover,.rbmenu-alias-btn:hover{border-color:#c7d2fe;background:#eef2ff;color:#4338ca}
-.rbmenu-alias{display:inline-block;margin-right:6px;padding:1px 6px;border-radius:5px;
-  background:#eef2ff;color:#4338ca;font-size:11px;font-weight:800}
+.rbmenu-alias{display:inline-block;max-width:12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:none;padding:1px 6px;border-radius:5px;background:#eef2ff;color:#4338ca;font-size:11px;font-weight:800}

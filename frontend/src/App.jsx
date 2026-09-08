@@ -775,10 +775,11 @@ function RollbackMenu({ models, servedId, onRollbackTo, onDeleteModel, onKeep, o
                      setOpen(false); onRollbackTo(m.model_id)   // 확인은 인앱 모달(부모 askRollbackTo)에서
                    }}>
                 <span className="rbmenu-main">
-                  <span className="rbmenu-t">
-                    {m.alias ? <b className="rbmenu-alias">{m.alias}</b> : null}
-                    {m.time || fmtId(m.model_id)}
-                  </span>
+                  {/* 별칭을 시각 span 안에 두면 그 span 이 nowrap 인 채로 넓어져
+                      뒤의 '· N종' 과 버튼들이 다음 줄로 밀려 줄이 깨졌다. 형제로 분리해
+                      각자 줄어들 수 있게 한다(별칭·시각은 넘치면 말줄임). */}
+                  {m.alias ? <b className="rbmenu-alias" title={m.alias}>{m.alias}</b> : null}
+                  <span className="rbmenu-t">{m.time || fmtId(m.model_id)}</span>
                   {/* 인식률(gen_rate·newp_rate)은 빼 두었다. 앞 12종 표본에 평가영상이 없으면
                       학습에 쓴 영상으로 재고 박스 위치(IoU)도 안 봐서, 성능처럼 읽히면 오해를 부른다.
                       실제 성능은 사람 GT 로만 잰다(scripts/experiments/gt_viewer.py). */}
@@ -943,6 +944,9 @@ function PartsApp({ onPrep, active }) {
 
   const loadTrain = useCallback(() => {   // 모달 열 때 폴더+라벨 현황 갱신
     fetch('/api/autolabel/folders').then(r => r.json()).then(setFolders).catch(() => {})
+    // 모델 목록도 같이 받는다. 예전에는 학습이 끝났을 때만 받아서, 처음 들어오면
+    // models 가 빈 배열이라 '모델 이력' 버튼 자체가 안 나왔다(저장 모델을 볼 방법이 없었다).
+    fetch('/api/sam2/models').then(r => r.json()).then(d => setModels(d.models || [])).catch(() => {})
     fetch('/api/sam2/parts_sessions').then(r => r.json()).then(list => {
       const saved = localStorage.getItem('parts_session_v1')
       const found = list.find(s => s.session === saved) || list[0]   // 단일 영속 세션(부품별 저장소 합성) 자동 채택
@@ -953,12 +957,20 @@ function PartsApp({ onPrep, active }) {
   const [partSort, setPartSort] = useState(readPartSort)   // 부품 목록(탭2)에서 고른 정렬을 따른다
   useEffect(() => { const h = () => setPartSort(readPartSort()); addEventListener('partsortchange', h); return () => removeEventListener('partsortchange', h) }, [])   // 탭2 정렬 바뀌면 따라감
   const folderOf = (video) => folders.find(f => f.videos.some(v => v.name === video))
-  const items = Object.keys(labeledMap).map(video => {   // 라벨 1장 이상 생성된 부품만 학습 대상
+  // 라벨 1장 이상 생성된 부품만 학습 대상. labeledMap 은 **영상** 단위라 한 부품에 영상이
+  // 여럿이면 같은 이름이 여러 줄로 나왔다(Tailrotor_gearbox 2줄, key 중복 경고까지).
+  // 학습 산입은 부품 폴더 기준이므로 부품 하나로 묶고 라벨 수만 합친다.
+  const items = Object.values(Object.keys(labeledMap).reduce((acc, video) => {
     const f = folderOf(video)
-    return { video, part: f ? partOf(f.folder) : video,
-             labels: labeledMap[video].labels, trained: trainedVideos.includes(video),
-             mtime: f ? f.mtime : 0 }
-  }).filter(it => it.labels > 0)
+    const part = f ? partOf(f.folder) : video
+    const cur = acc[part] || { part, labels: 0, videos: 0, trained: true, mtime: 0 }
+    cur.labels += labeledMap[video].labels || 0
+    cur.videos += 1
+    cur.trained = cur.trained && trainedVideos.includes(video)   // 영상 전부 학습됐을 때만 '학습됨'
+    cur.mtime = Math.max(cur.mtime, f ? f.mtime : 0)
+    acc[part] = cur
+    return acc
+  }, {})).filter(it => it.labels > 0)
     // 정렬은 부품 목록(탭2)에서 고른 기준(최근 등록순/이름순)을 그대로 따른다.
     .sort(partCmp(partSort, it => it.part, it => it.mtime))
   const selected = items.filter(it => picked.includes(it.part))
@@ -1643,13 +1655,31 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
 
   const reset = () => { setName(''); setCat(null); setDesc(''); setVidFiles([]); setM3dFile(null) }
 
+  // 부품명 = `대분류_품목` 이 규칙이다(Igb_bracket · Tailrotor_nut · Tools_torque-wrench).
+  // 손으로 전체 이름을 적게 두면 대분류를 빼먹어 기존 부품과 이름이 겹친다(nut·washer·gearbox).
+  // 그래서 신규 등록에서는 고른 카테고리를 접두어로 자동 부착한다.
+  // 한글 카테고리도 접두어로 쓴다. 서버가 카테고리 이름에서 공백·특수문자를 막으므로
+  // (parts_registry.valid_category) 접두어가 붙어도 부품명 규칙을 벗어나지 않는다.
+  const [cats, setCats] = useState([])
+  useEffect(() => {
+    fetch('/api/categories').then(r => r.json()).then(d => setCats(d.categories || [])).catch(() => {})
+  }, [])
+  const catName = (cats.find(c => c.id === cat) || {}).name || ''
+  const usePrefix = !editPart && !!catName
+  const finalName = (() => {
+    const t = name.trim()
+    if (!usePrefix || !t) return t
+    const dup = new RegExp('^' + catName + '_', 'i')      // 이미 접두어를 붙여 적었으면 두 번 안 붙인다
+    return catName + '_' + t.replace(dup, '')
+  })()
+
   // 신규 등록: 부품 행 생성 → (있으면) 3D·영상 업로드 → 영상마다 프레임 사전 추출 완료까지 대기
   const create = async () => {
     setMsg(null); setBusy('부품 등록 중...')
     try {
       const r = await fetch('/api/parts', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), category_id: cat, description: desc })
+        body: JSON.stringify({ name: finalName, category_id: cat, description: desc })
       }).then(x => x.json())
       if (r.error) { setMsg({ ok: false, text: r.error }); return }
       const pid = r.id
@@ -1766,8 +1796,14 @@ function RegisterPart({ editPart, onExitEdit, onSaved, onDeleted }) {
           {/* 왼쪽: 이름 / 카테고리 / 설명(남는 높이 전체) 세로 배열 */}
           <div className="reg-col">
             <div className="reg-field">
-              <span className="reg-label">부품 이름</span>
-              <input className="reg-input" value={name} onChange={e => setName(e.target.value)} placeholder="예: gearbox · 기어박스" />
+              <span className="reg-label">{usePrefix ? '품목 이름' : '부품 이름'}</span>
+              <input className="reg-input" value={name} onChange={e => setName(e.target.value)}
+                     placeholder={usePrefix ? '예: bracket (대분류는 아래 카테고리에서 붙습니다)' : '예: bracket · 브라켓'} />
+              {/* 저장될 이름을 그대로 보여 준다. 이 값이 폴더명·YOLO 클래스명·3D 파일명이 된다 */}
+              {usePrefix && name.trim() &&
+                <span className="reg-hint">저장될 이름 <b>{finalName}</b></span>}
+              {!editPart && !usePrefix && name.trim() &&
+                <span className="reg-hint">카테고리를 고르면 대분류가 이름 앞에 붙습니다</span>}
             </div>
             <div className="reg-field">
               <span className="reg-label">부품 카테고리</span>
