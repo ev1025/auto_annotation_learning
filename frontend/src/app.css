@@ -1196,3 +1196,31 @@ button.prep-chip:hover { border-color: var(--accent); }
 .rbmenu-pin.on{color:#d97706;border-color:#fde68a;background:#fffbeb}
 .rbmenu-pin:hover,.rbmenu-alias-btn:hover{border-color:#c7d2fe;background:#eef2ff;color:#4338ca}
 .rbmenu-alias{display:inline-block;max-width:12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:none;padding:1px 6px;border-radius:5px;background:#eef2ff;color:#4338ca;font-size:11px;font-weight:800}
+
+/* ===== 부품 인식(라이브) — public/recog.html 편입분 ===== */
+/* 스테이지만 어둡게 둔다(사진·박스 대비). 나머지는 대시보드 토큰을 그대로 쓴다. */
+/* .tab-pane 이 flex 행이라 flex:1 이 없으면 내용 폭(폰 크기)으로 쪼그라든다 */
+.recog { display: flex; flex-direction: column; gap: var(--sp-4);
+  flex: 1 1 auto; min-width: 0; min-height: 0; }
+.recog-head { display: flex; align-items: baseline; gap: var(--sp-6); }
+.recog-model { margin-left: auto; font-size: var(--fs-2xs); color: var(--muted);
+  font-variant-numeric: tabular-nums; }
+/* 사진은 스테이지를 꽉 채우고 contain 으로 안쪽에 맞춘다. 중앙정렬 + max-width 조합은
+   종횡비와 얽혀 사진이 한쪽으로 밀린다. 실제 그려진 사각형은 JS(fitOverlay)가 계산한다 */
+.recog-stage { position: relative; flex: 1 1 auto; min-height: 320px; max-height: 62vh;
+  background: #000; border-radius: var(--r-md); overflow: hidden; }
+.recog-stage video { position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; display: block; }
+.recog-stage canvas { position: absolute; left: 0; top: 0; pointer-events: none; }
+.recog-stage [hidden] { display: none !important; }   /* display:block 이 UA 기본값을 이겨 깨진 아이콘이 보였다 */
+.recog-ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: var(--sp-8); text-align: center; color: #94a3b8; font-size: var(--fs-sm); }
+.recog-fps { position: absolute; right: 10px; top: 10px; padding: 5px 10px; border-radius: 999px;
+  background: rgba(11, 16, 32, .72); color: #cbd5e1; font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums; }
+.recog-bar { display: flex; align-items: center; gap: var(--sp-6); min-height: 40px; }
+.recog-msg { flex: 1; min-width: 0; font-family: var(--mono, ui-monospace, Consolas, monospace);
+  font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.recog-acts { flex: none; display: inline-flex; gap: var(--sp-3); }
+.recog-note { margin: 0; font-size: var(--fs-2xs); color: var(--muted); }
