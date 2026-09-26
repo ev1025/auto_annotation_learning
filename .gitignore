@@ -68,8 +68,8 @@ results/dashboard/**/*.pt
 results/dashboard/**/*.onnx
 
 # 아카이브 프론트(전체 대시보드) 빌드산출물·의존성
-exp_dashboard/dist/
-exp_dashboard/node_modules/
+archive/exp_dashboard/dist/
+archive/exp_dashboard/node_modules/
 backend/*/__pycache__/
 
 # DB 로컬 볼륨·테스트 산출물

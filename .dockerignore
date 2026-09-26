@@ -6,7 +6,8 @@ results
 models
 # 토르 납품본은 API 전용. 프론트가 이미지에 들어가면 dashboard_api 가 다시 화면을 서빙한다
 frontend
-exp_dashboard
+archive
+docs
 venv
 dist
 논문

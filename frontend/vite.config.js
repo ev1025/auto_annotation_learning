@@ -25,7 +25,6 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': process.env.XR_API || 'http://127.0.0.1:7862',
-      '/previews': process.env.XR_API || 'http://127.0.0.1:7862',
     },
   },
 })
