@@ -1,5 +1,5 @@
-# Jetson Thor 배포용. 전부 컨테이너로 돈다(DB · 대시보드 · 추론 서버).
-#   준비: deploy/.env.example -> deploy/.env (비밀번호 채우기), 프론트는 개발기에서 npm run build 후 dist 포함
+# Jetson Thor 배포용. 전부 컨테이너로 돈다(DB · 오토러닝 API · 추론 서버). 프론트는 없다.
+#   준비: deploy/.env.example -> deploy/.env (비밀번호 채우기)
 #   빌드: docker compose --env-file deploy/.env -f deploy/docker-compose.thor.yml build
 #   기동: docker compose --env-file deploy/.env -f deploy/docker-compose.thor.yml up -d
 #   최초 1회: docker compose ... exec app python3 backend/db/migrate_from_files.py   (파일 -> DB 색인)
@@ -50,10 +50,9 @@ services:
       - ../data:/app/data
       - ../results:/app/results
       - ../models:/app/models
-      # 프론트·백엔드는 이미지에 COPY 되지만, 코드만 고쳤을 때 이미지 전체(torch 포함)를 다시
+      # 백엔드는 이미지에 COPY 되지만, 코드만 고쳤을 때 이미지 전체(torch 포함)를 다시
       # 빌드하지 않도록 저장소를 덮어 마운트한다. 파일 복사 후 컨테이너 재시작만으로 반영된다.
       # (docker cp 는 컨테이너를 재생성하면 사라져서 실제로 되돌아간 사고가 있었다)
-      - ../frontend/dist:/app/frontend/dist:ro
       - ../backend:/app/backend:ro
       - ../scripts:/app/scripts:ro
       # MetaWorks 파일 서버(:3001)의 저장소. 부품 3D 를 <부품명>.glb 로 복사해 XR 이 받아가게 한다.

@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# 새 Jetson Thor 한 대에 XR 오토러닝 전체(DB · 대시보드 · 추론서버)를 올린다.
+# 새 Jetson Thor 한 대에 XR 오토러닝 전체(DB · 오토러닝 API · 추론서버)를 올린다. 프론트는 없다.
 #
 # 배경: 코드/영상/모델은 개발기(윈도우)에서 tar 로 묶어 보내고, 컨테이너는 Thor 에서 빌드한다.
 #       Thor 는 aarch64(SBSA) 라 x86 이미지를 그대로 못 쓰고, JetPack 별 CUDA 도 다르다.
 #
 # 개발기에서 묶기(Git Bash):
 #   cd <repo>
-#   tar -czf /tmp/xr_code.tar.gz backend scripts deploy requirements.txt \
-#        frontend/dist frontend/src frontend/index.html frontend/package.json frontend/vite.config.js
+#   tar -czf /tmp/xr_code.tar.gz --exclude=deploy/.env --exclude=__pycache__ \
+#        --exclude='backend/yolo_server/model.*' \
+#        backend scripts deploy requirements.txt .dockerignore
+#   # deploy/.env 는 빼야 한다. 넣으면 토르의 DB 비밀번호를 개발기 값으로 덮어 API 가 503 이 된다
 #   tar -cf  /tmp/xr_data.tar    data/bell412 data/_eval
 #   tar -cf  /tmp/xr_models.tar  models/sam2 models/model.pt models/model.onnx
 #   tar -cf  /tmp/xr_results.tar results/_served.json results/<서비스런>/model/best.pt \
@@ -67,8 +69,8 @@ say "5) 파일 -> DB 색인 (최초 1회)"
 $COMPOSE exec -T app python3 backend/db/migrate_from_files.py || echo "  색인 실패 - 로그 확인: docker logs xr_app"
 
 say "6) 확인"
-curl -s -m 10 -o /dev/null -w '  대시보드 7862 -> %{http_code}\n' http://127.0.0.1:7862/
+curl -s -m 10 -o /dev/null -w '  오토러닝 7862 -> %{http_code}\n' http://127.0.0.1:7862/api/db/status
 curl -s -m 10 -o /dev/null -w '  추론 9412    -> %{http_code}\n' http://127.0.0.1:9412/health
 curl -s -m 10 http://127.0.0.1:7862/api/parts | python3 -c 'import sys,json;print("  부품", len(json.load(sys.stdin)["parts"]), "종")' || true
 IP=$(hostname -I | awk '{print $1}')
-printf '\n접속: http://%s:7862 (대시보드) · http://%s:9412/docs (추론 API)\n' "$IP" "$IP"
+printf '\n접속: http://%s:7862/docs (오토러닝 API) · http://%s:9412/docs (추론 API)\n' "$IP" "$IP"

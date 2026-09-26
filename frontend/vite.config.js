@@ -20,10 +20,12 @@ export default defineConfig({
       },
     },
   },
+  // API 대상. 기본은 로컬 7862. 토르 API 에 화면을 붙일 때(토르는 프론트가 없다):
+  //   XR_API=http://10.37.27.42:7862 npm run dev   ->  http://localhost:5173/mAP_Test.html
   server: {
     proxy: {
-      '/api': 'http://127.0.0.1:7862',
-      '/previews': 'http://127.0.0.1:7862',
+      '/api': process.env.XR_API || 'http://127.0.0.1:7862',
+      '/previews': process.env.XR_API || 'http://127.0.0.1:7862',
     },
   },
 })

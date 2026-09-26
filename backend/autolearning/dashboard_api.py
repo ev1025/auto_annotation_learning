@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """대시보드 API 서버(FastAPI) + React 프론트 서빙.
 
-프론트 소스: frontend/ (React + Vite). 빌드 산출물 frontend/dist 를 루트에 서빙.
+프론트 소스: frontend/ (React + Vite). 빌드 산출물 frontend/dist 가 있으면 루트에 서빙한다.
+dist 가 없으면 API 전용으로 뜬다(토르 납품본). 라우트는 어느 쪽이든 같다.
 
 실행:
   cd frontend && npm install && npm run build            # 프론트 변경 시 1회
@@ -263,9 +264,10 @@ def api_autolabel_frame(src: str, idx: int, w: int = 960):
     return Response(content=b, media_type="image/jpeg")
 
 
-### ---- 폰 인식 테스트(recog.html) 용 추론 프록시 ----
-# 추론서버(:9412)는 CORS 를 열지 않았고 포트도 다르다. 브라우저에서 직접 부르면 막히므로
-# 대시보드(:7862)가 한 번 받아서 넘긴다(= 폰은 포트 하나만 알면 된다).
+### ---- 추론 중계(/api/detect) ----
+# Unity 구현 규격서 §7 에 있는 계약 API 다. 프론트 전용이 아니니 프론트를 걷어도 지우지 않는다.
+# 처음 만든 이유: 추론서버(:9412)는 CORS 를 열지 않았고 포트도 달라 브라우저(recog.html)가
+# 직접 부르면 막혔다. 대시보드(:7862)가 한 번 받아서 넘긴다(= 호출자는 포트 하나만 알면 된다).
 YOLO_URL = os.environ.get("YOLO_SERVER_URL", "http://127.0.0.1:9412").rstrip("/")
 
 
@@ -758,5 +760,5 @@ if DIST.exists():
 
 if __name__ == "__main__":
     if not DIST.exists():
-        print("경고: frontend/dist 없음. 먼저 빌드하세요: cd frontend && npm install && npm run build")
+        print("frontend/dist 없음: API 전용으로 기동 (문서 /docs)")
     uvicorn.run(app, host=HOST, port=PORT, log_level="warning")

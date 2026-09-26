@@ -1,0 +1,18 @@
+# 토르 이미지 빌드 컨텍스트에서 뺄 것. compose 의 build context 가 레포 루트라
+# 이게 없으면 data·results·models(수십 GB)가 통째로 빌드 데몬에 올라간다.
+# 이 셋은 볼륨으로 마운트하므로 이미지에 들어갈 이유가 없다.
+data
+results
+models
+# 토르 납품본은 API 전용. 프론트가 이미지에 들어가면 dashboard_api 가 다시 화면을 서빙한다
+frontend
+exp_dashboard
+venv
+dist
+논문
+*.pt
+*.onnx
+*.mp4
+**/__pycache__
+deploy/.env
+.git

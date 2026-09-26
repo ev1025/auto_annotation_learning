@@ -37,11 +37,11 @@ COPY requirements.txt ./
 RUN grep -v -E '^\s*(torch|torchvision)\b' requirements.txt > /tmp/req.txt && \
     pip install -r /tmp/req.txt
 
-# 3) 애플리케이션 코드 + 미리 빌드한 프론트(dist).
-#    Jetson 에 node 를 깔지 않으려고 개발기에서 빌드한 산출물을 그대로 넣는다.
+# 3) 애플리케이션 코드. 프론트는 넣지 않는다(토르 납품본 = API 전용).
+#    frontend/dist 가 없으면 dashboard_api.py 가 정적 서빙을 건너뛰고 API 만 띄운다.
+#    화면이 필요하면 개발기에서 npm run dev 로 띄우고 XR_API 로 이 서버를 가리킨다.
 COPY backend/ ./backend/
 COPY scripts/ ./scripts/
-COPY frontend/dist/ ./frontend/dist/
 
 # data · results · models 는 이미지에 넣지 않고 볼륨으로 마운트한다(합계 10GB 이상).
 # DB 에 저장된 경로가 저장소 루트 기준 상대경로라, 컨테이너 안에서도 /app 기준으로 그대로 맞는다.
