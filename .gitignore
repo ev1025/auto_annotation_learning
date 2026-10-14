@@ -56,16 +56,9 @@ exp_variance_abc/
 exp_overnight/
 exp_sam2_test/
 models/sam2/
-# evidence/ 와 docs/ 는 추적 (큐레이션한 증거·문서)
 
-# 실험 결과·프레임 캐시 (data/는 이미 무시됨). 무거운 산출물(모델·이미지·runs)은 제외,
-# 실험 기록(수치 JSON·요약 MD)만 추적 = 대시보드 데이터 소스 + git 기록용
+# 실험 결과 · 기록은 git 밖(로컬 사본). 정리본은 docs/서버학습기록_*.md
 results/*
-# 대시보드 실험탭 데이터(results/dashboard) = 수치 JSON·요약 MD 추적, 무거운 pt/onnx 제외
-!results/dashboard/
-!results/dashboard/**
-results/dashboard/**/*.pt
-results/dashboard/**/*.onnx
 
 # 아카이브 프론트(전체 대시보드) 빌드산출물·의존성
 archive/exp_dashboard/dist/

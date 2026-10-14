@@ -1211,7 +1211,7 @@ def _run_multiclass(job_id, session, epochs, only_classes=None, augment=False):
             # 다시 재는 값이 나온다. 그 한 번에 35,288장 8분이 들어 학습 시간이 1.3배가 됐다.
             # 실제 성능은 사람 GT 로만 잰다(mAP_Test.html). 마지막 에폭 한 번은 남는다 -
             # ultralytics 가 best.pt 를 고르는 근거로 쓰기 때문이다(trainer.py 의 final_epoch 조건).
-            # 워커·캐시·mixup 은 서비스 모델 학습(서버 260824_retrain3x)과 같은 값을 쓴다.
+            # 워커·캐시·mixup 은 이전 서비스 모델 학습(서버 260824_retrain3x)과 같은 값을 쓴다.
             # 워커는 기기에 따라 0 으로 내린다. 둘 다 실제로 겪은 고장이다.
             #   윈도우: spawn 이 pickle truncated 로 죽는다.
             #   Jetson(aarch64, 토르): CUDA 를 올린 프로세스가 워커를 포크하면 교착에 빠진다.

@@ -304,7 +304,7 @@ def _save_negative(raw: bytes, dets: list) -> int:
 #
 # 8001 은 토르 호스트에서 돌고 이 코드는 컨테이너 안에서 돈다. 그래서 127.0.0.1 로는 닿지
 # 않고(컨테이너 자기 자신을 가리킨다) 도커 브리지 게이트웨이로 나가야 한다. 실측으로
-# 172.17.0.1 만 닿았다(10.37.27.42·host.docker.internal 은 실패). 환경변수로 덮어쓸 수 있다.
+# 172.17.0.1 만 닿았다(토르 사내 IP·host.docker.internal 은 실패). 환경변수 XR_DETECT_URL 로 덮어쓸 수 있다.
 XR_DETECT_URL = os.environ.get("XR_DETECT_URL", "http://172.17.0.1:8001")
 DETECT_TARGETS = {"ours": YOLO_URL, "xr": XR_DETECT_URL}
 

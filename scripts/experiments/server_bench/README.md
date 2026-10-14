@@ -3,6 +3,7 @@
 서버 B(RTX 5090) 홈 폴더 · 임시 학습 폴더에 흩어져 있던 것을 레포로 옮긴 것이다.
 이전 서비스 모델(`260824_retrain3x/yolo11m`)과 지금 서비스 모델(`260907_181414`, 2026-09-08 적용)의 학습셋 · 레시피가 이 스크립트들로 만들어졌다.
 코드가 레포 밖에 있으면 "이 모델이 무엇으로 어떻게 학습됐나"를 나중에 되짚을 수 없어서 옮겼다.
+판별 결과 · 계보는 `docs/서버학습기록_xr_autolearning.md`(07 ~ 08월)와 `docs/서버학습기록_xr_dash_260901.md`(09월)에 있다.
 
 ## 경로 규약 주의
 
@@ -14,7 +15,7 @@
 | 파일 | 하는 일 |
 |---|---|
 | `build_3x.py` | 실촬 대비 3배 합성 학습셋 생성. 이전 서비스 모델(260824_retrain3x)이 쓴 레시피 |
-| `build_occl8.py` | 판넬 가림을 넣은 학습셋(`benchset_occl8`) 생성. 이전 서비스 모델이 실제로 읽은 데이터 |
+| `build_occl8.py` | benchset_3x 를 하드링크로 복제하고 합성만 가림 확률 0.8 로 다시 만든 A/B 학습셋(`benchset_occl8`) 생성. 260825_occl8 · 260829_eqlv2_11m 이 학습한 데이터(이전 서비스 모델의 데이터 아님) |
 | `build_panel400.py` | 판넬 가림 400장 버전 |
 | `build_gearbox1.py` | 기어박스 단일 부품 실험용 |
 | `add_occl_mode.py` | `run_bench.py` 에 `occl` 레시피(mixup 0.2 + erasing 0.5) 모드를 붙인다 |
@@ -31,9 +32,11 @@
 
 ## 남겨 둔 데이터
 
-`benchset_occl8` 만 서버에 남겼다. 이전 서비스 모델의 `args.yaml` 이 그 절대경로를 기록하고 있어
-옮기면 추적이 끊긴다. 나머지 benchset 8종과 중간 산출물은 2026-09-01 에 지웠다
-(그때 기록 `_cleanup_260901.txt` 는 2026-10-14 서버 정리 때 지워졌다).
+서버에는 `benchset_occl8`(7.2GB)만 남아 있다.
+
+- 260825_occl8 · 260829_eqlv2_11m 이 학습한 데이터다. 이전 서비스 모델(260824_retrain3x)은 `benchset_3x` 로 학습했다(args.yaml · best.pt 안 경로 모두 benchset_3x)
+- occl8 의 실촬 9,083 · 배경 567 · 검증 909 는 benchset_3x 와 같은 파일(하드링크)이고 합성 26,787장만 다르다. benchset_3x 를 비롯한 나머지 benchset 과 중간 산출물은 2026-09-01 에 지웠다(그때 기록 `_cleanup_260901.txt` 는 2026-10-14 서버 정리 때 지워짐)
+- 하드링크 함정: `build_occl8.py` 가 data.yaml 을 덮어써 benchset_3x/data.yaml 의 path 도 occl8 로 바뀌었다. 그래서 260829_eqlv2_11m 은 args 에 benchset_3x 라고 적혔지만 occl8 로 학습했고, retrain3x 폴더의 `data_yaml_used.yaml`(09-01 복사)은 학습 당시 내용이 아니다
 
 ## xr_dash_260901 다중 부품 학습 (2026-09-01 ~ 09-08)
 
