@@ -10,7 +10,7 @@
   2. 8월 초: 실부품 1 ~ 2종(a_test · gearbox)과 사람 GT 로 ablation 을 돌렸다. 모델 종류보다 배경 합성이 GT 를 크게 바꿨다
   3. 8월 말: 36종으로 배경 · 증강 · 합성량 · 판넬 가림을 바꿔 가며 서비스 모델을 골랐다. 기체 장착 구간(test3 · 4)이 끝까지 약점이었다
 - **주의**
-  - 이전 서비스 모델 260824_retrain3x 의 학습셋은 `benchset_3x` 다. 서버에 남은 `benchset_occl8` 이 아니다(2.16 · 2.17)
+  - 이전 서비스 모델 260824_retrain3x 의 학습셋은 `benchset_3x` 다. `benchset_occl8` 이 아니다(2.16 · 2.17)
   - 260829_eqlv2_11m 은 args 에 benchset_3x 라고 적혀 있지만 실제로는 benchset_occl8 로 학습했다(2.19)
 
 ## 1. 공통
@@ -21,7 +21,7 @@
 - GPU: 묶음마다 비는 장(GPU 0 ~ 3)을 썼다. 묶음별 GPU 는 각 절에 적었다
 - 8월 실험 코드는 서버 레포의 마지막 커밋 02242c4(08-18)에 커밋 안 된 파일이 얹힌 상태였다. 그중 실험 스크립트는 `scripts/experiments/server_bench/` 로 옮겼다
 - 08-07 이전 run 의 args.yaml 같은 텍스트 파일은 수정 시각이 08-07 22:37 로 덮여 있다. 아래 시각은 로그 · 그림 · 가중치 · results.csv 시각 기준이다
-- 7월 근거 로그(`e2e_v2.log` 등)는 서버 레포 루트에 있고, 사본을 로컬 `results/_server_root/` 에 두었다
+- 7월 근거 로그(`e2e_v2.log` 등) · 07-22 릴리스 기록의 사본은 로컬 `results/_server_root/` 에 있다(서버 레포 루트 · `models/releases` 의 원본은 2026-10-15 정리 때 지움). 아래 근거의 '루트 ….log' 는 이 사본이다
 
 ### 평가 잣대
 
@@ -60,7 +60,7 @@
 | 2클래스 · 15% + TTA 필터 | 149 / 647 / 199 | 0.8199 → 0.8206 | 0.6427 → 0.6633 | 0.938 / 0.741 |
 
 - 판정: 4조건 모두 라운드 1 이 높았다(+1.0 ~ +3.6%p). TTA 필터는 오라벨을 327 → 183개(-44%)로 줄였지만 mAP 이득이 없어 기본으로 꺼 두었다
-- 근거: 서버 `results/dashboard/exp_results/report_*.json` 5개(git `ff58895^` 의 같은 경로와 같은 파일), 루트 `done_*.marker`(07-14 08:21 ~ 08:32). run 폴더(`exp_autolearn/`)는 없다
+- 근거: 서버 `results/dashboard/exp_results/report_*.json` 5개(git `ff58895^` 의 같은 경로와 같은 파일), 루트 `done_*.marker` 시각(07-14 08:21 ~ 08:32, 파일은 2026-10-15 삭제). run 폴더(`exp_autolearn/`)는 없다
 
 ### 2.2 07-16 E2E 흐름 검증 (2판)
 
@@ -68,7 +68,7 @@
 - 흐름: 반입 → 1차 학습(train 1,620 / val 405) → 자동 라벨 220장(박스 929) → val 은 고정하고 train 에 더해 재학습(train 1,840 / val 405)
 - 설정: YOLOv8n(당시 기본), 100 에폭 · batch 32 · GPU 2(`e2e_test.sh` · `e2e_v2.sh`)
 - 결과(val): P 0.917 · R 0.804 · mAP50 0.873 · mAP50-95 0.708
-- 근거: 루트 `e2e_v2.log`(07-16 09:32). run 폴더는 없고 서버 `models/base_model.pt`(07-16 09:24)만 남았다
+- 근거: 루트 `e2e_v2.log`(07-16 09:32). run 폴더와 가중치(`models/base_model.pt`, 07-16 09:24)는 지워졌다
 
 ### 2.3 07-21 모델 × 입력 크기 벤치 (14판) + 후속 (7판)
 
@@ -100,7 +100,7 @@
 
 ### 2.4 07-22 제로샷 자동 라벨 평가 (학습 없음)
 
-- 데이터: 정답을 숨긴 평가셋 204장(Mechanical Parts), IoU 0.5 로 채점. 환경 `zeroshot_labeler` · `venv_zs`(지금은 없음)
+- 데이터: 정답을 숨긴 평가셋 204장(Mechanical Parts), IoU 0.5 로 채점. 환경 `zeroshot_labeler` · `venv_zs`(둘 다 지금은 없음)
 
 | 방법(결과 파일) | 정밀도 | 재현율 | F1 |
 |---|---|---|---|
@@ -128,7 +128,7 @@
 | v20260722_193047 | 19:30 ~ 19:49 | 촘촘히 다시 등록, 193장 중 114장 채택(새로 94장) | 1,954 | 0.8778 / 0.7301 | 14장(conf 0.4) · 15장(conf 0.25) |
 
 - 판정: 등록 장수가 학습 안 한 영상의 검출을 크게 바꿨다. 두 판 모두 릴리스 상태는 promoted
-- 근거: 서버 `models/releases/{history.jsonl, v20260722_*/metrics.json}`, 루트 `gb_e2e.log` · `gb_e2e2.log`
+- 근거: 로컬 사본 `results/_server_root/models/releases/{history.jsonl, v20260722_*/metrics.json}`, 루트 `gb_e2e.log` · `gb_e2e2.log`(릴리스 가중치는 지워짐)
 
 ### 2.6 08-05 실부품 34종 YOLO 버전 벤치 (9판)
 
@@ -366,7 +366,7 @@
 
 ### 2.17 08-26 ~ 27 가림 0.8 occl8 (2판)
 
-- 데이터 `benchset_occl8`: `build_occl8.py` 가 benchset_3x 를 하드링크로 복제하고 합성만 가림 확률 0.8 로 다시 만들었다(08-26 17:29 ~ 17:33). 실촬 9,083 + 합성 26,787 + 배경 567 = 36,437, 검증 909
+- 데이터 `benchset_occl8`: `build_occl8.py` 가 benchset_3x 를 하드링크로 복제하고 합성만 가림 확률 0.8 로 다시 만들었다(08-26 17:29 ~ 17:33). 실촬 9,083 + 합성 26,787 + 배경 567 = 36,437, 검증 909(폴더는 2026-10-15 삭제)
 - 실촬 · 배경 · 검증은 benchset_3x 와 같은 파일이다. 합성만 다르다(labels.jpg md5 907aa445…, retrain3x 와 다름)
 - 설정: retrain3x 와 같다
 
@@ -439,10 +439,9 @@ Plan A · B · C(전부 yolo11m, `queue_260829.sh` 08-29 09:29 ~ 19:31, `queue_e
 | 구분 | 위치 | 내용 |
 |---|---|---|
 | 서버 run | 서버 레포 `results/`(git 밖, 14GB) | 2.6 ~ 2.19(2.10 제외)의 run 179개(가중치 포함)와 묶음별 요약 · GT 채점. 묶음마다 근거 줄의 경로 |
-| 서버 데이터 | `/workspace/data2/jinwoolee/benchset_occl8`(7.2GB) | 2.17 · 2.19 eqlv2 의 학습셋. 실촬 · 배경 · 검증은 retrain3x 의 benchset_3x 와 같은 파일 |
 | 로컬 사본 | 로컬 레포 `results/`(git 밖) | 서버 run 의 작은 기록(args.yaml · results.csv · 요약 · GT 채점, 서버와 같은 경로), 7월 루트 로그 · 릴리스 기록(`results/_server_root/`), 서비스로 간 3판 가중치(`results/260821_010000` · `260823_120000` · `260825_022437`), retrain3x 6모델 가중치(`results/bench/260824_retrain3x`) |
 | git 이력 | `ff58895^:results/dashboard/` | 2.1 · 2.3 · 2.4 결과 JSON(서버 사본과 같은 파일) |
 | git 이력 | `892a1de^:README.md` 4 ~ 5장 | 07 ~ 08월 초 실험 표 원문 |
 | git 이력 | `4b6fcd1^:results/gearbox/mAP_summary.md` | 07-30 ~ 31 gearbox 도메인갭(PC 추정) GT40 표 |
 | 스크립트 | `scripts/experiments/server_bench/` | 2.14 ~ 2.19 데이터셋 · 학습 · 채점 스크립트(서버 절대경로 그대로) |
-| 지워진 것 | - | 7월 run 폴더(`exp_autolearn/` · `runs/train` · `bench_results/`), 2.6 데이터(`results/parts/auto_baseline`), 2.10 학습 폴더, benchset_occl8 을 뺀 benchset 폴더(2026-09-01) |
+| 지워진 것 | - | 7월 run 폴더(`exp_autolearn/` · `runs/train` · `bench_results/`), 2.6 데이터(`results/parts/auto_baseline`), 2.10 학습 폴더, benchset 폴더 전부(benchset_occl8 외 2026-09-01, benchset_occl8 2026-10-15), 7월 데이터 폴더(`datasets` · `mechanical-parts-yolo` · `uploads_gb` · `_regtest`) · `zeroshot_labeler` · 07-22 릴리스 가중치 · 옛 사전학습 가중치(2026-10-15) |

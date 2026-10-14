@@ -30,12 +30,12 @@
 | `pack_run.py` | run 폴더를 압축해 내려받기 |
 | `server_stems.txt`, `test4_result.json` | 당시 영상 목록과 test4 평가 결과 |
 
-## 남겨 둔 데이터
+## 학습셋 데이터
 
-서버에는 `benchset_occl8`(7.2GB)만 남아 있다.
+서버의 benchset 폴더는 모두 지웠다(benchset_3x 등 2026-09-01, benchset_occl8 2026-10-15). args.yaml 에 남은 경로는 기록일 뿐이다.
 
-- 260825_occl8 · 260829_eqlv2_11m 이 학습한 데이터다. 이전 서비스 모델(260824_retrain3x)은 `benchset_3x` 로 학습했다(args.yaml · best.pt 안 경로 모두 benchset_3x)
-- occl8 의 실촬 9,083 · 배경 567 · 검증 909 는 benchset_3x 와 같은 파일(하드링크)이고 합성 26,787장만 다르다. benchset_3x 를 비롯한 나머지 benchset 과 중간 산출물은 2026-09-01 에 지웠다(그때 기록 `_cleanup_260901.txt` 는 2026-10-14 서버 정리 때 지워짐)
+- 260825_occl8 · 260829_eqlv2_11m 은 `benchset_occl8`, 이전 서비스 모델(260824_retrain3x)은 `benchset_3x` 로 학습했다(args.yaml · best.pt 안 경로 모두 benchset_3x)
+- occl8 의 실촬 9,083 · 배경 567 · 검증 909 는 benchset_3x 와 같은 파일(하드링크)이었고 합성 26,787장만 달랐다(09-01 정리 기록 `_cleanup_260901.txt` 는 2026-10-14 서버 정리 때 지워짐)
 - 하드링크 함정: `build_occl8.py` 가 data.yaml 을 덮어써 benchset_3x/data.yaml 의 path 도 occl8 로 바뀌었다. 그래서 260829_eqlv2_11m 은 args 에 benchset_3x 라고 적혔지만 occl8 로 학습했고, retrain3x 폴더의 `data_yaml_used.yaml`(09-01 복사)은 학습 당시 내용이 아니다
 
 ## xr_dash_260901 다중 부품 학습 (2026-09-01 ~ 09-08)
