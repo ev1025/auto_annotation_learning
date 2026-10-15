@@ -25,6 +25,7 @@
 | `kill_bench.sh`, `kill_rest_chain.sh` | 위 줄을 끊는 셸 |
 | `gt40.py`, `gt40_new.py`, `eval_test4.py` | 사람이 그린 GT 40장으로 재는 평가(구간 3·4 확인). `gt40_new.py` 는 첫 서버 다중 부품 판(260901_181828)을 채점했다(레포 루트 `gt_viewer.html`) |
 | `bg_gather.py`, `bg_inv.py`, `surion_bg.py` | 배경(네거티브) 사진 수집·점검 |
+| `surion_11s.py` | 2026-08-21 서버 B 의 Surion 플랫폼 배포본에서 오토러닝 기본 사전학습 모델을 yolo26s → yolo11s 로 바꾸고, 바꾸기 전 파일을 `surion_backup_260821` 에 백업(백업은 2026-10-15 삭제) |
 | `move_eval.py`, `move_synth.py`, `synth_share.py`, `split_office.py`, `split_tail.py` | 데이터 이동·분할 |
 | `probe_model.py`, `gpu_who.py` | 가중치 내용 확인, GPU 점유자 확인 |
 | `pack_run.py` | run 폴더를 압축해 내려받기 |
